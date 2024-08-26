@@ -1,4 +1,4 @@
-# For use with a Times Square notebook
+1# For use with a Times Square notebook
 title: Logging and Reporting
 description: Prototype 1
 authors:
@@ -22,15 +22,3 @@ parameters:
     default: 99
     minimum: 1
     maximum: 9999
-  response_timeout:
-    type: number
-    description: How long to wait for a connection (seconds)
-    default: 3.05
-    minimum: 0.1
-    maximum: 60
-  read_timeout:
-    type: number
-    description: How long to wait for read to complete (seconds)
-    default: 20
-    minimum: 0.1
-    maximum: 120
