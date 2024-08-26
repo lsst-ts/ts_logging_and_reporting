@@ -1,0 +1,24 @@
+# For use with a Times Square notebook
+title: Logging and Reporting
+description: Prototype 1
+authors:
+  - name: Steve Pothier
+    slack: Steve Pothier
+tags:
+  - reporting
+  - prototype
+parameters:
+  env:
+    type: string
+    description: tucson | usdf_dev | summit
+    default: "tucson"
+  log:
+    type: string
+    description: The log name: narrativelog | exposurelog
+    default: narrativelog
+  record_limit:
+    type: integer
+    description: Max number of records to output
+    default: 99
+    minimum: 1
+    maximum: 9999
