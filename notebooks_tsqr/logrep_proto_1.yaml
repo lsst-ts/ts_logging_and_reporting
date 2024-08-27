@@ -8,14 +8,6 @@ tags:
   - reporting
   - prototype
 parameters:
-  env:
-    type: string
-    description: "tucson | usdf_dev | summit"
-    default: "tucson"
-  log:
-    type: string
-    description: "The log name: narrativelog | exposurelog"
-    default: narrativelog
   record_limit:
     type: integer
     description: Max number of records to output
