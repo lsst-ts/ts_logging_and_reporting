@@ -1,5 +1,5 @@
 # For use with a Times Square notebook
-title: Logging and Reporting for Narrative Log
+title: LR Exposure Log
 description: Prototype 1
 authors:
   - name: Steve Pothier
@@ -7,6 +7,7 @@ authors:
 tags:
   - reporting
   - prototype
+  - exposure
 parameters:
   record_limit:
     type: integer
