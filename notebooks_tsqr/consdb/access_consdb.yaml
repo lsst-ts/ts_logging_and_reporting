@@ -1,0 +1,16 @@
+# For use with a Times Square notebook
+title: Accessing ConsDb
+description: Show for reporting purposes how to access the consolidated database
+authors:
+  - name: Valerie Becker
+    slack: valerie
+tags:
+  - reporting
+  - prototype
+parameters:
+  record_limit:
+    type: integer
+    description: Max number of records to output
+    default: 99
+    minimum: 1
+    maximum: 9999
