@@ -8,9 +8,11 @@ tags:
   - reporting
   - prototype
 parameters:
-  record_limit:
-    type: integer
-    description: Max number of records to output
-    default: 99
-    minimum: 1
-    maximum: 9999
+  day_obs:
+    type: string
+    description: Date on which to query
+    default: '2024-06-26'
+  instrument:
+    type: string
+    description: Which instrument to query
+    default: 'latiss'
