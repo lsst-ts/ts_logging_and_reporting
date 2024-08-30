@@ -2,5 +2,6 @@ enabled: true
 root: notebooks_tsqr
 ignore:
   - SAVE_*
+  - TEMPLATE_*
 description: >
   Times Square for project-wide Logging and Reporting.
