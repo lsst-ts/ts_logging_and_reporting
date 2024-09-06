@@ -1,7 +1,8 @@
 enabled: true
 root: notebooks_tsqr
 ignore:
-  - SAVE_*
+  - efd_*
+  - logrep_proto_*
   - TEMPLATE_*
 description: >
   Times Square for project-wide Logging and Reporting.
