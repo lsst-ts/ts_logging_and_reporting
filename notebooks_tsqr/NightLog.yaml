@@ -1,0 +1,29 @@
+# For use with a Times Square notebook
+title: Night Log
+description: Combined report from Summit logs
+authors:
+  - name: Steve Pothier
+    slack: Steve Pothier
+  - name: Valerie Becker
+    slack: valerie becker
+tags:
+  - reporting
+  - prototype
+  - exposure
+parameters:
+  record_limit:
+    type: integer
+    description: Max number of records to output
+    default: 99
+    minimum: 1
+    maximum: 9999
+  day_obs:
+    type: string
+    description: The night to report on. (YYYY-MM-DD, TODAY, YESTERDAY)
+    default: "TODAY"
+  number_of_days:
+    type: integer
+    description: Number of days to show (ending in day_obs)
+    default: 1
+    minimum: 1
+    maximum: 9
