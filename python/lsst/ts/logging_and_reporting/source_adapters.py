@@ -27,6 +27,7 @@ import itertools
 from datetime import datetime
 from warnings import warn
 from collections import defaultdict
+from abc import ABC
 
 ############################################
 # External Packages
@@ -35,7 +36,20 @@ import requests
 MAX_CONNECT_TIMEOUT = 3.1    # seconds
 MAX_READ_TIMEOUT = 90 * 60   # seconds
 
-class ApiAdapter:
+def keep_fields(outfields, recs):
+    """Keep only keys in OUTFIELDS list of RECS (list of dicts)
+    SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
+    """
+    if outfields:
+        for rec in recs:
+            nukefields = set(rec.keys()) - set(outfields)
+            print(f'{rec=} {nukefields=}')
+            for f in nukefields:
+                del rec[f]
+
+class SourceAdapter(ABC):
+    """Abstract Base Class for all source adapters.
+    """
     # TODO document class including all class variables.
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
@@ -49,15 +63,14 @@ class ApiAdapter:
                              float(read_timeout))
         self.timeout = (self.c_timeout, self.r_timeout)
 
-        # We may be accessing several endpoints of an API.
-        # If so, we will get different types of records for each.
-        # The following are for the "primary_endpoint".
-        self.ignore_fields = list()
-        self.categoricals = list()
-        self.foreign_keys = list()
-
+        # Provide the following in subclass
+        output_fields = None
         service = None
         endpoints = None
+
+    @property
+    def source_url(self):
+        return f'{self.server}/{self.service}'
 
 
     def check_endpoints(self, timeout=None):
@@ -106,18 +119,16 @@ class ApiAdapter:
 
 
 # Not available on SLAC (usdf) as of 9/9/2024.
-class NightReportAdapter(ApiAdapter):
+class NightReportAdapter(SourceAdapter):
     service = "nightreport"
     endpoints = ['reports']
     primary_endpoint = 'reports'
 
-class NarrativelogAdapter(ApiAdapter):
+class NarrativelogAdapter(SourceAdapter):
     """TODO full documentation
     """
     service = 'narrativelog'
     endpoints = ['messages',]
-
-
     primary_endpoint = 'messages'
     fields = {'category',
               'components',
@@ -217,16 +228,14 @@ class NarrativelogAdapter(ApiAdapter):
         url = f'{self.server}/{self.service}/messages?{qstr}'
         try:
             recs = requests.get(url, timeout=self.timeout).json()
+            recs.sort(key=lambda r: r['date_begin'])
         except Exception as err:
             warn(f'No {self.service} records retrieved: {err}')
             recs = []
-        if len(recs) == 0:
-            raise Exception(f'No records retrieved from {url}')
 
-        if recs:
-            recs.sort(key=lambda r: r['date_begin'])
+        keep_fields(outfields, recs)
         self.recs = recs
-        return recs
+        return self.recs
 
     def get_timelost(self, rollup='day'):
         day_tl = dict() # day_tl[day] = totalDayTimeLost
@@ -237,7 +246,7 @@ class NarrativelogAdapter(ApiAdapter):
             day_tl[day] = sum([r['time_lost'] for r in dayrecs])
         return day_tl
 
-class ExposurelogAdapter(ApiAdapter):
+class ExposurelogAdapter(SourceAdapter):
     """TODO full documentation
 
     EXAMPLES:
@@ -351,6 +360,7 @@ class ExposurelogAdapter(ApiAdapter):
                      exposure_flags=None,
                      offset=None,
                      limit=None,
+                     outfields=None,
                      ):
         qparams = dict(is_human=is_human, is_valid=is_valid)
         if site_ids:
@@ -384,8 +394,10 @@ class ExposurelogAdapter(ApiAdapter):
 
         if recs:
             recs.sort(key=lambda r: r['day_obs'])
+
+        keep_fields(outfields, recs)
         self.recs = recs
-        return recs
+        return self.recs
 
     def get_observation_gaps(self, instruments=None,
                              min_day_obs=None,  # YYYYMMDD
