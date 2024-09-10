@@ -25,21 +25,22 @@
 from urllib.parse import urlencode
 import itertools
 from datetime import datetime
-import warnings
+from warnings import warn
 from collections import defaultdict
+
 ############################################
 # External Packages
 import requests
-
 
 MAX_CONNECT_TIMEOUT = 3.1    # seconds
 MAX_READ_TIMEOUT = 90 * 60   # seconds
 
 class ApiAdapter:
+    # TODO document class including all class variables.
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
-                 connect_timeout=3.05,  # seconds
-                 read_timeout=10 * 60,  # seconds
+                 connect_timeout=1.05,  # seconds
+                 read_timeout=2,  # seconds
                  ):
         self.server = server_url
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
@@ -55,8 +56,32 @@ class ApiAdapter:
         self.categoricals = list()
         self.foreign_keys = list()
 
+        service = None
+        endpoints = None
+
+
+    def check_endpoints(self, timeout=None):
+        to = (timeout or self.timeout)
+        print(f'Try connect to each endpoint of {self.server}/{self.service} '
+              f'using timeout={to}.')
+        url_http_status_code = dict()
+        for ep in self.endpoints:
+            url = f'{self.server}/{self.service}/{ep}'
+            try:
+                r = requests.get(url, timeout=(timeout or self.timeout))
+            except:
+                url_http_status_code[url] = 'timeout'
+            else:
+                url_http_status_code[url] = r.status_code
+        return url_http_status_code
+
 
     def analytics(self, recs, categorical_fields=None):
+        if len(recs) == 0:
+            return dict(fields=[],
+                        facet_fields=set(),
+                        facets=dict())
+
         non_cats = set([
             'tags', 'urls', 'message_text', 'id', 'date_added',
             'obs_id', 'day_obs', 'seq_num', 'parent_id', 'user_id',
@@ -80,8 +105,19 @@ class ApiAdapter:
                     )
 
 
+# Not available on SLAC (usdf) as of 9/9/2024.
+class NightReportAdapter(ApiAdapter):
+    service = "nightreport"
+    endpoints = ['reports']
+    primary_endpoint = 'reports'
+
 class NarrativelogAdapter(ApiAdapter):
+    """TODO full documentation
+    """
     service = 'narrativelog'
+    endpoints = ['messages',]
+
+
     primary_endpoint = 'messages'
     fields = {'category',
               'components',
@@ -162,7 +198,8 @@ class NarrativelogAdapter(ApiAdapter):
                      is_human='either',
                      is_valid='either',
                      offset=None,
-                     limit=None
+                     limit=None,
+                     outfields=None,
                      ):
         qparams = dict(is_human=is_human, is_valid=is_valid)
         if site_ids:
@@ -181,13 +218,14 @@ class NarrativelogAdapter(ApiAdapter):
         try:
             recs = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
-            warnings.warn(f'No {self.service} records retrieved: {err}')
+            warn(f'No {self.service} records retrieved: {err}')
             recs = []
         if len(recs) == 0:
             raise Exception(f'No records retrieved from {url}')
 
+        if recs:
+            recs.sort(key=lambda r: r['date_begin'])
         self.recs = recs
-        self.recs.sort(key=lambda r: r['date_begin'])
         return recs
 
     def get_timelost(self, rollup='day'):
@@ -200,7 +238,19 @@ class NarrativelogAdapter(ApiAdapter):
         return day_tl
 
 class ExposurelogAdapter(ApiAdapter):
+    """TODO full documentation
+
+    EXAMPLES:
+       gaps,recs = logrep_utils.ExposurelogAdapter(server_url='https://usdf-rsp-dev.slac.stanford.edu').get_observation_gaps('LSSTComCam')
+       gaps,recs = logrep_utils.ExposurelogAdapter(server_url='[[https://tucson-teststand.lsst.codes').get_observation_gaps('LSSTComCam')
+    """
+    ignore_fields = ['id']
     service = 'exposurelog'
+    endpoints = [
+        'instruments',
+        'exposures',
+        'messages',
+    ]
     primary_endpoint = 'messages'
     fields = {'date_added',
               'date_invalidated',
@@ -251,13 +301,30 @@ class ExposurelogAdapter(ApiAdapter):
         }
 
 
+    def check_endpoints(self, timeout=None):
+        to = (timeout or self.timeout)
+        print(f'Try connect to each endpoint of {self.server}/{self.service} '
+              f'using timeout={to}.')
+        url_http_status_code = dict()
+
+        for ep in self.endpoints:
+            qstr = '?instrument=na' if ep == 'exposures' else ''
+            url = f'{self.server}/{self.service}/{ep}{qstr}'
+            try:
+                r = requests.get(url, timeout=to)
+            except:
+                url_http_status_code[url] = 'timeout'
+            else:
+                url_http_status_code[url] = r.status_code
+        return url_http_status_code
+
 
     def get_instruments(self):
         url = f'{self.server}/{self.service}/instruments'
         try:
             instruments = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
-            warnings.warn(f'No instruments retrieved: {err}')
+            warn(f'No instruments retrieved: {err}')
             instruments = dict(dummy=[])
         # Flatten the lists
         return list(itertools.chain.from_iterable(instruments.values()))
@@ -268,7 +335,7 @@ class ExposurelogAdapter(ApiAdapter):
         try:
             recs = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
-            warnings.warn(f'No exposures retrieved: {err}')
+            warn(f'No exposures retrieved: {err}')
             recs = []
         return recs
 
@@ -283,7 +350,7 @@ class ExposurelogAdapter(ApiAdapter):
                      is_valid='either',
                      exposure_flags=None,
                      offset=None,
-                     limit=None
+                     limit=None,
                      ):
         qparams = dict(is_human=is_human, is_valid=is_valid)
         if site_ids:
@@ -295,7 +362,7 @@ class ExposurelogAdapter(ApiAdapter):
         if min_day_obs:
             qparams['min_day_obs'] = min_day_obs
         if max_day_obs:
-            qparams['max_day_obs'] = max_day_obs
+           qparams['max_day_obs'] = max_day_obs
         if exposure_flags:
             qparams['exposure_flags'] = exposure_flags
         if offset:
@@ -305,16 +372,19 @@ class ExposurelogAdapter(ApiAdapter):
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
+        recs = []
         try:
-            recs = requests.get(url, timeout=self.timeout).json()
+            response = requests.get(url, timeout=self.timeout)
+            recs = response.json()
         except Exception as err:
             warnings.warn(f'No {self.service} records retrieved: {err}')
-            recs = []
-        if len(recs) == 0:
-            raise Exception(f'No records retrieved from {url}')
 
+        if len(recs) == 0:
+            warn(f'No records retrieved from {url}')
+
+        if recs:
+            recs.sort(key=lambda r: r['day_obs'])
         self.recs = recs
-        self.recs.sort(key=lambda r: r['day_obs'])
         return recs
 
     def get_observation_gaps(self, instruments=None,
@@ -361,6 +431,44 @@ class ExposurelogAdapter(ApiAdapter):
 
 
 
-# gaps,recs = logrep_utils.ExposurelogAdapter(server_url='https://usdf-rsp-dev.slac.stanford.edu').get_observation_gaps('LSSTComCam')
 
-# gaps,recs = logrep_utils.ExposurelogAdapter(server_url='[[https://tucson-teststand.lsst.codes').get_observation_gaps('LSSTComCam')
+class Dashboard:  # TODO Complete and move to its own file.
+    """Verify that we can get to all the API endpoints and databases we need for
+    any of our sources.
+    """
+
+    envs = dict(
+        summit = 'https://summit-lsp.lsst.codes',
+        usdf_dev = 'https://usdf-rsp-dev.slac.stanford.edu',
+        tucson = 'https://tucson-teststand.lsst.codes',
+        # Environments not currently used:
+        #    rubin_usdf_dev = '',
+        #    data_lsst_cloud = '',
+        #    usdf = '',
+        #    base_data_facility = '',
+        #    rubin_idf_int = '',
+    )
+    adapters = [ExposurelogAdapter,
+                NarrativelogAdapter,
+                # NightReportAdapter,   # TODO
+                ]
+
+    def report(self, timeout=None):
+        url_status = dict()
+        for env,server in self.envs.items():
+            for adapter in self.adapters:
+                service = adapter(server_url=server)
+                # url_status[endpoint_url] = http_status_code
+                url_status.update(service.check_endpoints(timeout=timeout))
+        total_cnt = 0
+        good_cnt = 0
+        good = list()
+        print('\nStatus for each endpoint URL:')
+        for url,stat in url_status.items():
+            print(f'{stat}\t{url}')
+            total_cnt += 1
+            if stat == 200:
+                good_cnt += 1
+                good.append(url)
+        print(f'\nConnected to {good_cnt} out of {total_cnt} endpoints.')
+        return good_cnt, good
