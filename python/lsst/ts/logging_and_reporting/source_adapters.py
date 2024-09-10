@@ -60,6 +60,20 @@ class ApiAdapter:
         endpoints = None
 
 
+    def check_endpoints(self, timeout=0.2):
+        print(f'Try connect to each endpoint of {self.server}/{self.service} using {timeout=}.')
+        url_http_status_code = dict()
+        for ep in self.endpoints:
+            url = f'{self.server}/{self.service}/{ep}'
+            try:
+                r = requests.get(url, timeout=timeout)
+            except:
+                url_http_status_code[url] = 'timeout'
+            else:
+                url_http_status_code[url] = r.status_code
+        return url_http_status_code
+
+
     def analytics(self, recs, categorical_fields=None):
         if len(recs) == 0:
             return dict(fields=[],
@@ -228,7 +242,7 @@ class ExposurelogAdapter(ApiAdapter):
        gaps,recs = logrep_utils.ExposurelogAdapter(server_url='https://usdf-rsp-dev.slac.stanford.edu').get_observation_gaps('LSSTComCam')
        gaps,recs = logrep_utils.ExposurelogAdapter(server_url='[[https://tucson-teststand.lsst.codes').get_observation_gaps('LSSTComCam')
     """
-
+    ignore_fields = ['id']
     service = 'exposurelog'
     endpoints = [
         'messages',
@@ -397,7 +411,9 @@ class ExposurelogAdapter(ApiAdapter):
         return inst_day_rollup
 
 
-class Dashboard:
+
+
+class Dashboard:  # TODO Complete and move to its own file.
     """Verify that we can get to all the API endpoints and databases we need for
     any of our sources.
     """
@@ -413,9 +429,16 @@ class Dashboard:
         #    base_data_facility = '',
         #    rubin_idf_int = '',
     )
+    adapters = [ExposurelogAdapter,
+                NarrativelogAdapter,
+                # NightReportAdapter,   # TODO
+                ]
 
-    def report(self):
-        # TODO Try to access all endpoints, all services, all servers. Collate results.
-        for env,server in envs.items():
-            for adapter in [...]:
-                pass
+    def report(self, timeout=0.1):
+        url_status = dict()
+        for env,server in self.envs.items():
+            for adapter in self.adapters:
+                service = adapter(server_url=server)
+                # url_status[endpoint_url] = http_status_code
+                url_status.update(service.check_endpoints(timeout=timeout))
+        return url_status
