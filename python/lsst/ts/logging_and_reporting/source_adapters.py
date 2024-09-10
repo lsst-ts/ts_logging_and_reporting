@@ -39,8 +39,8 @@ class ApiAdapter:
     # TODO document class including all class variables.
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
-                 connect_timeout=3.05,  # seconds
-                 read_timeout=10 * 60,  # seconds
+                 connect_timeout=1.05,  # seconds
+                 read_timeout=2,  # seconds
                  ):
         self.server = server_url
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
@@ -60,13 +60,15 @@ class ApiAdapter:
         endpoints = None
 
 
-    def check_endpoints(self, timeout=0.2):
-        print(f'Try connect to each endpoint of {self.server}/{self.service} using {timeout=}.')
+    def check_endpoints(self, timeout=None):
+        to = (timeout or self.timeout)
+        print(f'Try connect to each endpoint of {self.server}/{self.service} '
+              f'using timeout={to}.')
         url_http_status_code = dict()
         for ep in self.endpoints:
             url = f'{self.server}/{self.service}/{ep}'
             try:
-                r = requests.get(url, timeout=timeout)
+                r = requests.get(url, timeout=(timeout or self.timeout))
             except:
                 url_http_status_code[url] = 'timeout'
             else:
@@ -245,9 +247,9 @@ class ExposurelogAdapter(ApiAdapter):
     ignore_fields = ['id']
     service = 'exposurelog'
     endpoints = [
-        'messages',
         'instruments',
         'exposures',
+        'messages',
     ]
     primary_endpoint = 'messages'
     fields = {'date_added',
@@ -298,6 +300,23 @@ class ExposurelogAdapter(ApiAdapter):
         'limit'
         }
 
+
+    def check_endpoints(self, timeout=None):
+        to = (timeout or self.timeout)
+        print(f'Try connect to each endpoint of {self.server}/{self.service} '
+              f'using timeout={to}.')
+        url_http_status_code = dict()
+
+        for ep in self.endpoints:
+            qstr = '?instrument=na' if ep == 'exposures' else ''
+            url = f'{self.server}/{self.service}/{ep}{qstr}'
+            try:
+                r = requests.get(url, timeout=to)
+            except:
+                url_http_status_code[url] = 'timeout'
+            else:
+                url_http_status_code[url] = r.status_code
+        return url_http_status_code
 
 
     def get_instruments(self):
@@ -434,11 +453,22 @@ class Dashboard:  # TODO Complete and move to its own file.
                 # NightReportAdapter,   # TODO
                 ]
 
-    def report(self, timeout=0.1):
+    def report(self, timeout=None):
         url_status = dict()
         for env,server in self.envs.items():
             for adapter in self.adapters:
                 service = adapter(server_url=server)
                 # url_status[endpoint_url] = http_status_code
                 url_status.update(service.check_endpoints(timeout=timeout))
-        return url_status
+        total_cnt = 0
+        good_cnt = 0
+        good = list()
+        print('\nStatus for each endpoint URL:')
+        for url,stat in url_status.items():
+            print(f'{stat}\t{url}')
+            total_cnt += 1
+            if stat == 200:
+                good_cnt += 1
+                good.append(url)
+        print(f'\nConnected to {good_cnt} out of {total_cnt} endpoints.')
+        return good_cnt, good
