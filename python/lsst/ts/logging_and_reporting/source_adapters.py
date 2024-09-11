@@ -43,7 +43,6 @@ def keep_fields(outfields, recs):
     if outfields:
         for rec in recs:
             nukefields = set(rec.keys()) - set(outfields)
-            print(f'{rec=} {nukefields=}')
             for f in nukefields:
                 del rec[f]
 
@@ -72,37 +71,17 @@ class SourceAdapter(ABC):
     def source_url(self):
         return f'{self.server}/{self.service}'
 
-
-    def check_endpoints(self, timeout=None):
+    def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
-        print(f'Try connect to each endpoint of {self.server}/{self.service} '
-              f'using timeout={to}.')
+        if verbose:
+            print(f'Try connect to each endpoint of {self.server}/{self.service} ')
         url_http_status_code = dict()
         for ep in self.endpoints:
             url = f'{self.server}/{self.service}/{ep}'
             try:
                 r = requests.get(url, timeout=(timeout or self.timeout))
-            except:
-                url_http_status_code[url] = 'timeout'
-            else:
-                url_http_status_code[url] = r.status_code
-        return url_http_status_code
-
-        service = None
-        endpoints = None
-
-
-    def check_endpoints(self, timeout=None):
-        to = (timeout or self.timeout)
-        print(f'Try connect to each endpoint of {self.server}/{self.service} '
-              f'using timeout={to}.')
-        url_http_status_code = dict()
-        for ep in self.endpoints:
-            url = f'{self.server}/{self.service}/{ep}'
-            try:
-                r = requests.get(url, timeout=(timeout or self.timeout))
-            except:
-                url_http_status_code[url] = 'timeout'
+            except Exception as err:
+                url_http_status_code[url] = 'GET error'
             else:
                 url_http_status_code[url] = r.status_code
         return url_http_status_code
@@ -329,10 +308,10 @@ class ExposurelogAdapter(SourceAdapter):
         }
 
 
-    def check_endpoints(self, timeout=None):
+    def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
-        print(f'Try connect to each endpoint of {self.server}/{self.service} '
-              f'using timeout={to}.')
+        if verbose:
+            print(f'Try connect to each endpoint of {self.server}/{self.service} ')
         url_http_status_code = dict()
 
         for ep in self.endpoints:
@@ -340,8 +319,8 @@ class ExposurelogAdapter(SourceAdapter):
             url = f'{self.server}/{self.service}/{ep}{qstr}'
             try:
                 r = requests.get(url, timeout=to)
-            except:
-                url_http_status_code[url] = 'timeout'
+            except Exception as err:
+                url_http_status_code[url] = 'GET error'
             else:
                 url_http_status_code[url] = r.status_code
         return url_http_status_code
@@ -485,21 +464,44 @@ class Dashboard:  # TODO Complete and move to its own file.
                 ]
 
     def report(self, timeout=None):
+        """Check our ability to connect to every Source on every Environment.
+        Report a summary.
+
+        RETURN: percentage of good connectons.
+        """
         url_status = dict()
         for env,server in self.envs.items():
             for adapter in self.adapters:
                 service = adapter(server_url=server)
                 # url_status[endpoint_url] = http_status_code
                 url_status.update(service.check_endpoints(timeout=timeout))
-        total_cnt = 0
-        good_cnt = 0
+
+        total_cnt = good_cnt = 0
         good = list()
-        print('\nStatus for each endpoint URL:')
+        bad = list()
         for url,stat in url_status.items():
-            print(f'{stat}\t{url}')
             total_cnt += 1
             if stat == 200:
                 good_cnt += 1
                 good.append(url)
-        print(f'\nConnected to {good_cnt} out of {total_cnt} endpoints.')
-        return good_cnt, good
+            else:
+                bad.append((url,stat))
+
+        print(f'\nConnected to {good_cnt} out of {total_cnt} endpoints.'
+              f'({good_cnt/total_cnt:.0%})'
+              )
+        goodstr = "\n\t".join(good)
+        print(f'Successful connects ({good_cnt}): ')
+        for gurl in good:
+            print(f'\t{gurl}')
+
+        print(f'Failed connects ({total_cnt - good_cnt}): ')
+        for burl,stat in bad:
+            print(f'\t{stat}: {burl}')
+
+        status = dict(num_good=good_cnt,
+                      num_total=total_cnt,
+                      good_urls=good,
+                      bad_ursl=bad,
+                      )
+        return good_cnt/total_cnt
