@@ -11,19 +11,19 @@ tags:
   - prototype
   - exposure
 parameters:
-  record_limit:
-    type: integer
-    description: Max number of records to output
-    default: 99
-    minimum: 1
-    maximum: 9999
   day_obs:
     type: string
-    description: The night to report on. (YYYY-MM-DD, TODAY, YESTERDAY)
+    description: >
+      The night to report on. (Allowed: YYYY-MM-DD, TODAY, YESTERDAY)
+      The report will include days upto, but not including, day_obs.
+      For a value of TODAY, the last observing night that will be
+      included in the report will be the one that started yesterday.
+      This is usually what you want.
     default: "TODAY"
   number_of_days:
     type: integer
-    description: Number of days to show (ending in day_obs)
+    description: >
+      Number of days to show in the report.
     default: 1
     minimum: 1
     maximum: 9

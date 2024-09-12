@@ -20,6 +20,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+'''\
+TODO: This is considered Proof of Concept  code.
+Tests and documentation exist minimally or not at all since until the
+concept is Proven, it all might be thrown away or rewritten.
+'''
+
+
 ############################################
 # Python Standard Library
 from urllib.parse import urlencode
@@ -36,15 +43,6 @@ import requests
 MAX_CONNECT_TIMEOUT = 3.1    # seconds
 MAX_READ_TIMEOUT = 90 * 60   # seconds
 
-def keep_fields(outfields, recs):
-    """Keep only keys in OUTFIELDS list of RECS (list of dicts)
-    SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
-    """
-    if outfields:
-        for rec in recs:
-            nukefields = set(rec.keys()) - set(outfields)
-            for f in nukefields:
-                del rec[f]
 
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
@@ -67,25 +65,29 @@ class SourceAdapter(ABC):
         service = None
         endpoints = None
 
-    @property
-    def source_url(self):
-        return f'{self.server}/{self.service}'
-
-
-    def check_endpoints(self, timeout=None):
-        to = (timeout or self.timeout)
-        print(f'Try connect to each endpoint of {self.server}/{self.service} '
-              f'using timeout={to}.')
-        url_http_status_code = dict()
-        for ep in self.endpoints:
-            url = f'{self.server}/{self.service}/{ep}'
-            try:
-                r = requests.get(url, timeout=(timeout or self.timeout))
-            except:
-                url_http_status_code[url] = 'timeout'
+    def day_table(self, recs, datetime_field,
+                  content_field='message_text',
+                  time_only=None,
+                  is_dayobs=False,
+                  ):
+        def date_time(rec):
+            if is_dayobs:
+                dt = datetime.strptime(str(rec[datetime_field]), '%Y%m%d')
             else:
-                url_http_status_code[url] = r.status_code
-        return url_http_status_code
+                dt = datetime.fromisoformat(rec[datetime_field])
+            return dt.replace(microsecond=0)
+
+        if len(recs) == 0:
+            print('Nothing to display.')
+            return
+
+        dates = set([date_time(r).date() for r in recs])
+        if time_only is None:
+            time_only = True if len(dates) == 1 else False
+        for rec in recs:
+            dt = date_time(rec)
+            dtstr = str(dt.time()) if time_only else str(dt)
+            print(f"{dtstr}: {rec[content_field]}")
 
     @property
     def source_url(self):
@@ -94,7 +96,8 @@ class SourceAdapter(ABC):
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
         if verbose:
-            print(f'Try connect to each endpoint of {self.server}/{self.service} ')
+            print(f'Try connect to each endpoint of'
+                  f' {self.server}/{self.service} ')
         url_http_status_code = dict()
         for ep in self.endpoints:
             url = f'{self.server}/{self.service}/{ep}'
@@ -134,6 +137,7 @@ class SourceAdapter(ABC):
                     facet_fields=facflds,
                     facets=facets,
                     )
+# END: class SourceAdapter
 
 
 # Not available on SLAC (usdf) as of 9/9/2024.
@@ -148,75 +152,31 @@ class NarrativelogAdapter(SourceAdapter):
     service = 'narrativelog'
     endpoints = ['messages',]
     primary_endpoint = 'messages'
-    fields = {'category',
-              'components',
-              'cscs',
-              'date_added',
-              'date_begin',
-              'date_end',
-              'date_invalidated',
-              'id',
-              'is_human',
-              'is_valid',
-              'level',
-              'message_text',
-              'parent_id',
-              'primary_hardware_components',
-              'primary_software_components',
-              'site_id',
-              'subsystems',
-              'systems',
-              'tags',
-              'time_lost',
-              'time_lost_type',
-              'urls',
-              'user_agent',
-              'user_id'}
-    filters = {
-        'site_ids',
-        'message_text',  # Message text contain ...
-        'min_level',     # inclusive
-        'max_level',     # exclusive
-        'user_ids',
-        'user_agents',
-        'categories',
-        'exclude_categories',
-        'time_lost_types',
-        'exclude_time_lost_types',
-        'tags',          # at least one must be present.
-        'exclude_tags',  # all must be absent
-        'systems',
-        'exclude_systems',
-        'subsystems',
-        'exclude_subsystems',
-        'cscs',
-        'exclude_cscs',
-        'components',
-        'exclude_components',
-        'primary_software_components',
-        'exclude_primary_software_components',
-        'primary_hardware_components',
-        'exclude_primary_hardware_components',
-        'urls',
-        'min_time_lost',
-        'max_time_lost',
-        'has_date_begin',
-        'min_date_begin',
-        'max_date_begin',
-        'has_date_end',
-        'min_date_end',
-        'max_date_end',
-        'is_human',      # Allowed: either, true, false; Default=either
-        'is_valid',      # Allowed: either, true, false; Default=true
-        'min_date_added', # inclusive, TAI ISO string, no TZ
-        'max_date_added', # exclusive, TAI ISO string, no TZ
-        'has_date_invalidated',
-        'min_date_invalidated',
-        'max_date_invalidated',
-        'has_parent_id',
-        'order_by',
-        'offset',
-        'limit'
+    outfields = {
+        # 'category',
+        # 'components',
+        # 'cscs',
+        'date_added',
+        # 'date_begin',
+        # 'date_end',
+        # 'date_invalidated',
+        # 'id',
+        # 'is_human',
+        # 'is_valid',
+        # 'level',
+        'message_text',
+        # 'parent_id',
+        # 'primary_hardware_components',
+        # 'primary_software_components',
+        # 'site_id',
+        # 'subsystems',
+        # 'systems',
+        # 'tags',
+        'time_lost',
+        'time_lost_type',
+        # 'urls',
+        # 'user_agent',
+        # 'user_id',
     }
 
     def get_messages(self,
@@ -228,7 +188,6 @@ class NarrativelogAdapter(SourceAdapter):
                      is_valid='either',
                      offset=None,
                      limit=None,
-                     outfields=None,
                      ):
         qparams = dict(is_human=is_human, is_valid=is_valid)
         if site_ids:
@@ -251,25 +210,29 @@ class NarrativelogAdapter(SourceAdapter):
             warn(f'No {self.service} records retrieved: {err}')
             recs = []
 
-        keep_fields(outfields, recs)
-        self.recs = recs
-        return self.recs
+        keep_fields(recs, self.outfields)
+        return recs,url
 
-    def get_timelost(self, rollup='day'):
+    def get_timelost(self, recs, rollup='day'):
+        def iso_date_begin(rec):
+            return datetime.fromisoformat(rec['date_begin']).date().isoformat()
+
         day_tl = dict() # day_tl[day] = totalDayTimeLost
-        for day,dayrecs in itertools.groupby(
-                self.recs,
-                key=lambda r: datetime.fromisoformat(r['date_begin']).date().isoformat()
-                ):
+        for day,dayrecs in itertools.groupby(recs, key=iso_date_begin):
             day_tl[day] = sum([r['time_lost'] for r in dayrecs])
         return day_tl
+# END: class NarrativelogAdapter
 
 class ExposurelogAdapter(SourceAdapter):
     """TODO full documentation
 
     EXAMPLES:
-       gaps,recs = logrep_utils.ExposurelogAdapter(server_url='https://usdf-rsp-dev.slac.stanford.edu').get_observation_gaps('LSSTComCam')
-       gaps,recs = logrep_utils.ExposurelogAdapter(server_url='[[https://tucson-teststand.lsst.codes').get_observation_gaps('LSSTComCam')
+       gaps,recs = logrep_utils.ExposurelogAdapter(
+             server_url='https://usdf-rsp-dev.slac.stanford.edu'
+             ).get_observation_gaps('LSSTComCam')
+       gaps,recs = logrep_utils.ExposurelogAdapter(
+             server_url='[[https://tucson-teststand.lsst.codes'
+             ).get_observation_gaps('LSSTComCam')
     """
     ignore_fields = ['id']
     service = 'exposurelog'
@@ -279,59 +242,32 @@ class ExposurelogAdapter(SourceAdapter):
         'messages',
     ]
     primary_endpoint = 'messages'
-    fields = {'date_added',
-              'date_invalidated',
-              'day_obs',
-              'exposure_flag',
-              'id',
-              'instrument',
-              'is_human',
-              'is_valid',
-              'level',
-              'message_text',
-              'obs_id',
-              'parent_id',
-              'seq_num',
-              'site_id',
-              'tags',
-              'urls',
-              'user_agent',
-              'user_id'}
-    filters = {
-        'site_ids',
-        'obs_id',
-        'instruments',
-        'min_day_obs',  # inclusive, integer in form YYYMMDD
-        'max_day_obs',  # exclusive, integer in form YYYMMDD
-        'min_seq_num',
-        'max_seq_num',
-        'message_text',  # Message text contain ...
-        'min_level',     # inclusive
-        'max_level',     # exclusive
-        'tags',          # at least one must be present.
-        'urls',
-        'exclude_tags',  # all must be absent
-        'user_ids',
-        'user_agents',
-        'is_human',      # Allowed: either, true, false; Default=either
-        'is_valid',      # Allowed: either, true, false; Default=true
-        'exposure_flags',
-        'min_date_added', # inclusive, TAI ISO string, no TZ
-        'max_date_added', # exclusive, TAI ISO string, no TZ
-        'has_date_invalidated',
-        'min_date_invalidated',
-        'max_date_invalidated',
-        'has_parent_id',
-        'order_by',
-        'offset',
-        'limit'
-        }
-
+    outfields = {
+        'date_added',
+        # 'date_invalidated',
+        # 'day_obs',
+        # 'exposure_flag',
+        # 'id',
+        # 'instrument',
+        # 'is_human',
+        # 'is_valid',
+        # 'level',
+        'message_text',
+        # 'obs_id',
+        # 'parent_id',
+        # 'seq_num',
+        # 'site_id',
+        # 'tags',
+        # 'urls',
+        # 'user_agent',
+        # 'user_id',
+    }
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
         if verbose:
-            print(f'Try connect to each endpoint of {self.server}/{self.service} ')
+            print(f'Try connect to each endpoint of '
+                  f'{self.server}/{self.service} ')
         url_http_status_code = dict()
 
         for ep in self.endpoints:
@@ -378,7 +314,6 @@ class ExposurelogAdapter(SourceAdapter):
                      exposure_flags=None,
                      offset=None,
                      limit=None,
-                     outfields=None,
                      ):
         qparams = dict(is_human=is_human, is_valid=is_valid)
         if site_ids:
@@ -405,7 +340,7 @@ class ExposurelogAdapter(SourceAdapter):
             response = requests.get(url, timeout=self.timeout)
             recs = response.json()
         except Exception as err:
-            warnings.warn(f'No {self.service} records retrieved: {err}')
+            warn(f'No {self.service} records retrieved: {err}')
 
         if len(recs) == 0:
             warn(f'No records retrieved from {url}')
@@ -413,9 +348,8 @@ class ExposurelogAdapter(SourceAdapter):
         if recs:
             recs.sort(key=lambda r: r['day_obs'])
 
-        keep_fields(outfields, recs)
-        self.recs = recs
-        return self.recs
+        keep_fields(recs, self.outfields)
+        return recs,url
 
     def get_observation_gaps(self, instruments=None,
                              min_day_obs=None,  # YYYYMMDD
@@ -458,11 +392,11 @@ class ExposurelogAdapter(SourceAdapter):
                     inst_day_rollup[instrum][day] = sum([t[2] for t in tuples])
 
         return inst_day_rollup
+# END: class ExposurelogAdapter
 
 
 
-
-class Dashboard:  # TODO Complete and move to its own file.
+class Dashboard:  # TODO Complete and move to its own file (utils.py).
     """Verify that we can get to all the API endpoints and databases we need for
     any of our sources.
     """
@@ -525,3 +459,17 @@ class Dashboard:  # TODO Complete and move to its own file.
                       bad_ursl=bad,
                       )
         return good_cnt/total_cnt
+# END: class Dashboard
+
+
+
+# TODO Move to its own file (reports.py).
+def keep_fields(recs, outfields):
+    """Keep only keys in OUTFIELDS list of RECS (list of dicts)
+        SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
+        """
+    if outfields:
+        for rec in recs:
+            nukefields = set(rec.keys()) - set(outfields)
+            for f in nukefields:
+                del rec[f]
