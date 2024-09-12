@@ -71,6 +71,26 @@ class SourceAdapter(ABC):
     def source_url(self):
         return f'{self.server}/{self.service}'
 
+
+    def check_endpoints(self, timeout=None):
+        to = (timeout or self.timeout)
+        print(f'Try connect to each endpoint of {self.server}/{self.service} '
+              f'using timeout={to}.')
+        url_http_status_code = dict()
+        for ep in self.endpoints:
+            url = f'{self.server}/{self.service}/{ep}'
+            try:
+                r = requests.get(url, timeout=(timeout or self.timeout))
+            except:
+                url_http_status_code[url] = 'timeout'
+            else:
+                url_http_status_code[url] = r.status_code
+        return url_http_status_code
+
+    @property
+    def source_url(self):
+        return f'{self.server}/{self.service}'
+
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
         if verbose:
