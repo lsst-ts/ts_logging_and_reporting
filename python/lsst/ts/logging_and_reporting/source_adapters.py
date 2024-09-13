@@ -82,10 +82,10 @@ class SourceAdapter(ABC):
                 dt = datetime.fromisoformat(rec[datetime_field])
             return dt.replace(microsecond=0)
 
+        print('USING PROTOTYPE-1')
         if len(recs) == 0:
             print('Nothing to display.')
             return
-
         dates = set([date_time(r).date() for r in recs])
         if time_only is None:
             time_only = True if len(dates) == 1 else False
