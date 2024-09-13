@@ -31,7 +31,7 @@ concept is Proven, it all might be thrown away or rewritten.
 # Python Standard Library
 from urllib.parse import urlencode
 import itertools
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 from warnings import warn
 from collections import defaultdict
 from abc import ABC
@@ -40,8 +40,8 @@ from abc import ABC
 # External Packages
 import requests
 
-MAX_CONNECT_TIMEOUT = 3.1    # seconds
-MAX_READ_TIMEOUT = 90 * 60   # seconds
+MAX_CONNECT_TIMEOUT = 3.1   # seconds
+MAX_READ_TIMEOUT = 180      # seconds
 
 
 class SourceAdapter(ABC):
@@ -65,15 +65,27 @@ class SourceAdapter(ABC):
         service = None
         endpoints = None
 
-    def row_print_func(self, datetime_str, rec):
-        #!print(f"{datetime_str} | {rec['obs_id']} | {rec['message_text']}")
-        print(f"{datetime_str} | {rec['message_text']}")
+    def keep_fields(self, recs, outfields):
+        """Keep only keys in OUTFIELDS list of RECS (list of dicts)
+        SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
+        """
+        if outfields:
+            for rec in recs:
+                nukefields = set(rec.keys()) - set(outfields)
+                for f in nukefields:
+                    del rec[f]
 
+    @property
+    def row_header(self):
+        return '| Time | Message |\n|--------|------|'
+
+    def row_str_func(self, datetime_str, rec):
+        return f"{datetime_str} | {rec['message_text']}"
 
     def day_table(self, recs, datetime_field,
                   time_only=None,
                   is_dayobs=False,
-                  row_print_func=None,
+                  row_str_func=None,
                   ):
         def date_time(rec):
             if is_dayobs:
@@ -82,18 +94,18 @@ class SourceAdapter(ABC):
                 dt = datetime.fromisoformat(rec[datetime_field])
             return dt.replace(microsecond=0)
 
-        print('USING PROTOTYPE-1')
         if len(recs) == 0:
             print('Nothing to display.')
             return
         dates = set([date_time(r).date() for r in recs])
         if time_only is None:
             time_only = True if len(dates) == 1 else False
+        tablestr = ''
         for rec in recs:
             dt = date_time(rec)
             dtstr = str(dt.time()) if time_only else str(dt)
-            #!print(f"{dtstr} | {rec['obs_id']} | {rec['message_text']}")
-            self.row_print_func(dtstr, rec)
+            tablestr += f'\n{self.row_str_func(dtstr, rec)}'
+        return tablestr + ":EOT"
 
     @property
     def source_url(self):
@@ -216,7 +228,7 @@ class NarrativelogAdapter(SourceAdapter):
             warn(f'No {self.service} records retrieved: {err}')
             recs = []
 
-        keep_fields(recs, self.outfields)
+        self.keep_fields(recs, self.outfields)
         return recs,url
 
     def get_timelost(self, recs, rollup='day'):
@@ -269,8 +281,12 @@ class ExposurelogAdapter(SourceAdapter):
         # 'user_id',
     }
 
-    def row_print_func(self, datetime_str, rec):
-        print(f"{datetime_str} | {rec['obs_id']} | {rec['message_text']}")
+    @property
+    def row_header(self):
+        return '| Time | OBS ID | Message |\n|--------|-------|------|'
+
+    def row_str_func(self, datetime_str, rec):
+        return f"{datetime_str} | {rec['obs_id']} | {rec['message_text']}"
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
@@ -357,7 +373,7 @@ class ExposurelogAdapter(SourceAdapter):
         if recs:
             recs.sort(key=lambda r: r['day_obs'])
 
-        keep_fields(recs, self.outfields)
+        self.keep_fields(recs, self.outfields)
         return recs,url
 
     def get_observation_gaps(self, instruments=None,
@@ -405,7 +421,7 @@ class ExposurelogAdapter(SourceAdapter):
 
 
 
-class Dashboard:  # TODO Complete and move to its own file (utils.py).
+class Dashboard:  # TODO Move to its own file (utils.py).
     """Verify that we can get to all the API endpoints and databases we need for
     any of our sources.
     """
@@ -470,15 +486,38 @@ class Dashboard:  # TODO Complete and move to its own file (utils.py).
         return good_cnt/total_cnt
 # END: class Dashboard
 
+from astroplan import Observer
+from astropy.time import Time
 
+class Almanac:
 
-# TODO Move to its own file (reports.py).
-def keep_fields(recs, outfields):
-    """Keep only keys in OUTFIELDS list of RECS (list of dicts)
-        SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
-        """
-    if outfields:
-        for rec in recs:
-            nukefields = set(rec.keys()) - set(outfields)
-            for f in nukefields:
-                del rec[f]
+    def __init__(self, *, day_obs=None, site='Rubin'):
+        if day_obs is None:
+            astro_day = date.today() - timedelta(days=1)
+        else:
+            astro_day = datetime.strptime(str(day_obs), '%Y%m%d').date()
+
+        self.observer = Observer.at_site(site, timezone='Chile/Continental')
+        self.astro_day = astro_day
+        self.astro_noon = datetime.combine(self.astro_day,time(12))
+
+        self.get_moon()
+        self.get_twilight()
+
+    def get_moon(self):
+        self.moon_rise_time = self.observer.moon_rise_time(self.astro_noon)
+        self.moon_set_time = self.observer.moon_set_time(self.astro_noon)
+
+    @property
+    def moon_rise(self):
+        return self.moon_rise_time
+
+    @property
+    def moon_set(self):
+        return self.moon_set_time
+
+    def get_twilight(self):
+        self.twilight_morning = self.observer.twilight_morning_astronomical(
+            self.observer.datetime_to_astropy_time(self.astro_noon))
+        self.twilight_evening = self.observer.twilight_evening_astronomical(
+            self.observer.datetime_to_astropy_time(self.astro_noon))
