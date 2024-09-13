@@ -65,10 +65,15 @@ class SourceAdapter(ABC):
         service = None
         endpoints = None
 
+    def row_print_func(self, datetime_str, rec):
+        #!print(f"{datetime_str} | {rec['obs_id']} | {rec['message_text']}")
+        print(f"{datetime_str} | {rec['message_text']}")
+
+
     def day_table(self, recs, datetime_field,
-                  content_field='message_text',
                   time_only=None,
                   is_dayobs=False,
+                  row_print_func=None,
                   ):
         def date_time(rec):
             if is_dayobs:
@@ -87,7 +92,8 @@ class SourceAdapter(ABC):
         for rec in recs:
             dt = date_time(rec)
             dtstr = str(dt.time()) if time_only else str(dt)
-            print(f"{dtstr}: {rec[content_field]}")
+            #!print(f"{dtstr} | {rec['obs_id']} | {rec['message_text']}")
+            self.row_print_func(dtstr, rec)
 
     @property
     def source_url(self):
@@ -253,7 +259,7 @@ class ExposurelogAdapter(SourceAdapter):
         # 'is_valid',
         # 'level',
         'message_text',
-        # 'obs_id',
+        'obs_id',
         # 'parent_id',
         # 'seq_num',
         # 'site_id',
@@ -262,6 +268,9 @@ class ExposurelogAdapter(SourceAdapter):
         # 'user_agent',
         # 'user_id',
     }
+
+    def row_print_func(self, datetime_str, rec):
+        print(f"{datetime_str} | {rec['obs_id']} | {rec['message_text']}")
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
