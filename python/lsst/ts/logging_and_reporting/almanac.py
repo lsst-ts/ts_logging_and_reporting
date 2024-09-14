@@ -55,12 +55,15 @@ class Almanac:
             'Moon Rise': self.moon_rise_time.iso,
             'Moon Set': self.moon_set_time.iso,
             'Moon Illumination': f'{self.moon_illum:.0%}',
+
             'Astronomical Twilight (morning)': self.ast_twilight_morning.iso,
             'Astronomical Twilight (evening)': self.ast_twilight_evening.iso,
             'Nautical Twilight (morning)': self.nau_twilight_morning.iso,
             'Nautical Twilight (evening)': self.nau_twilight_evening.iso,
             'Civil Twilight (morning)': self.civ_twilight_morning.iso,
             'Civil Twilight (evening)': self.civ_twilight_evening.iso,
+            'Sun Rise': self.sun_rise_time.iso,
+            'Sun Set': self.sun_set_time.iso,
             }
         help_dict = {
             'Moon Rise': '',
@@ -72,5 +75,7 @@ class Almanac:
             'Nautical Twilight (evening)': '(-12 degrees)',
             'Civil Twilight (morning)': '(-6 degrees)',
             'Civil Twilight (evening)': '(-6 degrees)',
+            'Sun Rise': '',
+            'Sun Set': '',
             }
         return data_dict, help_dict
