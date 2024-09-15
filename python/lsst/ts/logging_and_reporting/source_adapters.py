@@ -93,6 +93,12 @@ class SourceAdapter(ABC):
             else:
                 dt = datetime.fromisoformat(rec[datetime_field])
             return dt.replace(microsecond=0)
+        def day(rec):
+            if 'day_obs' in rec:
+                return rec['day_obs']
+            else:
+                # TODO Wrong!!! Unlike day_obs, this will wrap across midnight
+                return datetime.fromisoformat(rec[datetime_field]).date().strftime('%Y%m%d')
 
         if len(recs) == 0:
             print('Nothing to display.')
@@ -101,10 +107,15 @@ class SourceAdapter(ABC):
         if time_only is None:
             time_only = True if len(dates) == 1 else False
         tablestr = ''
-        for rec in recs:
-            dt = date_time(rec)
-            dtstr = str(dt.time()) if time_only else str(dt)
-            tablestr += f'\n{self.row_str_func(dtstr, rec)}'
+        #!for rec in recs:
+
+        recs = sorted(recs,key=lambda r: day(r))
+        for k,g in itertools.groupby(recs, key=lambda r: day(r)):
+            tablestr += f'\n{k}: ##########################'
+            for rec in g:
+                dt = date_time(rec)
+                dtstr = str(dt.time()) if time_only else str(dt)
+                tablestr += f'\n{self.row_str_func(dtstr, rec)}'
         return tablestr + ":EOT"
 
     @property
@@ -163,6 +174,66 @@ class NightReportAdapter(SourceAdapter):
     service = "nightreport"
     endpoints = ['reports']
     primary_endpoint = 'reports'
+    outfields = {
+        'confluence_url',
+        'date_added',
+        'date_invalidated',
+        'date_sent',
+        'day_obs',
+        'id',
+        'is_valid',
+        'observers_crew',
+        'parent_id',
+        'site_id',
+        'summary',
+        'telescope',
+        'telescope_status',
+        'user_agent',
+        'user_id',
+        }
+
+
+    def get_reports(self,
+                    site_ids=None,
+                    summary=None,
+                    min_day_obs=None,
+                    max_day_obs=None,
+                    is_human='either',
+                    is_valid='either',
+                    limit=None,
+                    ):
+        qparams = dict(is_human=is_human, is_valid=is_valid)
+        if site_ids:
+            qparams['site_ids'] = site_ids
+        if summary:
+            qparams['summary'] = summary
+        if min_day_obs:
+            qparams['min_day_obs'] = min_day_obs
+        if max_day_obs:
+            qparams['max_day_obs'] = max_day_obs
+        if limit:
+            qparams['limit'] = limit
+
+        qstr = urlencode(qparams)
+        url = f'{self.server}/{self.service}/reports?{qstr}'
+        try:
+            recs = requests.get(url, timeout=self.timeout).json()
+            recs.sort(key=lambda r: r['day_obs'])
+        except Exception as err:
+            warn(f'No {self.service} records retrieved: {err}')
+            recs = []
+
+        self.keep_fields(recs, self.outfields)
+        return recs,url
+
+    def nightly_tickets(self, recs):
+        tickets = defaultdict(set)  # tickets[day_obs] = {ticket_url, ...}
+        for r in recs:
+            ticket_url = r['confluence_url']
+            if ticket_url:
+                tickets[r['day_obs']].add(ticket_url)
+        return {k:list(v) for k,v in tickets.items()}
+
 
 class NarrativelogAdapter(SourceAdapter):
     """TODO full documentation
@@ -263,7 +334,7 @@ class ExposurelogAdapter(SourceAdapter):
     outfields = {
         'date_added',
         # 'date_invalidated',
-        # 'day_obs',
+        'day_obs',
         # 'exposure_flag',
         # 'id',
         # 'instrument',
@@ -317,8 +388,16 @@ class ExposurelogAdapter(SourceAdapter):
         # Flatten the lists
         return list(itertools.chain.from_iterable(instruments.values()))
 
-    def get_exposures(self, instrument, registry=1):
+    def get_exposures(self, instrument,
+                      registry=1,
+                      min_day_obs=None,
+                      max_day_obs=None,
+                      ):
         qparams = dict(instrument=instrument, registery=registry)
+        if min_day_obs:
+            qparams['min_day_obs'] = min_day_obs
+        if max_day_obs:
+           qparams['max_day_obs'] = max_day_obs
         url = f'{self.server}/{self.service}/exposures?{urlencode(qparams)}'
         try:
             recs = requests.get(url, timeout=self.timeout).json()
@@ -388,7 +467,10 @@ class ExposurelogAdapter(SourceAdapter):
         inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
 
         for instrum in instruments:
-            recs = self.get_exposures(instrum)
+            recs = self.get_exposures(instrum,
+                                      min_day_obs=min_day_obs,
+                                      max_day_obs=max_day_obs,
+                                      )
             instrum_gaps = dict()
             for day,dayrecs in itertools.groupby(recs,
                                                  key=lambda r: r['day_obs']):

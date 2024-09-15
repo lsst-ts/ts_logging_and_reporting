@@ -1,3 +1,5 @@
+import lsst.ts.logging_and_reporting.source_adapters as sad
+
 class Dashboard:  # TODO Move to its own file (utils.py).
     """Verify that we can get to all the API endpoints and databases we need for
     any of our sources.
@@ -14,9 +16,9 @@ class Dashboard:  # TODO Move to its own file (utils.py).
         #    base_data_facility = '',
         #    rubin_idf_int = '',
     )
-    adapters = [ExposurelogAdapter,
-                NarrativelogAdapter,
-                # NightReportAdapter,   # TODO
+    adapters = [sad.ExposurelogAdapter,
+                sad.NarrativelogAdapter,
+                # sad.NightReportAdapter,   # TODO
                 ]
 
     def report(self, timeout=None):
