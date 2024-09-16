@@ -82,6 +82,7 @@ class SourceAdapter(ABC):
     def row_str_func(self, datetime_str, rec):
         return f"{datetime_str} | {rec['message_text']}"
 
+    # Break on DAY_OBS. Within that, break on DATE, within that only show time.
     def day_table(self, recs, datetime_field,
                   time_only=None,
                   is_dayobs=False,
@@ -93,12 +94,17 @@ class SourceAdapter(ABC):
             else:
                 dt = datetime.fromisoformat(rec[datetime_field])
             return dt.replace(microsecond=0)
-        def day(rec):
+
+        def obs_night(rec):
             if 'day_obs' in rec:
                 return rec['day_obs']
             else:
                 # TODO Wrong!!! Unlike day_obs, this will wrap across midnight
                 return datetime.fromisoformat(rec[datetime_field]).date().strftime('%Y%m%d')
+
+        def obs_date(rec):
+            dt = datetime.fromisoformat(rec[datetime_field])
+            return dt.replace(microsecond=0)
 
         if len(recs) == 0:
             print('Nothing to display.')
@@ -106,17 +112,22 @@ class SourceAdapter(ABC):
         dates = set([date_time(r).date() for r in recs])
         if time_only is None:
             time_only = True if len(dates) == 1 else False
-        tablestr = ''
-        #!for rec in recs:
 
-        recs = sorted(recs,key=lambda r: day(r))
-        for k,g in itertools.groupby(recs, key=lambda r: day(r)):
-            tablestr += f'\n{k}: ##########################'
-            for rec in g:
-                dt = date_time(rec)
-                dtstr = str(dt.time()) if time_only else str(dt)
-                tablestr += f'\n{self.row_str_func(dtstr, rec)}'
-        return tablestr + ":EOT"
+        table = list()
+        # Group by night.
+        recs = sorted(recs,key=lambda r: date_time(r))
+        for night,g0 in itertools.groupby(recs, key=lambda r: obs_night(r)):
+            # Group by date
+            table.append(f'## NIGHT: {night}: ')
+            for date,g1 in itertools.groupby(g0, key=lambda r: obs_date(r)):
+                table.append(f'### DATE: {date.date()}: ')
+                for rec in g0:
+                    dt = date_time(rec)
+                    #! dtstr = str(dt.time()) if time_only else str(dt)
+                    dtstr = str(dt.time())
+                    table.append(f'{self.row_str_func(dtstr, rec)}')
+        table.append(':EOT')
+        return table
 
     @property
     def source_url(self):
@@ -220,7 +231,6 @@ class NightReportAdapter(SourceAdapter):
             recs = requests.get(url, timeout=self.timeout).json()
             recs.sort(key=lambda r: r['day_obs'])
         except Exception as err:
-            warn(f'No {self.service} records retrieved: {err}')
             recs = []
 
         self.keep_fields(recs, self.outfields)
@@ -236,8 +246,6 @@ class NightReportAdapter(SourceAdapter):
 
 
 class NarrativelogAdapter(SourceAdapter):
-    """TODO full documentation
-    """
     service = 'narrativelog'
     endpoints = ['messages',]
     primary_endpoint = 'messages'
@@ -296,7 +304,6 @@ class NarrativelogAdapter(SourceAdapter):
             recs = requests.get(url, timeout=self.timeout).json()
             recs.sort(key=lambda r: r['date_begin'])
         except Exception as err:
-            warn(f'No {self.service} records retrieved: {err}')
             recs = []
 
         self.keep_fields(recs, self.outfields)
@@ -313,16 +320,6 @@ class NarrativelogAdapter(SourceAdapter):
 # END: class NarrativelogAdapter
 
 class ExposurelogAdapter(SourceAdapter):
-    """TODO full documentation
-
-    EXAMPLES:
-       gaps,recs = logrep_utils.ExposurelogAdapter(
-             server_url='https://usdf-rsp-dev.slac.stanford.edu'
-             ).get_observation_gaps('LSSTComCam')
-       gaps,recs = logrep_utils.ExposurelogAdapter(
-             server_url='[[https://tucson-teststand.lsst.codes'
-             ).get_observation_gaps('LSSTComCam')
-    """
     ignore_fields = ['id']
     service = 'exposurelog'
     endpoints = [
@@ -383,7 +380,6 @@ class ExposurelogAdapter(SourceAdapter):
         try:
             instruments = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
-            warn(f'No instruments retrieved: {err}')
             instruments = dict(dummy=[])
         # Flatten the lists
         return list(itertools.chain.from_iterable(instruments.values()))
@@ -402,7 +398,6 @@ class ExposurelogAdapter(SourceAdapter):
         try:
             recs = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
-            warn(f'No exposures retrieved: {err}')
             recs = []
         return recs
 
@@ -444,10 +439,7 @@ class ExposurelogAdapter(SourceAdapter):
             response = requests.get(url, timeout=self.timeout)
             recs = response.json()
         except Exception as err:
-            warn(f'No {self.service} records retrieved: {err}')
-
-        if len(recs) == 0:
-            warn(f'No records retrieved from {url}')
+            recs = []
 
         if recs:
             recs.sort(key=lambda r: r['day_obs'])
@@ -455,7 +447,8 @@ class ExposurelogAdapter(SourceAdapter):
         self.keep_fields(recs, self.outfields)
         return recs,url
 
-    def get_observation_gaps(self, instruments=None,
+    def get_observation_gaps(self,
+                             instruments=None,
                              min_day_obs=None,  # YYYYMMDD
                              max_day_obs=None,  # YYYYMMDD
                              ):
@@ -463,9 +456,8 @@ class ExposurelogAdapter(SourceAdapter):
             instruments = self.get_instruments()
         assert isinstance(instruments,list), \
             f'"instruments" must be a list.  Got {instruments!r}'
-        # inst_day_rollupol[instrument] => dict[day] => exposureGapInMinutes
+        # inst_day_rollup[instrument] => dict[day] => exposureGapInMinutes
         inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
-
         for instrum in instruments:
             recs = self.get_exposures(instrum,
                                       min_day_obs=min_day_obs,
@@ -492,10 +484,8 @@ class ExposurelogAdapter(SourceAdapter):
                     end = rec['timespan_end']
                 instrum_gaps[day] = gaps
 
-                #!roll = dict()
                 # Rollup gap times by day
                 for day,tuples in instrum_gaps.items():
-                    #!roll[day] = sum([t[2] for t in tuples])
                     inst_day_rollup[instrum][day] = sum([t[2] for t in tuples])
 
         return inst_day_rollup

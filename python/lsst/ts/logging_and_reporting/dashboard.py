@@ -18,7 +18,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
     )
     adapters = [sad.ExposurelogAdapter,
                 sad.NarrativelogAdapter,
-                # sad.NightReportAdapter,   # TODO
+                sad.NightReportAdapter,
                 ]
 
     def report(self, timeout=None):

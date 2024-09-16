@@ -19,6 +19,22 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+
+import time
+from IPython.display import display, Markdown
+
+
+def md(markdown_str, color=None):
+    # see https://www.w3schools.com/colors/colors_names.asp
+    if color:
+        display(Markdown(f"### <font color='{color}'>{markdown_str}</font>"))
+    else:
+        display(Markdown(markdown_str))
+
+def mdlist(markdown_list, color=None):
+    for markdown_str in markdown_list:
+        md(markdown_str, color=color)
+
 def tic():
     """Start timer.
     """
