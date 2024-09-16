@@ -27,7 +27,6 @@ concept is Proven, it all might be thrown away or rewritten.
 '''
 
 
-############################################
 # Python Standard Library
 from urllib.parse import urlencode
 import itertools
@@ -35,10 +34,10 @@ from datetime import datetime, date, time, timedelta
 from warnings import warn
 from collections import defaultdict
 from abc import ABC
-
-############################################
 # External Packages
 import requests
+# Local Packages
+from lsst.ts.logging_and_reporting.utils import datetime_to_dayobs
 
 MAX_CONNECT_TIMEOUT = 3.1   # seconds
 MAX_READ_TIMEOUT = 180      # seconds
@@ -84,13 +83,12 @@ class SourceAdapter(ABC):
 
     # Break on DAY_OBS. Within that, break on DATE, within that only show time.
     def day_table(self, recs, datetime_field,
-                  time_only=None,
-                  is_dayobs=False,
+                  dayobs_field=None,
                   row_str_func=None,
                   ):
         def date_time(rec):
-            if is_dayobs:
-                dt = datetime.strptime(str(rec[datetime_field]), '%Y%m%d')
+            if dayobs_field:
+                dt = datetime.strptime(str(rec[dayobs_field]), '%Y%m%d')
             else:
                 dt = datetime.fromisoformat(rec[datetime_field])
             return dt.replace(microsecond=0)
@@ -99,8 +97,8 @@ class SourceAdapter(ABC):
             if 'day_obs' in rec:
                 return rec['day_obs']
             else:
-                # TODO Wrong!!! Unlike day_obs, this will wrap across midnight
-                return datetime.fromisoformat(rec[datetime_field]).date().strftime('%Y%m%d')
+                dt = datetime.fromisoformat(rec[datetime_field])
+                return datetime_to_dayobs(dt).strftime('%Y%m%d')
 
         def obs_date(rec):
             dt = datetime.fromisoformat(rec[datetime_field])
@@ -110,9 +108,6 @@ class SourceAdapter(ABC):
             print('Nothing to display.')
             return
         dates = set([date_time(r).date() for r in recs])
-        if time_only is None:
-            time_only = True if len(dates) == 1 else False
-
         table = list()
         # Group by night.
         recs = sorted(recs,key=lambda r: date_time(r))
@@ -123,7 +118,6 @@ class SourceAdapter(ABC):
                 table.append(f'### DATE: {date.date()}: ')
                 for rec in g0:
                     dt = date_time(rec)
-                    #! dtstr = str(dt.time()) if time_only else str(dt)
                     dtstr = str(dt.time())
                     table.append(f'{self.row_str_func(dtstr, rec)}')
         table.append(':EOT')
@@ -242,7 +236,8 @@ class NightReportAdapter(SourceAdapter):
             ticket_url = r['confluence_url']
             if ticket_url:
                 tickets[r['day_obs']].add(ticket_url)
-        return {k:list(v) for k,v in tickets.items()}
+        #!return {k:list(v) for k,v in tickets.items()}
+        return {dayobs:list(urls) for dayobs,urls in tickets.items()}
 
 
 class NarrativelogAdapter(SourceAdapter):

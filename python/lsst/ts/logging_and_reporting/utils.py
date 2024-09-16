@@ -21,19 +21,28 @@
 
 
 import time
-from IPython.display import display, Markdown
+import datetime
 
 
-def md(markdown_str, color=None):
-    # see https://www.w3schools.com/colors/colors_names.asp
-    if color:
-        display(Markdown(f"### <font color='{color}'>{markdown_str}</font>"))
-    else:
-        display(Markdown(markdown_str))
+# See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633
+def datetime_to_dayobs(dt) -> int:
+    """Convert a datetime object to dayobs.
+    Round to the date of the start of the observing night.
+    Both the input datetime and output dayobs are in the same timezone.
 
-def mdlist(markdown_list, color=None):
-    for markdown_str in markdown_list:
-        md(markdown_str, color=color)
+    Parameters
+    ----------
+    dt : `datetime.datetime`
+        The date-time.
+
+    Returns
+    -------
+    day_obs : `int`
+        The day_obs, as an integer, e.g. 20231225 (YYYYMMDD)
+    """
+    return (dt - datetime.timedelta(hours=12)).date()
+
+
 
 def tic():
     """Start timer.
