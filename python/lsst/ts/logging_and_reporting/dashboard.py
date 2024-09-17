@@ -27,12 +27,18 @@ class Dashboard:  # TODO Move to its own file (utils.py).
 
         RETURN: percentage of good connectons.
         """
-        url_status = dict()
+        url_status = dict() # url_status[endpoint_url] = http _status_code
+        working = set() # Set of servers that work for  all our required endpoints.
+
         for env,server in self.envs.items():
+            server_all_good = True
             for adapter in self.adapters:
                 service = adapter(server_url=server)
-                # url_status[endpoint_url] = http_status_code
-                url_status.update(service.check_endpoints(timeout=timeout))
+                stats, adapter_all_good = service.check_endpoints(timeout=timeout)
+                url_status.update(stats)
+            server_all_good &= adapter_all_good
+            if server_all_good:
+                working.add(server)
 
         total_cnt = good_cnt = 0
         good = list()
@@ -62,5 +68,5 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                       good_urls=good,
                       bad_ursl=bad,
                       )
-        return good_cnt/total_cnt
+        return good_cnt/total_cnt, working
 # END: class Dashboard

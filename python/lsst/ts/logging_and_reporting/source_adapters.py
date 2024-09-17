@@ -79,7 +79,9 @@ class SourceAdapter(ABC):
         return '| Time | Message |\n|--------|------|'
 
     def row_str_func(self, datetime_str, rec):
-        return f"{datetime_str} | {rec['message_text']}"
+        msg = rec['message_text']
+        return f'> {datetime_str} | <pre><code>{msg}</code></pre>'
+
 
     # Break on DAY_OBS. Within that, break on DATE, within that only show time.
     def day_table(self, recs, datetime_field,
@@ -123,6 +125,7 @@ class SourceAdapter(ABC):
         table.append(':EOT')
         return table
 
+
     @property
     def source_url(self):
         return f'{self.server}/{self.service}'
@@ -141,7 +144,7 @@ class SourceAdapter(ABC):
                 url_http_status_code[url] = 'GET error'
             else:
                 url_http_status_code[url] = r.status_code
-        return url_http_status_code
+        return url_http_status_code, all([v==200 for v in url_http_status_code.values()])
 
 
     def analytics(self, recs, categorical_fields=None):
@@ -281,7 +284,11 @@ class NarrativelogAdapter(SourceAdapter):
                      offset=None,
                      limit=None,
                      ):
-        qparams = dict(is_human=is_human, is_valid=is_valid)
+        qparams = dict(
+            is_human=is_human,
+            is_valid=is_valid,
+            order_by='-date_begin',
+        )
         if site_ids:
             qparams['site_ids'] = site_ids
         if message_text:
@@ -349,7 +356,7 @@ class ExposurelogAdapter(SourceAdapter):
         return '| Time | OBS ID | Message |\n|--------|-------|------|'
 
     def row_str_func(self, datetime_str, rec):
-        return f"{datetime_str} | {rec['obs_id']} | {rec['message_text']}"
+        return f"> {datetime_str} | {rec['obs_id']} | <pre>{rec['message_text']}</pre>"
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
@@ -367,8 +374,7 @@ class ExposurelogAdapter(SourceAdapter):
                 url_http_status_code[url] = 'GET error'
             else:
                 url_http_status_code[url] = r.status_code
-        return url_http_status_code
-
+        return url_http_status_code, all([v==200 for v in url_http_status_code.values()])
 
     def get_instruments(self):
         url = f'{self.server}/{self.service}/instruments'
@@ -409,7 +415,10 @@ class ExposurelogAdapter(SourceAdapter):
                      offset=None,
                      limit=None,
                      ):
-        qparams = dict(is_human=is_human, is_valid=is_valid)
+        qparams = dict(is_human=is_human,
+                       is_valid=is_valid,
+                       order_by='-date_added',
+                       )
         if site_ids:
             qparams['site_ids'] = site_ids
         if obs_ids:
