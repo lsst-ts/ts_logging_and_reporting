@@ -62,7 +62,21 @@ class Report(ABC):
                  min_day_obs=None,  # INCLUSIVE: default=Yesterday
                  max_day_obs=None,  # EXCLUSIVE: default=Today
                  ):
-        pass  # TODO
+        self.min_day_obs = min_day_obs
+        self.max_day_obs = max_day_obs
+
+    def time_log_as_markdown(self, records, source_adapter, url,
+                            log_title=None,
+                            ):
+        service = source_adapter.service
+        title = log_title if log_title else ''
+        if records:
+            md(f'### {title}')
+            table = source_adapter.day_table(records, 'date_added')
+            mdlist(table)
+        else:
+            md(f'No {service} records found.', color='lightblue')
+            md(f'Used [API Data]({url})')
 
 class AlmanacReport(Report):
     # moon rise,set,illumination %

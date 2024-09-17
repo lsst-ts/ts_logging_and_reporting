@@ -26,7 +26,6 @@ Tests and documentation exist minimally or not at all since until the
 concept is Proven, it all might be thrown away or rewritten.
 '''
 
-
 # Python Standard Library
 from urllib.parse import urlencode
 import itertools
@@ -49,10 +48,18 @@ class SourceAdapter(ABC):
     # TODO document class including all class variables.
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
+                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
+                 max_day_obs=None,  # EXCLUSIVE: default=Today
+                 limit=99,
+                 offset=0,
                  connect_timeout=1.05,  # seconds
                  read_timeout=2,  # seconds
                  ):
         self.server = server_url
+        self.min_day_obs = min_day_obs
+        self.max_day_obs = max_day_obs
+        self.limit = limit
+        self.offset = offset
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
                              float(connect_timeout))  # seconds
         self.r_timeout = min(MAX_READ_TIMEOUT,  # seconds
@@ -200,27 +207,26 @@ class NightReportAdapter(SourceAdapter):
         'user_id',
         }
 
+    def row_str_func(self, datetime_str, rec):
+        return f"> {datetime_str} | <pre>{rec['summary']}</pre>"
 
     def get_reports(self,
                     site_ids=None,
                     summary=None,
-                    min_day_obs=None,
-                    max_day_obs=None,
                     is_human='either',
                     is_valid='either',
-                    limit=None,
                     ):
         qparams = dict(is_human=is_human, is_valid=is_valid)
         if site_ids:
             qparams['site_ids'] = site_ids
         if summary:
             qparams['summary'] = summary
-        if min_day_obs:
-            qparams['min_day_obs'] = min_day_obs
-        if max_day_obs:
-            qparams['max_day_obs'] = max_day_obs
-        if limit:
-            qparams['limit'] = limit
+        if self.min_day_obs:
+            qparams['min_day_obs'] = self.min_day_obs
+        if self.max_day_obs:
+            qparams['max_day_obs'] = self.max_day_obs
+        if self.limit:
+            qparams['limit'] = self.limit
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/reports?{qstr}'
@@ -282,7 +288,6 @@ class NarrativelogAdapter(SourceAdapter):
                      is_human='either',
                      is_valid='either',
                      offset=None,
-                     limit=None,
                      ):
         qparams = dict(
             is_human=is_human,
@@ -297,8 +302,8 @@ class NarrativelogAdapter(SourceAdapter):
             qparams['min_date_end'] = min_date_end
         if max_date_end:
             qparams['max_date_end'] = max_date_end
-        if limit:
-            qparams['limit'] = limit
+        if self.limit:
+            qparams['limit'] = self.limit
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
@@ -336,7 +341,7 @@ class ExposurelogAdapter(SourceAdapter):
         'day_obs',
         # 'exposure_flag',
         # 'id',
-        # 'instrument',
+        'instrument',
         # 'is_human',
         # 'is_valid',
         # 'level',
@@ -353,10 +358,16 @@ class ExposurelogAdapter(SourceAdapter):
 
     @property
     def row_header(self):
-        return '| Time | OBS ID | Message |\n|--------|-------|------|'
+        return('| Time | OBS ID | Telescope | Message |\n'
+               '|------|--------|-----------|---------|'
+               )
 
     def row_str_func(self, datetime_str, rec):
-        return f"> {datetime_str} | {rec['obs_id']} | <pre>{rec['message_text']}</pre>"
+        return(f"> {datetime_str} "
+               f"| {rec['obs_id']} "
+               f"| {rec['instrument']} "
+               f"| <pre>{rec['message_text']}</pre>"
+               )
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
@@ -385,16 +396,12 @@ class ExposurelogAdapter(SourceAdapter):
         # Flatten the lists
         return list(itertools.chain.from_iterable(instruments.values()))
 
-    def get_exposures(self, instrument,
-                      registry=1,
-                      min_day_obs=None,
-                      max_day_obs=None,
-                      ):
+    def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
-        if min_day_obs:
-            qparams['min_day_obs'] = min_day_obs
-        if max_day_obs:
-           qparams['max_day_obs'] = max_day_obs
+        if self.min_day_obs:
+            qparams['min_day_obs'] = self.min_day_obs
+        if self.max_day_obs:
+            qparams['max_day_obs'] = self.max_day_obs
         url = f'{self.server}/{self.service}/exposures?{urlencode(qparams)}'
         try:
             recs = requests.get(url, timeout=self.timeout).json()
@@ -407,13 +414,9 @@ class ExposurelogAdapter(SourceAdapter):
                      obs_ids=None,
                      instruments=None,
                      message_text=None,
-                     min_day_obs=None,
-                     max_day_obs=None,
                      is_human='either',
                      is_valid='either',
                      exposure_flags=None,
-                     offset=None,
-                     limit=None,
                      ):
         qparams = dict(is_human=is_human,
                        is_valid=is_valid,
@@ -425,16 +428,14 @@ class ExposurelogAdapter(SourceAdapter):
             qparams['obs_ids'] = obs_ids
         if instruments:
             qparams['instruments'] = instruments
-        if min_day_obs:
-            qparams['min_day_obs'] = min_day_obs
-        if max_day_obs:
-           qparams['max_day_obs'] = max_day_obs
+        if self.min_day_obs:
+            qparams['min_day_obs'] = self.min_day_obs
+        if self.max_day_obs:
+            qparams['max_day_obs'] = self.max_day_obs
         if exposure_flags:
             qparams['exposure_flags'] = exposure_flags
-        if offset:
-            qparams['offset'] = offset
-        if limit:
-            qparams['limit'] = limit
+        if self.limit:
+            qparams['limit'] = self.limit
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
@@ -451,11 +452,7 @@ class ExposurelogAdapter(SourceAdapter):
         self.keep_fields(recs, self.outfields)
         return recs,url
 
-    def get_observation_gaps(self,
-                             instruments=None,
-                             min_day_obs=None,  # YYYYMMDD
-                             max_day_obs=None,  # YYYYMMDD
-                             ):
+    def get_observation_gaps(self, instruments=None):
         if not instruments:
             instruments = self.get_instruments()
         assert isinstance(instruments,list), \
@@ -463,10 +460,7 @@ class ExposurelogAdapter(SourceAdapter):
         # inst_day_rollup[instrument] => dict[day] => exposureGapInMinutes
         inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
         for instrum in instruments:
-            recs = self.get_exposures(instrum,
-                                      min_day_obs=min_day_obs,
-                                      max_day_obs=max_day_obs,
-                                      )
+            recs = self.get_exposures(instrum)
             instrum_gaps = dict()
             for day,dayrecs in itertools.groupby(recs,
                                                  key=lambda r: r['day_obs']):
