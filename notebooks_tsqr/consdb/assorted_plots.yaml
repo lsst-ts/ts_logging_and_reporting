@@ -8,3 +8,11 @@ tags:
   - reporting
   - prototype
 parameters:
+  day_obs:
+    type: string
+    description: Date on which to query
+    default: '2024-06-26'
+  instrument:
+    type: string
+    description: Which instrument to query
+    default: 'latiss'
