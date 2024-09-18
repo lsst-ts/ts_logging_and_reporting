@@ -15,4 +15,4 @@ parameters:
   instrument:
     type: string
     description: Which instrument to query
-    default: 'latiss'
+    default: 'latiss, lsstcomcamsim, lsstcomcam'
