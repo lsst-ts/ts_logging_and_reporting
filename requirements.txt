@@ -8,3 +8,4 @@ pre-commit
 astroplan
 astropy
 lsst_efd_client
+#lsst.summit.utils
