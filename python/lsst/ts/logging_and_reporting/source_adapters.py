@@ -42,6 +42,12 @@ MAX_CONNECT_TIMEOUT = 3.1   # seconds
 MAX_READ_TIMEOUT = 180      # seconds
 
 
+def all_endpoints(server):
+    endpoints = itertools.chain.from_iterable(
+        [sa(server_url=server).used_endpoints()  for sa in adapters]
+        )
+    return list(endpoints)
+
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
     """
@@ -136,6 +142,12 @@ class SourceAdapter(ABC):
     @property
     def source_url(self):
         return f'{self.server}/{self.service}'
+
+    def used_endpoints(self):
+        used = list()
+        for ep in self.endpoints:
+            used.append(f'{self.server}/{self.service}/{ep}')
+        return used
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
@@ -369,6 +381,7 @@ class ExposurelogAdapter(SourceAdapter):
                f"| <pre>{rec['message_text']}</pre>"
                )
 
+
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
         if verbose:
@@ -488,3 +501,8 @@ class ExposurelogAdapter(SourceAdapter):
 
         return inst_day_rollup
 # END: class ExposurelogAdapter
+
+adapters = [ExposurelogAdapter,
+            NarrativelogAdapter,
+            NightReportAdapter,
+            ]
