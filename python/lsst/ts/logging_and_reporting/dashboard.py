@@ -1,11 +1,18 @@
+# Python Standard Library
+from collections import defaultdict
+from warnings import warn
 import lsst.ts.logging_and_reporting.source_adapters as sad
+# External Packages
+import requests
+
 
 class Dashboard:  # TODO Move to its own file (utils.py).
     """Verify that we can get to all the API endpoints and databases we need for
     any of our sources.
     """
+    timeout = 0.8
 
-    envs = dict(
+    envs = dict( # key, server
         summit = 'https://summit-lsp.lsst.codes',
         usdf_dev = 'https://usdf-rsp-dev.slac.stanford.edu',
         tucson = 'https://tucson-teststand.lsst.codes',
@@ -20,6 +27,27 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                 sad.NarrativelogAdapter,
                 sad.NightReportAdapter,
                 ]
+
+    def get_sample_data(self, server):
+
+        samples = defaultdict(dict)  # samples[endpoint_url] -> one_record_dict
+        for adapter in self.adapters:
+            sa = adapter(server_url=server, limit=1)
+            for ep in sa.endpoints:
+                qstr = '?instrument=LSSTComCamSim' if ep == 'exposures' else ''
+                url = f'{server}/{sa.service}/{ep}{qstr}'
+                try:
+                    res = requests.get(url, timeout=self.timeout)
+                    recs = res.json()
+                    if isinstance(recs, dict):
+                        samples[url] = recs
+                    else:
+                        samples[url] = recs[0]
+                except Exception as err:
+                    warn(f'Could not get data from {url}: {res.content=} {err=}')
+                    samples[url] = None
+        return dict(samples)
+
 
     def report(self, timeout=None):
         """Check our ability to connect to every Source on every Environment.
