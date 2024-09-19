@@ -12,7 +12,7 @@ parameters:
     type: string
     description: Date on which to query
     default: '2024-06-26'
-  instrument:
+  instruments:
     type: string
     description: Which instrument to query
     default: 'latiss, lsstcomcamsim, lsstcomcam'
