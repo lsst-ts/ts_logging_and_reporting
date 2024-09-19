@@ -72,10 +72,13 @@ class SourceAdapter(ABC):
                              float(read_timeout))
         self.timeout = (self.c_timeout, self.r_timeout)
 
+        self.records = None  # else: list of dict
         # Provide the following in subclass
         output_fields = None
         service = None
         endpoints = None
+
+
 
     def keep_fields(self, recs, outfields):
         """Keep only keys in OUTFIELDS list of RECS (list of dicts)
@@ -97,16 +100,16 @@ class SourceAdapter(ABC):
 
 
     # Break on DAY_OBS. Within that, break on DATE, within that only show time.
-    def day_table(self, recs, datetime_field,
+    def day_table(self, datetime_field,
                   dayobs_field=None,
                   row_str_func=None,
                   ):
-        def date_time(rec):
-            if dayobs_field:
-                dt = datetime.strptime(str(rec[dayobs_field]), '%Y%m%d')
-            else:
-                dt = datetime.fromisoformat(rec[datetime_field])
-            return dt.replace(microsecond=0)
+        #! def date_time(rec):   TODO remove
+        #!     if dayobs_field:
+        #!         dt = datetime.strptime(str(rec[dayobs_field]), '%Y%m%d')
+        #!     else:
+        #!         dt = datetime.fromisoformat(rec[datetime_field])
+        #!     return dt.replace(microsecond=0)
 
         def obs_night(rec):
             if 'day_obs' in rec:
@@ -119,20 +122,21 @@ class SourceAdapter(ABC):
             dt = datetime.fromisoformat(rec[datetime_field])
             return dt.replace(microsecond=0)
 
+        recs = self.records
         if len(recs) == 0:
             print('Nothing to display.')
             return
-        dates = set([date_time(r).date() for r in recs])
+        dates = set([obs_date(r).date() for r in recs])
         table = list()
         # Group by night.
-        recs = sorted(recs,key=lambda r: date_time(r))
+        recs = sorted(recs,key=lambda r: obs_night(r))
         for night,g0 in itertools.groupby(recs, key=lambda r: obs_night(r)):
             # Group by date
             table.append(f'## NIGHT: {night}: ')
             for date,g1 in itertools.groupby(g0, key=lambda r: obs_date(r)):
                 table.append(f'### DATE: {date.date()}: ')
                 for rec in g0:
-                    dt = date_time(rec)
+                    dt = obs_date(rec)
                     dtstr = str(dt.time())
                     table.append(f'{self.row_str_func(dtstr, rec)}')
         table.append(':EOT')
@@ -242,14 +246,22 @@ class NightReportAdapter(SourceAdapter):
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/reports?{qstr}'
+        error = None
         try:
             recs = requests.get(url, timeout=self.timeout).json()
             recs.sort(key=lambda r: r['day_obs'])
         except Exception as err:
             recs = []
+            error = str(err)
 
         self.keep_fields(recs, self.outfields)
-        return recs,url
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
 
     def nightly_tickets(self, recs):
         tickets = defaultdict(set)  # tickets[day_obs] = {ticket_url, ...}
@@ -319,14 +331,22 @@ class NarrativelogAdapter(SourceAdapter):
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
+        error = None
         try:
             recs = requests.get(url, timeout=self.timeout).json()
             recs.sort(key=lambda r: r['date_begin'])
         except Exception as err:
             recs = []
+            error = str(err)
 
         self.keep_fields(recs, self.outfields)
-        return recs,url
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
 
     def get_timelost(self, recs, rollup='day'):
         def iso_date_begin(rec):
@@ -453,17 +473,26 @@ class ExposurelogAdapter(SourceAdapter):
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
         recs = []
+        error = None
         try:
             response = requests.get(url, timeout=self.timeout)
             recs = response.json()
         except Exception as err:
             recs = []
+            error = str(err)
 
         if recs:
             recs.sort(key=lambda r: r['day_obs'])
 
         self.keep_fields(recs, self.outfields)
-        return recs,url
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
+
 
     def get_observation_gaps(self, instruments=None):
         if not instruments:
