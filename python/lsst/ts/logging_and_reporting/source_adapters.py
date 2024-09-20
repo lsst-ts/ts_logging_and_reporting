@@ -36,7 +36,10 @@ from abc import ABC
 # External Packages
 import requests
 # Local Packages
-from lsst.ts.logging_and_reporting.utils import datetime_to_dayobs
+import lsst.ts.logging_and_reporting.utils as ut
+import lsst.ts.logging_and_reporting.exceptions as ex
+
+
 
 MAX_CONNECT_TIMEOUT = 3.1   # seconds
 MAX_READ_TIMEOUT = 180      # seconds
@@ -48,6 +51,15 @@ def all_endpoints(server):
         )
     return list(endpoints)
 
+
+def validate_response(response, url):
+    if response.status_code == 200:
+        return True
+    else:
+        # TODO Format for User
+        msg = f'Error: {response.json()} {url=}'
+        raise ex.BadStatus(msg)
+
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
     """
@@ -55,15 +67,23 @@ class SourceAdapter(ABC):
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
                  min_day_obs=None,  # INCLUSIVE: default=Yesterday
-                 max_day_obs=None,  # EXCLUSIVE: default=Today
+                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
                  limit=99,
                  offset=0,
                  connect_timeout=1.05,  # seconds
                  read_timeout=2,  # seconds
                  ):
+        if min_day_obs is None:  # Inclusive
+            min_day_obs = ut.datetime_to_dayobs(
+                datetime.today() - timedelta(days=1))
+        if max_day_obs is None:  # Exclusive
+            max_day_obs = ut.datetime_to_dayobs(
+                datetime.today() + timedelta(days=1))
         self.server = server_url
         self.min_day_obs = min_day_obs
         self.max_day_obs = max_day_obs
+        self.min_date = ut.dos2dt(min_day_obs)
+        self.max_date = ut.dos2dt(max_day_obs)
         self.limit = limit
         self.offset = offset
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
@@ -72,10 +92,13 @@ class SourceAdapter(ABC):
                              float(read_timeout))
         self.timeout = (self.c_timeout, self.r_timeout)
 
+        self.records = None  # else: list of dict
         # Provide the following in subclass
         output_fields = None
         service = None
         endpoints = None
+
+
 
     def keep_fields(self, recs, outfields):
         """Keep only keys in OUTFIELDS list of RECS (list of dicts)
@@ -97,42 +120,45 @@ class SourceAdapter(ABC):
 
 
     # Break on DAY_OBS. Within that, break on DATE, within that only show time.
-    def day_table(self, recs, datetime_field,
+    def day_table(self, datetime_field,
                   dayobs_field=None,
                   row_str_func=None,
+                  zero_message=False,
                   ):
-        def date_time(rec):
-            if dayobs_field:
-                dt = datetime.strptime(str(rec[dayobs_field]), '%Y%m%d')
-            else:
-                dt = datetime.fromisoformat(rec[datetime_field])
-            return dt.replace(microsecond=0)
+        #! def date_time(rec):   TODO remove
+        #!     if dayobs_field:
+        #!         dt = datetime.strptime(str(rec[dayobs_field]), '%Y%m%d')
+        #!     else:
+        #!         dt = datetime.fromisoformat(rec[datetime_field])
+        #!     return dt.replace(microsecond=0)
 
         def obs_night(rec):
             if 'day_obs' in rec:
-                return rec['day_obs']
+                return ut.day_obs_str(rec['day_obs']) # -> # "YYYY-MM-DD"
             else:
                 dt = datetime.fromisoformat(rec[datetime_field])
-                return datetime_to_dayobs(dt).strftime('%Y%m%d')
+                return ut.datetime_to_dayobs(dt)
 
         def obs_date(rec):
             dt = datetime.fromisoformat(rec[datetime_field])
             return dt.replace(microsecond=0)
 
+        recs = self.records
         if len(recs) == 0:
-            print('Nothing to display.')
+            if zero_message:
+                print('Nothing to display.')
             return
-        dates = set([date_time(r).date() for r in recs])
+        dates = set([obs_date(r).date() for r in recs])
         table = list()
         # Group by night.
-        recs = sorted(recs,key=lambda r: date_time(r))
+        recs = sorted(recs,key=lambda r: obs_night(r))
         for night,g0 in itertools.groupby(recs, key=lambda r: obs_night(r)):
             # Group by date
             table.append(f'## NIGHT: {night}: ')
             for date,g1 in itertools.groupby(g0, key=lambda r: obs_date(r)):
                 table.append(f'### DATE: {date.date()}: ')
                 for rec in g0:
-                    dt = date_time(rec)
+                    dt = obs_date(rec)
                     dtstr = str(dt.time())
                     table.append(f'{self.row_str_func(dtstr, rec)}')
         table.append(':EOT')
@@ -149,6 +175,7 @@ class SourceAdapter(ABC):
             used.append(f'{self.server}/{self.service}/{ep}')
         return used
 
+
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
         if verbose:
@@ -159,6 +186,7 @@ class SourceAdapter(ABC):
             url = f'{self.server}/{self.service}/{ep}'
             try:
                 r = requests.get(url, timeout=(timeout or self.timeout))
+                validate_response(r, url)
             except Exception as err:
                 url_http_status_code[url] = 'GET error'
             else:
@@ -234,22 +262,32 @@ class NightReportAdapter(SourceAdapter):
         if summary:
             qparams['summary'] = summary
         if self.min_day_obs:
-            qparams['min_day_obs'] = self.min_day_obs
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
         if self.max_day_obs:
-            qparams['max_day_obs'] = self.max_day_obs
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         if self.limit:
             qparams['limit'] = self.limit
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/reports?{qstr}'
+        error = None
         try:
-            recs = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout)
+            validate_response(r, url)
+            recs = r.json()
             recs.sort(key=lambda r: r['day_obs'])
         except Exception as err:
             recs = []
+            error = str(err)
 
         self.keep_fields(recs, self.outfields)
-        return recs,url
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
 
     def nightly_tickets(self, recs):
         tickets = defaultdict(set)  # tickets[day_obs] = {ticket_url, ...}
@@ -295,8 +333,6 @@ class NarrativelogAdapter(SourceAdapter):
     def get_messages(self,
                      site_ids=None,
                      message_text=None,
-                     min_date_end=None,
-                     max_date_end=None,
                      is_human='either',
                      is_valid='either',
                      offset=None,
@@ -310,23 +346,35 @@ class NarrativelogAdapter(SourceAdapter):
             qparams['site_ids'] = site_ids
         if message_text:
             qparams['message_text'] = message_text
-        if min_date_end:
-            qparams['min_date_end'] = min_date_end
-        if max_date_end:
-            qparams['max_date_end'] = max_date_end
+        if self.min_day_obs:
+            qparams['min_date_added'] = datetime.combine(
+                self.min_date, time()).isoformat()
+        if self.max_day_obs:
+            qparams['max_date_added'] = datetime.combine(
+                self.max_date, time()).isoformat()
         if self.limit:
             qparams['limit'] = self.limit
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
+        error = None
         try:
-            recs = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout)
+            validate_response(r, url)
+            recs = r.json()
             recs.sort(key=lambda r: r['date_begin'])
         except Exception as err:
             recs = []
+            error = str(err)
 
         self.keep_fields(recs, self.outfields)
-        return recs,url
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
 
     def get_timelost(self, recs, rollup='day'):
         def iso_date_begin(rec):
@@ -394,6 +442,7 @@ class ExposurelogAdapter(SourceAdapter):
             url = f'{self.server}/{self.service}/{ep}{qstr}'
             try:
                 r = requests.get(url, timeout=to)
+                validate_response(r, url)
             except Exception as err:
                 url_http_status_code[url] = 'GET error'
             else:
@@ -403,7 +452,9 @@ class ExposurelogAdapter(SourceAdapter):
     def get_instruments(self):
         url = f'{self.server}/{self.service}/instruments'
         try:
-            instruments = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout).json()
+            validate_response(r, url)
+            instruments = r.json()
         except Exception as err:
             instruments = dict(dummy=[])
         # Flatten the lists
@@ -412,9 +463,9 @@ class ExposurelogAdapter(SourceAdapter):
     def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
         if self.min_day_obs:
-            qparams['min_day_obs'] = self.min_day_obs
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
         if self.max_day_obs:
-            qparams['max_day_obs'] = self.max_day_obs
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         url = f'{self.server}/{self.service}/exposures?{urlencode(qparams)}'
         try:
             recs = requests.get(url, timeout=self.timeout).json()
@@ -442,9 +493,9 @@ class ExposurelogAdapter(SourceAdapter):
         if instruments:
             qparams['instruments'] = instruments
         if self.min_day_obs:
-            qparams['min_day_obs'] = self.min_day_obs
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
         if self.max_day_obs:
-            qparams['max_day_obs'] = self.max_day_obs
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         if exposure_flags:
             qparams['exposure_flags'] = exposure_flags
         if self.limit:
@@ -453,17 +504,27 @@ class ExposurelogAdapter(SourceAdapter):
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
         recs = []
+        error = None
         try:
             response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
             recs = response.json()
         except Exception as err:
             recs = []
+            error = str(err)
 
         if recs:
             recs.sort(key=lambda r: r['day_obs'])
 
         self.keep_fields(recs, self.outfields)
-        return recs,url
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
+
 
     def get_observation_gaps(self, instruments=None):
         if not instruments:
