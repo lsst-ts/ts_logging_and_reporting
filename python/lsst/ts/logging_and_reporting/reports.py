@@ -42,6 +42,9 @@ def md(markdown_str, color=None):
         display(Markdown(markdown_str))
 
 def mdlist(markdown_list, color=None):
+    if markdown_list is None:
+        return
+
     for markdown_str in markdown_list:
         md(markdown_str, color=color)
 
@@ -54,6 +57,15 @@ def dict_to_md(in_dict):
             md_list.append(f'    - {elem}')
     return md_list
 
+def adapter_overview(adapter, status, limit):
+    cnt = status["number_of_records"]
+    error  =  status["error"]
+    more = '(There may be more.)' if cnt >= limit else ''
+    result = error if error else f'Got {cnt} records. '
+    mdlist([f'## Overview for Service: `{adapter.service}` [{cnt}]',
+            f'- Endpoint: {status["endpoint_url"]}',
+            f'- {result} {more}',
+            ])
 
 
 # TODO move all instances of "row_header", "row_str_func" from source_adapters to here.
@@ -66,8 +78,9 @@ class Report(ABC):
         self.max_day_obs = max_day_obs
 
     def time_log_as_markdown(self, source_adapter, url,
-                            log_title=None,
-                            ):
+                             log_title=None,
+                             zero_message=False,
+                             ):
         records = source_adapter.records
         service = source_adapter.service
         title = log_title if log_title else ''
@@ -76,8 +89,9 @@ class Report(ABC):
             table = source_adapter.day_table('date_added')
             mdlist(table)
         else:
-            md(f'No {service} records found.', color='lightblue')
-            md(f'Used [API Data]({url})')
+            if zero_message:
+                md(f'No {service} records found.', color='lightblue')
+                md(f'Used [API Data]({url})')
 
 class AlmanacReport(Report):
     # moon rise,set,illumination %

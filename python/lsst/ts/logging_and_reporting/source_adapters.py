@@ -36,7 +36,10 @@ from abc import ABC
 # External Packages
 import requests
 # Local Packages
-from lsst.ts.logging_and_reporting.utils import datetime_to_dayobs
+import lsst.ts.logging_and_reporting.utils as ut
+import lsst.ts.logging_and_reporting.exceptions as ex
+
+
 
 MAX_CONNECT_TIMEOUT = 3.1   # seconds
 MAX_READ_TIMEOUT = 180      # seconds
@@ -48,6 +51,15 @@ def all_endpoints(server):
         )
     return list(endpoints)
 
+
+def validate_response(response, url):
+    if response.status_code == 200:
+        return True
+    else:
+        # TODO Format for User
+        msg = f'Error: {response.json()} {url=}'
+        raise ex.BadStatus(msg)
+
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
     """
@@ -55,15 +67,23 @@ class SourceAdapter(ABC):
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
                  min_day_obs=None,  # INCLUSIVE: default=Yesterday
-                 max_day_obs=None,  # EXCLUSIVE: default=Today
+                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
                  limit=99,
                  offset=0,
                  connect_timeout=1.05,  # seconds
                  read_timeout=2,  # seconds
                  ):
+        if min_day_obs is None:  # Inclusive
+            min_day_obs = ut.datetime_to_dayobs(
+                datetime.today() - timedelta(days=1))
+        if max_day_obs is None:  # Exclusive
+            max_day_obs = ut.datetime_to_dayobs(
+                datetime.today() + timedelta(days=1))
         self.server = server_url
         self.min_day_obs = min_day_obs
         self.max_day_obs = max_day_obs
+        self.min_date = ut.dos2dt(min_day_obs)
+        self.max_date = ut.dos2dt(max_day_obs)
         self.limit = limit
         self.offset = offset
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
@@ -103,6 +123,7 @@ class SourceAdapter(ABC):
     def day_table(self, datetime_field,
                   dayobs_field=None,
                   row_str_func=None,
+                  zero_message=False,
                   ):
         #! def date_time(rec):   TODO remove
         #!     if dayobs_field:
@@ -113,10 +134,10 @@ class SourceAdapter(ABC):
 
         def obs_night(rec):
             if 'day_obs' in rec:
-                return rec['day_obs']
+                return ut.day_obs_str(rec['day_obs']) # -> # "YYYY-MM-DD"
             else:
                 dt = datetime.fromisoformat(rec[datetime_field])
-                return datetime_to_dayobs(dt).strftime('%Y%m%d')
+                return ut.datetime_to_dayobs(dt)
 
         def obs_date(rec):
             dt = datetime.fromisoformat(rec[datetime_field])
@@ -124,7 +145,8 @@ class SourceAdapter(ABC):
 
         recs = self.records
         if len(recs) == 0:
-            print('Nothing to display.')
+            if zero_message:
+                print('Nothing to display.')
             return
         dates = set([obs_date(r).date() for r in recs])
         table = list()
@@ -153,6 +175,7 @@ class SourceAdapter(ABC):
             used.append(f'{self.server}/{self.service}/{ep}')
         return used
 
+
     def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
         if verbose:
@@ -163,6 +186,7 @@ class SourceAdapter(ABC):
             url = f'{self.server}/{self.service}/{ep}'
             try:
                 r = requests.get(url, timeout=(timeout or self.timeout))
+                validate_response(r, url)
             except Exception as err:
                 url_http_status_code[url] = 'GET error'
             else:
@@ -238,9 +262,9 @@ class NightReportAdapter(SourceAdapter):
         if summary:
             qparams['summary'] = summary
         if self.min_day_obs:
-            qparams['min_day_obs'] = self.min_day_obs
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
         if self.max_day_obs:
-            qparams['max_day_obs'] = self.max_day_obs
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         if self.limit:
             qparams['limit'] = self.limit
 
@@ -248,7 +272,9 @@ class NightReportAdapter(SourceAdapter):
         url = f'{self.server}/{self.service}/reports?{qstr}'
         error = None
         try:
-            recs = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout)
+            validate_response(r, url)
+            recs = r.json()
             recs.sort(key=lambda r: r['day_obs'])
         except Exception as err:
             recs = []
@@ -307,8 +333,6 @@ class NarrativelogAdapter(SourceAdapter):
     def get_messages(self,
                      site_ids=None,
                      message_text=None,
-                     min_date_end=None,
-                     max_date_end=None,
                      is_human='either',
                      is_valid='either',
                      offset=None,
@@ -322,10 +346,12 @@ class NarrativelogAdapter(SourceAdapter):
             qparams['site_ids'] = site_ids
         if message_text:
             qparams['message_text'] = message_text
-        if min_date_end:
-            qparams['min_date_end'] = min_date_end
-        if max_date_end:
-            qparams['max_date_end'] = max_date_end
+        if self.min_day_obs:
+            qparams['min_date_added'] = datetime.combine(
+                self.min_date, time()).isoformat()
+        if self.max_day_obs:
+            qparams['max_date_added'] = datetime.combine(
+                self.max_date, time()).isoformat()
         if self.limit:
             qparams['limit'] = self.limit
 
@@ -333,7 +359,9 @@ class NarrativelogAdapter(SourceAdapter):
         url = f'{self.server}/{self.service}/messages?{qstr}'
         error = None
         try:
-            recs = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout)
+            validate_response(r, url)
+            recs = r.json()
             recs.sort(key=lambda r: r['date_begin'])
         except Exception as err:
             recs = []
@@ -414,6 +442,7 @@ class ExposurelogAdapter(SourceAdapter):
             url = f'{self.server}/{self.service}/{ep}{qstr}'
             try:
                 r = requests.get(url, timeout=to)
+                validate_response(r, url)
             except Exception as err:
                 url_http_status_code[url] = 'GET error'
             else:
@@ -423,7 +452,9 @@ class ExposurelogAdapter(SourceAdapter):
     def get_instruments(self):
         url = f'{self.server}/{self.service}/instruments'
         try:
-            instruments = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout).json()
+            validate_response(r, url)
+            instruments = r.json()
         except Exception as err:
             instruments = dict(dummy=[])
         # Flatten the lists
@@ -432,9 +463,9 @@ class ExposurelogAdapter(SourceAdapter):
     def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
         if self.min_day_obs:
-            qparams['min_day_obs'] = self.min_day_obs
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
         if self.max_day_obs:
-            qparams['max_day_obs'] = self.max_day_obs
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         url = f'{self.server}/{self.service}/exposures?{urlencode(qparams)}'
         try:
             recs = requests.get(url, timeout=self.timeout).json()
@@ -462,9 +493,9 @@ class ExposurelogAdapter(SourceAdapter):
         if instruments:
             qparams['instruments'] = instruments
         if self.min_day_obs:
-            qparams['min_day_obs'] = self.min_day_obs
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
         if self.max_day_obs:
-            qparams['max_day_obs'] = self.max_day_obs
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         if exposure_flags:
             qparams['exposure_flags'] = exposure_flags
         if self.limit:
@@ -476,6 +507,7 @@ class ExposurelogAdapter(SourceAdapter):
         error = None
         try:
             response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
             recs = response.json()
         except Exception as err:
             recs = []

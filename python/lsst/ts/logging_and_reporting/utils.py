@@ -21,14 +21,15 @@
 
 
 import time
-import datetime
+import datetime # datetime, date, time, timedelta
 
 
 # See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633
-def datetime_to_dayobs(dt) -> int:
-    """Convert a datetime object to dayobs.
+def datetime_to_dayobs(dt) -> str:
+    """Convert a datetime object to day_obs.
     Round to the date of the start of the observing night.
     Both the input datetime and output dayobs are in the same timezone.
+    Format of dayobs is
 
     Parameters
     ----------
@@ -37,10 +38,34 @@ def datetime_to_dayobs(dt) -> int:
 
     Returns
     -------
-    day_obs : `int`
-        The day_obs, as an integer, e.g. 20231225 (YYYYMMDD)
+    day_obs : `str`
+        The day_obs, as a strung, e.g. 2023-12-25 (YYYY-MM-DD)
     """
-    return (dt - datetime.timedelta(hours=12)).date()
+    dodate = (dt - datetime.timedelta(hours=12)).date()
+    return dodate.strftime('%Y-%m-%d')
+
+# day_obs int to day_obs string (YYYY-MM-DD)
+def day_obs_str(day_obs: int) -> str:
+    dos = str(day_obs)
+    return f'{dos[0:4]}-{dos[4:6]}-{dos[6:8]}'  # "YYYY-MM-DD"
+
+# day_obs str (YYYY-MM-DD) to day_obs int
+def day_obs_int(day_obs: str) -> int:
+    return int(day_obs.replace('-',''))
+
+# day_obs (str:YYYY-MM-DD) to datetime.  Allow TODAY, YESTERDAY, TOMORROW
+def dos2dt(day_obs):
+    match day_obs.lower():
+        case 'today':
+            date = datetime.datetime.now().date()
+        case 'yesterday':
+            date = datetime.datetime.now().date() - datetime.timedelta(days=1)
+        case 'tomorrow':
+            date = datetime.datetime.now().date() + datetime.timedelta(days=1)
+        case _:
+            date = datetime.datetime.strptime(day_obs, '%Y-%m-%d').date()
+    return date
+
 
 
 
