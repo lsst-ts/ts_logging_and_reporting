@@ -20,92 +20,171 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-############################################
+'''\
+TODO: This is considered Proof of Concept  code.
+Tests and documentation exist minimally or not at all since until the
+concept is Proven, it all might be thrown away or rewritten.
+'''
+
 # Python Standard Library
 from urllib.parse import urlencode
 import itertools
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 from warnings import warn
 from collections import defaultdict
 from abc import ABC
-
-############################################
 # External Packages
 import requests
+# Local Packages
+import lsst.ts.logging_and_reporting.utils as ut
+import lsst.ts.logging_and_reporting.exceptions as ex
 
-MAX_CONNECT_TIMEOUT = 3.1    # seconds
-MAX_READ_TIMEOUT = 90 * 60   # seconds
 
-def keep_fields(outfields, recs):
-    """Keep only keys in OUTFIELDS list of RECS (list of dicts)
-    SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
-    """
-    if outfields:
-        for rec in recs:
-            nukefields = set(rec.keys()) - set(outfields)
-            print(f'{rec=} {nukefields=}')
-            for f in nukefields:
-                del rec[f]
 
+MAX_CONNECT_TIMEOUT = 3.1   # seconds
+MAX_READ_TIMEOUT = 180      # seconds
+
+
+def all_endpoints(server):
+    endpoints = itertools.chain.from_iterable(
+        [sa(server_url=server).used_endpoints()  for sa in adapters]
+        )
+    return list(endpoints)
+
+
+def validate_response(response, endpoint_url):
+    if response.status_code == 200:
+        return True
+    else:
+        msg = f'Error: {response.json()} {endpoint_url=} {response.reason}'
+        raise ex.BadStatus(msg)
+
+        
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
     """
     # TODO document class including all class variables.
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
+                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
+                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 limit=99,
+                 offset=0,
                  connect_timeout=1.05,  # seconds
                  read_timeout=2,  # seconds
                  ):
+        if min_day_obs is None:  # Inclusive
+            min_day_obs = ut.datetime_to_day_obs(
+                datetime.today() - timedelta(days=1))
+        if max_day_obs is None:  # Exclusive
+            max_day_obs = ut.datetime_to_day_obs(
+                datetime.today() + timedelta(days=1))
         self.server = server_url
+        self.min_day_obs = min_day_obs
+        self.max_day_obs = max_day_obs
+        self.min_date = ut.get_datetime_from_day_obs_str(min_day_obs)
+        self.max_date = ut.get_datetime_from_day_obs_str(max_day_obs)
+        self.limit = limit
+        self.offset = offset
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
                              float(connect_timeout))  # seconds
         self.r_timeout = min(MAX_READ_TIMEOUT,  # seconds
                              float(read_timeout))
         self.timeout = (self.c_timeout, self.r_timeout)
 
+        self.records = None  # else: list of dict
         # Provide the following in subclass
         output_fields = None
         service = None
         endpoints = None
 
+
+
+    def keep_fields(self, recs, outfields):
+        """Keep only keys in OUTFIELDS list of RECS (list of dicts)
+        SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
+        """
+        if outfields:
+            for rec in recs:
+                nukefields = set(rec.keys()) - set(outfields)
+                for f in nukefields:
+                    del rec[f]
+
+    @property
+    def row_header(self):
+        return '| Time | Message |\n|--------|------|'
+
+    def row_str_func(self, datetime_str, rec):
+        msg = rec['message_text']
+        return f'> {datetime_str} | <pre><code>{msg}</code></pre>'
+
+
+    # Break on DAY_OBS. Within that, break on DATE, within that only show time.
+    def day_table(self, datetime_field,
+                  dayobs_field=None,
+                  row_str_func=None,
+                  zero_message=False,
+                  ):
+        def obs_night(rec):
+            if 'day_obs' in rec:
+                return ut.day_obs_str(rec['day_obs']) # -> # "YYYY-MM-DD"
+            else:
+                dt = datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_day_obs(dt)
+
+        def obs_date(rec):
+            dt = datetime.fromisoformat(rec[datetime_field])
+            return dt.replace(microsecond=0)
+
+        recs = self.records
+        if len(recs) == 0:
+            if zero_message:
+                print('Nothing to display.')
+            return
+        dates = set([obs_date(r).date() for r in recs])
+        table = list()
+        # Group by night.
+        recs = sorted(recs,key=lambda r: obs_night(r))
+        for night,g0 in itertools.groupby(recs, key=lambda r: obs_night(r)):
+            # Group by date
+            table.append(f'## NIGHT: {night}: ')
+            for date,g1 in itertools.groupby(g0, key=lambda r: obs_date(r)):
+                table.append(f'### DATE: {date.date()}: ')
+                for rec in g0:
+                    dt = obs_date(rec)
+                    dtstr = str(dt.time())
+                    table.append(f'{self.row_str_func(dtstr, rec)}')
+        table.append(':EOT')
+        return table
+
+
     @property
     def source_url(self):
         return f'{self.server}/{self.service}'
 
+    def used_endpoints(self):
+        used = list()
+        for ep in self.endpoints:
+            used.append(f'{self.server}/{self.service}/{ep}')
+        return used
 
-    def check_endpoints(self, timeout=None):
+
+    def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
-        print(f'Try connect to each endpoint of {self.server}/{self.service} '
-              f'using timeout={to}.')
+        if verbose:
+            print(f'Try connect to each endpoint of'
+                  f' {self.server}/{self.service} ')
         url_http_status_code = dict()
         for ep in self.endpoints:
             url = f'{self.server}/{self.service}/{ep}'
             try:
                 r = requests.get(url, timeout=(timeout or self.timeout))
-            except:
-                url_http_status_code[url] = 'timeout'
+                validate_response(r, url)
+            except Exception as err:
+                url_http_status_code[url] = 'GET error'
             else:
                 url_http_status_code[url] = r.status_code
-        return url_http_status_code
-
-        service = None
-        endpoints = None
-
-
-    def check_endpoints(self, timeout=None):
-        to = (timeout or self.timeout)
-        print(f'Try connect to each endpoint of {self.server}/{self.service} '
-              f'using timeout={to}.')
-        url_http_status_code = dict()
-        for ep in self.endpoints:
-            url = f'{self.server}/{self.service}/{ep}'
-            try:
-                r = requests.get(url, timeout=(timeout or self.timeout))
-            except:
-                url_http_status_code[url] = 'timeout'
-            else:
-                url_http_status_code[url] = r.status_code
-        return url_http_status_code
+        return url_http_status_code, all([v==200 for v in url_http_status_code.values()])
 
 
     def analytics(self, recs, categorical_fields=None):
@@ -135,6 +214,7 @@ class SourceAdapter(ABC):
                     facet_fields=facflds,
                     facets=facets,
                     )
+# END: class SourceAdapter
 
 
 # Not available on SLAC (usdf) as of 9/9/2024.
@@ -142,136 +222,166 @@ class NightReportAdapter(SourceAdapter):
     service = "nightreport"
     endpoints = ['reports']
     primary_endpoint = 'reports'
+    outfields = {
+        'confluence_url',
+        'date_added',
+        'date_invalidated',
+        'date_sent',
+        'day_obs',
+        'id',
+        'is_valid',
+        'observers_crew',
+        'parent_id',
+        'site_id',
+        'summary',
+        'telescope',
+        'telescope_status',
+        'user_agent',
+        'user_id',
+        }
+
+    def row_str_func(self, datetime_str, rec):
+        return f"> {datetime_str} | <pre>{rec['summary']}</pre>"
+
+    def get_reports(self,
+                    site_ids=None,
+                    summary=None,
+                    is_human='either',
+                    is_valid='either',
+                    ):
+        qparams = dict(is_human=is_human, is_valid=is_valid)
+        if site_ids:
+            qparams['site_ids'] = site_ids
+        if summary:
+            qparams['summary'] = summary
+        if self.min_day_obs:
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
+        if self.max_day_obs:
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
+        if self.limit:
+            qparams['limit'] = self.limit
+
+        qstr = urlencode(qparams)
+        url = f'{self.server}/{self.service}/reports?{qstr}'
+        error = None
+        try:
+            response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
+            recs = response.json()
+            recs.sort(key=lambda r: r['day_obs'])
+        except Exception as err:
+            recs = []
+            error = f'{response.text=} Exception={err}'
+
+        self.keep_fields(recs, self.outfields)
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
+
+    def nightly_tickets(self, recs):
+        tickets = defaultdict(set)  # tickets[day_obs] = {ticket_url, ...}
+        for r in recs:
+            ticket_url = r['confluence_url']
+            if ticket_url:
+                tickets[r['day_obs']].add(ticket_url)
+        return {dayobs:list(urls) for dayobs,urls in tickets.items()}
+
 
 class NarrativelogAdapter(SourceAdapter):
-    """TODO full documentation
-    """
     service = 'narrativelog'
     endpoints = ['messages',]
     primary_endpoint = 'messages'
-    fields = {'category',
-              'components',
-              'cscs',
-              'date_added',
-              'date_begin',
-              'date_end',
-              'date_invalidated',
-              'id',
-              'is_human',
-              'is_valid',
-              'level',
-              'message_text',
-              'parent_id',
-              'primary_hardware_components',
-              'primary_software_components',
-              'site_id',
-              'subsystems',
-              'systems',
-              'tags',
-              'time_lost',
-              'time_lost_type',
-              'urls',
-              'user_agent',
-              'user_id'}
-    filters = {
-        'site_ids',
-        'message_text',  # Message text contain ...
-        'min_level',     # inclusive
-        'max_level',     # exclusive
-        'user_ids',
-        'user_agents',
-        'categories',
-        'exclude_categories',
-        'time_lost_types',
-        'exclude_time_lost_types',
-        'tags',          # at least one must be present.
-        'exclude_tags',  # all must be absent
-        'systems',
-        'exclude_systems',
-        'subsystems',
-        'exclude_subsystems',
-        'cscs',
-        'exclude_cscs',
-        'components',
-        'exclude_components',
-        'primary_software_components',
-        'exclude_primary_software_components',
-        'primary_hardware_components',
-        'exclude_primary_hardware_components',
-        'urls',
-        'min_time_lost',
-        'max_time_lost',
-        'has_date_begin',
-        'min_date_begin',
-        'max_date_begin',
-        'has_date_end',
-        'min_date_end',
-        'max_date_end',
-        'is_human',      # Allowed: either, true, false; Default=either
-        'is_valid',      # Allowed: either, true, false; Default=true
-        'min_date_added', # inclusive, TAI ISO string, no TZ
-        'max_date_added', # exclusive, TAI ISO string, no TZ
-        'has_date_invalidated',
-        'min_date_invalidated',
-        'max_date_invalidated',
-        'has_parent_id',
-        'order_by',
-        'offset',
-        'limit'
+    outfields = {
+        # 'category',
+        # 'components',
+        # 'cscs',
+        'date_added',
+        # 'date_begin',
+        # 'date_end',
+        # 'date_invalidated',
+        # 'id',
+        # 'is_human',
+        # 'is_valid',
+        # 'level',
+        'message_text',
+        # 'parent_id',
+        # 'primary_hardware_components',
+        # 'primary_software_components',
+        # 'site_id',
+        # 'subsystems',
+        # 'systems',
+        # 'tags',
+        'time_lost',
+        'time_lost_type',
+        # 'urls',
+        # 'user_agent',
+        # 'user_id',
     }
 
     def get_messages(self,
                      site_ids=None,
                      message_text=None,
-                     min_date_end=None,
-                     max_date_end=None,
                      is_human='either',
                      is_valid='either',
                      offset=None,
-                     limit=None,
-                     outfields=None,
                      ):
-        qparams = dict(is_human=is_human, is_valid=is_valid)
+        qparams = dict(
+            is_human=is_human,
+            is_valid=is_valid,
+            order_by='-date_begin',
+        )
         if site_ids:
             qparams['site_ids'] = site_ids
         if message_text:
             qparams['message_text'] = message_text
-        if min_date_end:
-            qparams['min_date_end'] = min_date_end
-        if max_date_end:
-            qparams['max_date_end'] = max_date_end
-        if limit:
-            qparams['limit'] = limit
+        if self.min_day_obs:
+            qparams['min_date_added'] = datetime.combine(
+                self.min_date, time()
+            ).isoformat()
+        if self.max_day_obs:
+            qparams['max_date_added'] = datetime.combine(
+                self.max_date, time()
+            ).isoformat()
+        if self.limit:
+            qparams['limit'] = self.limit
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
+        error = None
         try:
-            recs = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout)
+            validate_response(r, url)
+            recs = r.json()
             recs.sort(key=lambda r: r['date_begin'])
         except Exception as err:
-            warn(f'No {self.service} records retrieved: {err}')
             recs = []
+            error = str(err)
 
-        keep_fields(outfields, recs)
-        self.recs = recs
-        return self.recs
+        self.keep_fields(recs, self.outfields)
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
 
-    def get_timelost(self, rollup='day'):
+    def get_timelost(self, recs, rollup='day'):
+        def iso_date_begin(rec):
+            return datetime.fromisoformat(rec['date_begin']).date().isoformat()
+
         day_tl = dict() # day_tl[day] = totalDayTimeLost
-        for day,dayrecs in itertools.groupby(
-                self.recs,
-                key=lambda r: datetime.fromisoformat(r['date_begin']).date().isoformat()
-                ):
+        for day,dayrecs in itertools.groupby(recs, key=iso_date_begin):
             day_tl[day] = sum([r['time_lost'] for r in dayrecs])
         return day_tl
+# END: class NarrativelogAdapter
+
 
 class ExposurelogAdapter(SourceAdapter):
-    """TODO full documentation
-
-    EXAMPLES:
-       gaps,recs = logrep_utils.ExposurelogAdapter(server_url='https://usdf-rsp-dev.slac.stanford.edu').get_observation_gaps('LSSTComCam')
-       gaps,recs = logrep_utils.ExposurelogAdapter(server_url='[[https://tucson-teststand.lsst.codes').get_observation_gaps('LSSTComCam')
-    """
     ignore_fields = ['id']
     service = 'exposurelog'
     endpoints = [
@@ -280,59 +390,46 @@ class ExposurelogAdapter(SourceAdapter):
         'messages',
     ]
     primary_endpoint = 'messages'
-    fields = {'date_added',
-              'date_invalidated',
-              'day_obs',
-              'exposure_flag',
-              'id',
-              'instrument',
-              'is_human',
-              'is_valid',
-              'level',
-              'message_text',
-              'obs_id',
-              'parent_id',
-              'seq_num',
-              'site_id',
-              'tags',
-              'urls',
-              'user_agent',
-              'user_id'}
-    filters = {
-        'site_ids',
+    outfields = {
+        'date_added',
+        # 'date_invalidated',
+        'day_obs',
+        # 'exposure_flag',
+        # 'id',
+        'instrument',
+        # 'is_human',
+        # 'is_valid',
+        # 'level',
+        'message_text',
         'obs_id',
-        'instruments',
-        'min_day_obs',  # inclusive, integer in form YYYMMDD
-        'max_day_obs',  # exclusive, integer in form YYYMMDD
-        'min_seq_num',
-        'max_seq_num',
-        'message_text',  # Message text contain ...
-        'min_level',     # inclusive
-        'max_level',     # exclusive
-        'tags',          # at least one must be present.
-        'urls',
-        'exclude_tags',  # all must be absent
-        'user_ids',
-        'user_agents',
-        'is_human',      # Allowed: either, true, false; Default=either
-        'is_valid',      # Allowed: either, true, false; Default=true
-        'exposure_flags',
-        'min_date_added', # inclusive, TAI ISO string, no TZ
-        'max_date_added', # exclusive, TAI ISO string, no TZ
-        'has_date_invalidated',
-        'min_date_invalidated',
-        'max_date_invalidated',
-        'has_parent_id',
-        'order_by',
-        'offset',
-        'limit'
-        }
+        # 'parent_id',
+        # 'seq_num',
+        # 'site_id',
+        # 'tags',
+        # 'urls',
+        # 'user_agent',
+        # 'user_id',
+    }
+
+    @property
+    def row_header(self):
+        return('| Time | OBS ID | Telescope | Message |\n'
+               '|------|--------|-----------|---------|'
+               )
+
+    def row_str_func(self, datetime_str, rec):
+        return(f"> {datetime_str} "
+               f"| {rec['obs_id']} "
+               f"| {rec['instrument']} "
+               f"| <pre>{rec['message_text']}</pre>"
+               )
 
 
-    def check_endpoints(self, timeout=None):
+    def check_endpoints(self, timeout=None, verbose=True):
         to = (timeout or self.timeout)
-        print(f'Try connect to each endpoint of {self.server}/{self.service} '
-              f'using timeout={to}.')
+        if verbose:
+            print(f'Try connect to each endpoint of '
+                  f'{self.server}/{self.service} ')
         url_http_status_code = dict()
 
         for ep in self.endpoints:
@@ -340,30 +437,34 @@ class ExposurelogAdapter(SourceAdapter):
             url = f'{self.server}/{self.service}/{ep}{qstr}'
             try:
                 r = requests.get(url, timeout=to)
-            except:
-                url_http_status_code[url] = 'timeout'
+                validate_response(r, url)
+            except Exception as err:
+                url_http_status_code[url] = 'GET error'
             else:
                 url_http_status_code[url] = r.status_code
-        return url_http_status_code
-
+        return url_http_status_code, all([v==200 for v in url_http_status_code.values()])
 
     def get_instruments(self):
         url = f'{self.server}/{self.service}/instruments'
         try:
-            instruments = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout).json()
+            validate_response(r, url)
+            instruments = r.json()
         except Exception as err:
-            warn(f'No instruments retrieved: {err}')
             instruments = dict(dummy=[])
         # Flatten the lists
         return list(itertools.chain.from_iterable(instruments.values()))
 
     def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
+        if self.min_day_obs:
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
+        if self.max_day_obs:
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         url = f'{self.server}/{self.service}/exposures?{urlencode(qparams)}'
         try:
             recs = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
-            warn(f'No exposures retrieved: {err}')
             recs = []
         return recs
 
@@ -372,63 +473,61 @@ class ExposurelogAdapter(SourceAdapter):
                      obs_ids=None,
                      instruments=None,
                      message_text=None,
-                     min_day_obs=None,
-                     max_day_obs=None,
                      is_human='either',
                      is_valid='either',
                      exposure_flags=None,
-                     offset=None,
-                     limit=None,
-                     outfields=None,
                      ):
-        qparams = dict(is_human=is_human, is_valid=is_valid)
+        qparams = dict(is_human=is_human,
+                       is_valid=is_valid,
+                       order_by='-date_added',
+                       )
         if site_ids:
             qparams['site_ids'] = site_ids
         if obs_ids:
             qparams['obs_ids'] = obs_ids
         if instruments:
             qparams['instruments'] = instruments
-        if min_day_obs:
-            qparams['min_day_obs'] = min_day_obs
-        if max_day_obs:
-           qparams['max_day_obs'] = max_day_obs
+        if self.min_day_obs:
+            qparams['min_day_obs'] = ut.day_obs_int(self.min_day_obs)
+        if self.max_day_obs:
+            qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         if exposure_flags:
             qparams['exposure_flags'] = exposure_flags
-        if offset:
-            qparams['offset'] = offset
-        if limit:
-            qparams['limit'] = limit
+        if self.limit:
+            qparams['limit'] = self.limit
 
         qstr = urlencode(qparams)
         url = f'{self.server}/{self.service}/messages?{qstr}'
         recs = []
+        error = None
         try:
             response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
             recs = response.json()
         except Exception as err:
-            warnings.warn(f'No {self.service} records retrieved: {err}')
-
-        if len(recs) == 0:
-            warn(f'No records retrieved from {url}')
+            recs = []
+            error = str(err)
 
         if recs:
             recs.sort(key=lambda r: r['day_obs'])
 
-        keep_fields(outfields, recs)
-        self.recs = recs
-        return self.recs
+        self.keep_fields(recs, self.outfields)
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
 
-    def get_observation_gaps(self, instruments=None,
-                             min_day_obs=None,  # YYYYMMDD
-                             max_day_obs=None,  # YYYYMMDD
-                             ):
+
+    def get_observation_gaps(self, instruments=None):
         if not instruments:
             instruments = self.get_instruments()
         assert isinstance(instruments,list), \
             f'"instruments" must be a list.  Got {instruments!r}'
-        # inst_day_rollupol[instrument] => dict[day] => exposureGapInMinutes
+        # inst_day_rollup[instrument] => dict[day] => exposureGapInMinutes
         inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
-
         for instrum in instruments:
             recs = self.get_exposures(instrum)
             instrum_gaps = dict()
@@ -452,54 +551,14 @@ class ExposurelogAdapter(SourceAdapter):
                     end = rec['timespan_end']
                 instrum_gaps[day] = gaps
 
-                #!roll = dict()
                 # Rollup gap times by day
                 for day,tuples in instrum_gaps.items():
-                    #!roll[day] = sum([t[2] for t in tuples])
                     inst_day_rollup[instrum][day] = sum([t[2] for t in tuples])
 
         return inst_day_rollup
+# END: class ExposurelogAdapter
 
-
-
-
-class Dashboard:  # TODO Complete and move to its own file.
-    """Verify that we can get to all the API endpoints and databases we need for
-    any of our sources.
-    """
-
-    envs = dict(
-        summit = 'https://summit-lsp.lsst.codes',
-        usdf_dev = 'https://usdf-rsp-dev.slac.stanford.edu',
-        tucson = 'https://tucson-teststand.lsst.codes',
-        # Environments not currently used:
-        #    rubin_usdf_dev = '',
-        #    data_lsst_cloud = '',
-        #    usdf = '',
-        #    base_data_facility = '',
-        #    rubin_idf_int = '',
-    )
-    adapters = [ExposurelogAdapter,
-                NarrativelogAdapter,
-                # NightReportAdapter,   # TODO
-                ]
-
-    def report(self, timeout=None):
-        url_status = dict()
-        for env,server in self.envs.items():
-            for adapter in self.adapters:
-                service = adapter(server_url=server)
-                # url_status[endpoint_url] = http_status_code
-                url_status.update(service.check_endpoints(timeout=timeout))
-        total_cnt = 0
-        good_cnt = 0
-        good = list()
-        print('\nStatus for each endpoint URL:')
-        for url,stat in url_status.items():
-            print(f'{stat}\t{url}')
-            total_cnt += 1
-            if stat == 200:
-                good_cnt += 1
-                good.append(url)
-        print(f'\nConnected to {good_cnt} out of {total_cnt} endpoints.')
-        return good_cnt, good
+adapters = [ExposurelogAdapter,
+            NarrativelogAdapter,
+            NightReportAdapter,
+            ]

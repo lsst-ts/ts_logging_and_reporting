@@ -19,6 +19,60 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+
+import time
+import datetime # datetime, date, time, timedelta
+
+
+# See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633
+# was: datetime_to_dayobs   # TODO remove
+def datetime_to_day_obs(dt) -> str:
+    """Convert a datetime object to day_obs.
+    Round to the date of the start of the observing night.
+    Both the input datetime and output dayobs are in the same timezone.
+    Format of dayobs is
+
+    Parameters
+    ----------
+    dt : `datetime.datetime`
+        The date-time.
+
+    Returns
+    -------
+    day_obs : `str`
+        The day_obs, as a strung, e.g. 2023-12-25 (YYYY-MM-DD)
+    """
+    dodate = (dt - datetime.timedelta(hours=12)).date()
+    return dodate.strftime('%Y-%m-%d')
+
+# day_obs int to day_obs string (YYYY-MM-DD)
+def day_obs_str(day_obs: int) -> str:
+    dos = str(day_obs)
+    return f'{dos[0:4]}-{dos[4:6]}-{dos[6:8]}'  # "YYYY-MM-DD"
+
+# day_obs str (YYYY-MM-DD) to day_obs int
+def day_obs_int(day_obs: str) -> int:
+    return int(day_obs.replace('-',''))
+
+# day_obs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
+# Allow TODAY, YESTERDAY, TOMORROW
+# was: dos2dt
+def get_datetime_from_day_obs_str(day_obs):
+    match day_obs.lower():
+        case 'today':
+            date = datetime.datetime.now().date()
+        case 'yesterday':
+            date = datetime.datetime.now().date() - datetime.timedelta(days=1)
+        case 'tomorrow':
+            date = datetime.datetime.now().date() + datetime.timedelta(days=1)
+        case _:
+            no_dash = day_obs.replace('-','')
+            date = datetime.datetime.strptime(no_dash, '%Y%m%d').date()
+    return date
+
+
+
+
 def tic():
     """Start timer.
     """

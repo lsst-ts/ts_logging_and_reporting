@@ -1,0 +1,18 @@
+# For use with a Times Square notebook
+title: Assorted Plots
+description: Trying plots
+authors:
+  - name: Valerie Becker
+    slack: valerie becker
+tags:
+  - reporting
+  - prototype
+parameters:
+  day_obs:
+    type: string
+    description: Date on which to query
+    default: '2024-06-26'
+  instruments:
+    type: string
+    description: Which instrument to query
+    default: 'latiss, lsstcomcamsim, lsstcomcam'
