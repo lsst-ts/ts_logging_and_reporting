@@ -69,14 +69,10 @@ example_error_from_exposurelog = {
          'msg': 'Input should be a valid integer, unable to parse string as an integer',
          'input': '2024-09-21'}]}
 
-class UnknownLogrep(BaseLogrepException):
-    """Unknown LogRep error.  If this is ever raised
-    create and use a new BaseLogrepException exception that is more
-    specific."""
-    error_code = 'UNKLR'
 
 class BadStatus(BaseLogrepException):
-    """Unknown LogRep error.  If this is ever raised
-    create and use a new BaseLogrepException exception that is more
-    specific."""
+    """Non-200 HTTP status from API endpoint. Typically
+    this will occur when a URL query string parameter is passed a value with
+    a bad format.  It may also be that the Service is broken.
+    """
     error_code = 'BADQSTR'

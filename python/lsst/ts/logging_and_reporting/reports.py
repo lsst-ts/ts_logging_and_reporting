@@ -31,13 +31,12 @@ import requests
 from IPython.display import display, Markdown
 import pandas as pd
 # Local Packages
-from lsst.ts.logging_and_reporting.utils import datetime_to_dayobs
 import lsst.ts.logging_and_reporting.almanac as alm
 
 def md(markdown_str, color=None):
     # see https://www.w3schools.com/colors/colors_names.asp
     if color:
-        display(Markdown(f"### <font color='{color}'>{markdown_str}</font>"))
+        display(Markdown(f"<font color='{color}'>{markdown_str}</font>"))
     else:
         display(Markdown(markdown_str))
 
@@ -58,14 +57,14 @@ def dict_to_md(in_dict):
     return md_list
 
 def adapter_overview(adapter, status, limit):
-    cnt = status["number_of_records"]
+    count = status["number_of_records"]
     error  =  status["error"]
-    more = '(There may be more.)' if cnt >= limit else ''
-    result = error if error else f'Got {cnt} records. '
-    mdlist([f'## Overview for Service: `{adapter.service}` [{cnt}]',
+    more = '(There may be more.)' if count >= limit else ''
+    result = error if error else f'Got {count} records. '
+    mdlist([f'## Overview for Service: `{adapter.service}` [{count}]',
             f'- Endpoint: {status["endpoint_url"]}',
-            f'- {result} {more}',
             ])
+    print(f'- {result} {more}')
 
 
 # TODO move all instances of "row_header", "row_str_func" from source_adapters to here.

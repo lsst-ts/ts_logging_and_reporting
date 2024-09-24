@@ -52,12 +52,11 @@ def all_endpoints(server):
     return list(endpoints)
 
 
-def validate_response(response, url):
+def validate_response(response, endpoint_url):
     if response.status_code == 200:
         return True
     else:
-        # TODO Format for User
-        msg = f'Error: {response.json()} {url=}'
+        msg = f'Error: {response.json()} {endpoint_url=} {response.reason}'
         raise ex.BadStatus(msg)
 
 class SourceAdapter(ABC):
@@ -74,16 +73,16 @@ class SourceAdapter(ABC):
                  read_timeout=2,  # seconds
                  ):
         if min_day_obs is None:  # Inclusive
-            min_day_obs = ut.datetime_to_dayobs(
+            min_day_obs = ut.datetime_to_day_obs(
                 datetime.today() - timedelta(days=1))
         if max_day_obs is None:  # Exclusive
-            max_day_obs = ut.datetime_to_dayobs(
+            max_day_obs = ut.datetime_to_day_obs(
                 datetime.today() + timedelta(days=1))
         self.server = server_url
         self.min_day_obs = min_day_obs
         self.max_day_obs = max_day_obs
-        self.min_date = ut.dos2dt(min_day_obs)
-        self.max_date = ut.dos2dt(max_day_obs)
+        self.min_date = ut.get_datetime_from_day_obs_str(min_day_obs)
+        self.max_date = ut.get_datetime_from_day_obs_str(max_day_obs)
         self.limit = limit
         self.offset = offset
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
@@ -125,19 +124,12 @@ class SourceAdapter(ABC):
                   row_str_func=None,
                   zero_message=False,
                   ):
-        #! def date_time(rec):   TODO remove
-        #!     if dayobs_field:
-        #!         dt = datetime.strptime(str(rec[dayobs_field]), '%Y%m%d')
-        #!     else:
-        #!         dt = datetime.fromisoformat(rec[datetime_field])
-        #!     return dt.replace(microsecond=0)
-
         def obs_night(rec):
             if 'day_obs' in rec:
                 return ut.day_obs_str(rec['day_obs']) # -> # "YYYY-MM-DD"
             else:
                 dt = datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(dt)
+                return ut.datetime_to_day_obs(dt)
 
         def obs_date(rec):
             dt = datetime.fromisoformat(rec[datetime_field])
@@ -272,13 +264,13 @@ class NightReportAdapter(SourceAdapter):
         url = f'{self.server}/{self.service}/reports?{qstr}'
         error = None
         try:
-            r = requests.get(url, timeout=self.timeout)
-            validate_response(r, url)
-            recs = r.json()
+            response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
+            recs = response.json()
             recs.sort(key=lambda r: r['day_obs'])
         except Exception as err:
             recs = []
-            error = str(err)
+            error = f'{response.text=} Exception={err}'
 
         self.keep_fields(recs, self.outfields)
         self.records = recs
@@ -295,7 +287,6 @@ class NightReportAdapter(SourceAdapter):
             ticket_url = r['confluence_url']
             if ticket_url:
                 tickets[r['day_obs']].add(ticket_url)
-        #!return {k:list(v) for k,v in tickets.items()}
         return {dayobs:list(urls) for dayobs,urls in tickets.items()}
 
 
@@ -348,10 +339,12 @@ class NarrativelogAdapter(SourceAdapter):
             qparams['message_text'] = message_text
         if self.min_day_obs:
             qparams['min_date_added'] = datetime.combine(
-                self.min_date, time()).isoformat()
+                self.min_date, time()
+            ).isoformat()
         if self.max_day_obs:
             qparams['max_date_added'] = datetime.combine(
-                self.max_date, time()).isoformat()
+                self.max_date, time()
+            ).isoformat()
         if self.limit:
             qparams['limit'] = self.limit
 
