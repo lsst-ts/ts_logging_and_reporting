@@ -1,0 +1,17 @@
+# For use with a Times Square notebook
+title: LR Exposure Log
+description: Prototype 1
+authors:
+  - name: Steve Pothier
+    slack: Steve Pothier
+tags:
+  - reporting
+  - prototype
+  - exposure
+parameters:
+  record_limit:
+    type: integer
+    description: Max number of records to output
+    default: 99
+    minimum: 1
+    maximum: 9999

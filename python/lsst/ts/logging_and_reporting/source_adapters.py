@@ -59,6 +59,7 @@ def validate_response(response, endpoint_url):
         msg = f'Error: {response.json()} {endpoint_url=} {response.reason}'
         raise ex.BadStatus(msg)
 
+        
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
     """
@@ -378,6 +379,7 @@ class NarrativelogAdapter(SourceAdapter):
             day_tl[day] = sum([r['time_lost'] for r in dayrecs])
         return day_tl
 # END: class NarrativelogAdapter
+
 
 class ExposurelogAdapter(SourceAdapter):
     ignore_fields = ['id']
