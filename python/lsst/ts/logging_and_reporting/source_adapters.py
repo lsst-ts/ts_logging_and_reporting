@@ -68,8 +68,8 @@ class SourceAdapter(ABC):
                  server_url='https://tucson-teststand.lsst.codes',
                  min_day_obs=None,  # INCLUSIVE: default=Yesterday
                  max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
-                 limit=99,
                  offset=0,
+                 limit=99,
                  connect_timeout=1.05,  # seconds
                  read_timeout=2,  # seconds
                  ):
@@ -97,8 +97,6 @@ class SourceAdapter(ABC):
         output_fields = None
         service = None
         endpoints = None
-
-
 
     def keep_fields(self, recs, outfields):
         """Keep only keys in OUTFIELDS list of RECS (list of dicts)
@@ -247,7 +245,7 @@ class NightReportAdapter(SourceAdapter):
                     site_ids=None,
                     summary=None,
                     is_human='either',
-                    is_valid='either',
+                    is_valid='true',
                     ):
         qparams = dict(is_human=is_human, is_valid=is_valid)
         if site_ids:
@@ -326,7 +324,7 @@ class NarrativelogAdapter(SourceAdapter):
                      site_ids=None,
                      message_text=None,
                      is_human='either',
-                     is_valid='either',
+                     is_valid='true',
                      offset=None,
                      ):
         qparams = dict(
@@ -474,7 +472,7 @@ class ExposurelogAdapter(SourceAdapter):
                      instruments=None,
                      message_text=None,
                      is_human='either',
-                     is_valid='either',
+                     is_valid='true',
                      exposure_flags=None,
                      ):
         qparams = dict(is_human=is_human,

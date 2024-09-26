@@ -14,16 +14,18 @@ parameters:
   day_obs:
     type: string
     description: >
-      The night to report on. (Allowed: YYYY-MM-DD, TODAY, YESTERDAY)
-      The report will include days upto, but not including, day_obs.
-      For a value of TODAY, the last observing night that will be
-      included in the report will be the one that started yesterday.
-      This is usually what you want.
-    default: "TODAY"
+      The last observing night to report on. (Allowed: YYYY-MM-DD,
+      TODAY, YESTERDAY) The report will include all observing nights
+      upto and including, day_obs.  You probably want YESTERDAY
+      (meaning the last night shown will be the one that started at
+      sunset yesterday). A value of TODAY means the last night shown
+      will be the one that starts tonight (which will have no nightly
+      data before sunset).
+    default: "YESTERDAY"
   number_of_days:
     type: integer
     description: >
-      Number of days to show in the report.
+      Number of days (nights) to show in the report.
     default: 1
     minimum: 1
     maximum: 9
