@@ -38,12 +38,14 @@ import requests
 # Local Packages
 import lsst.ts.logging_and_reporting.utils as ut
 import lsst.ts.logging_and_reporting.exceptions as ex
+import lsst.ts.logging_and_reporting.almanac as alm
 
 
 
 MAX_CONNECT_TIMEOUT = 3.1   # seconds
 MAX_READ_TIMEOUT = 180      # seconds
 
+default_server = 'https://summit-lsp.lsst.codes'
 
 def all_endpoints(server):
     endpoints = itertools.chain.from_iterable(
@@ -63,28 +65,36 @@ def validate_response(response, endpoint_url):
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
     """
+    limit=99
+
     # TODO document class including all class variables.
     def __init__(self, *,
-                 server_url='https://tucson-teststand.lsst.codes',
+                 server_url=None,
                  min_day_obs=None,  # INCLUSIVE: default=Yesterday
                  max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
                  offset=0,
-                 limit=99,
                  connect_timeout=1.05,  # seconds
                  read_timeout=2,  # seconds
                  ):
+        """Load the relevant data for the Source.
+
+        Intended to load from all used Source endpoints over the range
+        of day_obs specified in INIT. The day(s) records for each
+        endpoint is stored for later use.  Do not make the day_obs
+        range large or you will use lots of memory. Tens of days is probably
+        ok.
+        """
         if min_day_obs is None:  # Inclusive
             min_day_obs = ut.datetime_to_day_obs(
                 datetime.today() - timedelta(days=1))
         if max_day_obs is None:  # Exclusive
             max_day_obs = ut.datetime_to_day_obs(
                 datetime.today() + timedelta(days=1))
-        self.server = server_url
+        self.server = server_url or default_server
         self.min_day_obs = min_day_obs
         self.max_day_obs = max_day_obs
         self.min_date = ut.get_datetime_from_day_obs_str(min_day_obs)
         self.max_date = ut.get_datetime_from_day_obs_str(max_day_obs)
-        self.limit = limit
         self.offset = offset
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
                              float(connect_timeout))  # seconds
@@ -238,6 +248,21 @@ class NightReportAdapter(SourceAdapter):
         'user_id',
         }
 
+    def __init__(self, *,
+                 server_url=None,
+                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
+                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 limit=None,
+                 ):
+        super().__init__()
+        self.limit = SourceAdapter.limit if limit is None else limit
+
+        # status[endpoint] = dict(endpoint_url, number_of_records, error)
+        self.status = dict()
+
+        # Load the data (records) we need from relevant endpoints
+        self.status['reports'] = self.get_reports()
+
     def row_str_func(self, datetime_str, rec):
         return f"> {datetime_str} | <pre>{rec['summary']}</pre>"
 
@@ -319,6 +344,21 @@ class NarrativelogAdapter(SourceAdapter):
         # 'user_agent',
         # 'user_id',
     }
+
+    def __init__(self, *,
+                 server_url=None,
+                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
+                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 limit=None,
+                 ):
+        super().__init__()
+        self.limit = SourceAdapter.limit if limit is None else limit
+
+        # status[endpoint] = dict(endpoint_url, number_of_records, error)
+        self.status = dict()
+
+        # Load the data (records) we need from relevant endpoints
+        self.status['messages'] = self.get_messages()
 
     def get_messages(self,
                      site_ids=None,
@@ -409,6 +449,28 @@ class ExposurelogAdapter(SourceAdapter):
         # 'user_id',
     }
 
+    def __init__(self, *,
+                 server_url='https://tucson-teststand.lsst.codes',
+                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
+                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 limit=None,
+                 ):
+        super().__init__()
+        self.limit = SourceAdapter.limit if limit is None else limit
+
+        # status[endpoint] = dict(endpoint_url, number_of_records, error)
+        self.status = dict()
+        self.instruments = list() # [instrument, ...]
+        self.exposures = dict() # dd[instrument] = [rec, ...]
+
+        # Load the data (records) we need from relevant endpoints
+        # in dependency order.
+        self.status['instruments'] = self.get_instruments()
+        for instrument in self.instruments:
+            self.status[f'exposures.{instrument}'] = self.get_exposures(instrument)
+        self.status['messages'] = self.get_messages()
+
+
     @property
     def row_header(self):
         return('| Time | OBS ID | Telescope | Message |\n'
@@ -445,14 +507,23 @@ class ExposurelogAdapter(SourceAdapter):
 
     def get_instruments(self):
         url = f'{self.server}/{self.service}/instruments'
+        recs = dict(dummy=[])
+        error = None
         try:
             r = requests.get(url, timeout=self.timeout).json()
             validate_response(r, url)
-            instruments = r.json()
+            recs = r.json()
         except Exception as err:
-            instruments = dict(dummy=[])
+            error = str(err)
+
         # Flatten the lists
-        return list(itertools.chain.from_iterable(instruments.values()))
+        self.instruments = list(itertools.chain.from_iterable(recs.values()))
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
 
     def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
@@ -461,11 +532,22 @@ class ExposurelogAdapter(SourceAdapter):
         if self.max_day_obs:
             qparams['max_day_obs'] = ut.day_obs_int(self.max_day_obs)
         url = f'{self.server}/{self.service}/exposures?{urlencode(qparams)}'
+        recs = []
+        error = None
         try:
             recs = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
-            recs = []
-        return recs
+            error = str(err)
+
+        self.exposures[instrument] = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+            )
+        return status
+
+
 
     def get_messages(self,
                      site_ids=None,
@@ -504,7 +586,6 @@ class ExposurelogAdapter(SourceAdapter):
             validate_response(response, url)
             recs = response.json()
         except Exception as err:
-            recs = []
             error = str(err)
 
         if recs:
@@ -522,20 +603,23 @@ class ExposurelogAdapter(SourceAdapter):
     # day_obs:: YYYMMDD (int or str)
     # Use almanac begin of night values for day_obs.
     # Use almanac end of night values for day_obs + 1.
-    def night_tally_observation_gaps(self, day_obs, instrument):
+    def night_tally_observation_gaps(self, day_obs,
+                                     instrument='LSSTComCam'):
         almanac = alm.Almanac(day_obs=day_obs)
         total_observable_hours = almanac.night_hours
         recs = self.get_night_exposures(instrument, day_obs)
 
+
     def get_observation_gaps(self, instruments=None):
         if not instruments:
-            instruments = self.get_instruments()
+            instruments = self.instruments
+        # TODO user specified list of instruments must be subset
         assert isinstance(instruments,list), \
             f'"instruments" must be a list.  Got {instruments!r}'
         # inst_day_rollup[instrument] => dict[day] => exposureGapInMinutes
         inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
         for instrum in instruments:
-            recs = self.get_exposures(instrum)
+            recs = self.exposures[instrum]
             instrum_gaps = dict()
             for day,dayrecs in itertools.groupby(recs,
                                                  key=lambda r: r['day_obs']):
