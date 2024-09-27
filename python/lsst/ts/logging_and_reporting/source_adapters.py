@@ -44,8 +44,11 @@ import lsst.ts.logging_and_reporting.almanac as alm
 
 MAX_CONNECT_TIMEOUT = 3.1   # seconds
 MAX_READ_TIMEOUT = 180      # seconds
+summit = 'https://summit-lsp.lsst.codes'
+usdf = 'https://usdf-rsp-dev.slac.stanford.edu'
+tucson = 'https://tucson-teststand.lsst.codes'
 
-default_server = 'https://summit-lsp.lsst.codes'
+default_server = usdf
 
 def all_endpoints(server):
     endpoints = itertools.chain.from_iterable(
@@ -256,6 +259,7 @@ class NightReportAdapter(SourceAdapter):
                  ):
         super().__init__()
         self.limit = SourceAdapter.limit if limit is None else limit
+        self.server = SourceAdapter.server if server_url is None else server_url
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -353,6 +357,7 @@ class NarrativelogAdapter(SourceAdapter):
                  ):
         super().__init__()
         self.limit = SourceAdapter.limit if limit is None else limit
+        self.server = SourceAdapter.server if server_url is None else server_url
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -457,6 +462,7 @@ class ExposurelogAdapter(SourceAdapter):
                  ):
         super().__init__()
         self.limit = SourceAdapter.limit if limit is None else limit
+        self.server = SourceAdapter.server if server_url is None else server_url
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
