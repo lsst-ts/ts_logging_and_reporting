@@ -59,7 +59,7 @@ def validate_response(response, endpoint_url):
         msg = f'Error: {response.json()} {endpoint_url=} {response.reason}'
         raise ex.BadStatus(msg)
 
-        
+
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters.
     """
@@ -440,7 +440,8 @@ class ExposurelogAdapter(SourceAdapter):
                 url_http_status_code[url] = 'GET error'
             else:
                 url_http_status_code[url] = r.status_code
-        return url_http_status_code, all([v==200 for v in url_http_status_code.values()])
+        allgood_p = all([v==200 for v in url_http_status_code.values()])
+        return url_http_status_code, allgood_p
 
     def get_instruments(self):
         url = f'{self.server}/{self.service}/instruments'
@@ -518,6 +519,13 @@ class ExposurelogAdapter(SourceAdapter):
             )
         return status
 
+    # day_obs:: YYYMMDD (int or str)
+    # Use almanac begin of night values for day_obs.
+    # Use almanac end of night values for day_obs + 1.
+    def night_tally_observation_gaps(self, day_obs, instrument):
+        almanac = alm.Almanac(day_obs=day_obs)
+        total_observable_hours = almanac.night_hours
+        recs = self.get_night_exposures(instrument, day_obs)
 
     def get_observation_gaps(self, instruments=None):
         if not instruments:
