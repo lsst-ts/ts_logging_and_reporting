@@ -61,7 +61,7 @@ def adapter_overview(adapter, status, limit):
     error  =  status["error"]
     more = '(There may be more.)' if count >= limit else ''
     result = error if error else f'Got {count} records. '
-    mdlist([f'<a id="overview{adapter.service}"></a>## Overview for Service: `{adapter.service}` [{count}]',
+    mdlist([f'## Overview for Service: `{adapter.service}` [{count}]<a id="overview{adapter.service}"></a>',
             f'- Endpoint: {status["endpoint_url"]}',
             ])
     print(f'- {result} {more}')
