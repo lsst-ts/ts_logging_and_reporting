@@ -56,10 +56,11 @@ def dict_to_md(in_dict):
             md_list.append(f'    - {elem}')
     return md_list
 
-def adapter_overview(adapter, status, limit):
+def adapter_overview(adapter):
+    status = adapter.get_status()
     count = status["number_of_records"]
     error  =  status["error"]
-    more = '(There may be more.)' if count >= limit else ''
+    more = '(There may be more.)' if count >= adapter.limit else ''
     result = error if error else f'Got {count} records. '
     mdlist([f'<a id="overview{adapter.service}"></a>\n## Overview for Service: `{adapter.service}` [{count}]',
             f'- Endpoint: {status["endpoint_url"]}',
@@ -70,22 +71,37 @@ def adapter_overview(adapter, status, limit):
 # TODO move all instances of "row_header", "row_str_func" from source_adapters to here.
 class Report(ABC):
     def __init__(self, *,
+                 adapter=None, # instance of SourceAdapter
                  min_day_obs=None,  # INCLUSIVE: default=Yesterday
                  max_day_obs=None,  # EXCLUSIVE: default=Today
                  ):
+        self.source_adapter = adapter
         self.min_day_obs = min_day_obs
         self.max_day_obs = max_day_obs
 
-    def time_log_as_markdown(self, source_adapter, url,
+    def day_obs_report(self, day_obs):
+        """
+        Create report for one source using data from one
+        observing night (day_obs).
+        """
+        if adapter:
+            self.time_log_as_markdown(
+                log_title=f'{adapter.service.title()} Report for {day_obs}'
+            )
+
+    def time_log_as_markdown(self,
                              log_title=None,
                              zero_message=False,
                              ):
-        records = source_adapter.records
-        service = source_adapter.service
+        '''Emit markdown for a date-time log.'''
+        adapter = self.source_adapter
+        records = adapter.records
+        service = adapter.service
+        url = adapter.get_status().get('endpoint_url')
         title = log_title if log_title else ''
         if records:
             md(f'### {title}')
-            table = source_adapter.day_table('date_added')
+            table = self.source_adapter.day_table('date_added')
             mdlist(table)
         else:
             if zero_message:
@@ -96,12 +112,23 @@ class AlmanacReport(Report):
     # moon rise,set,illumination %
     # (astronomical,nautical,civil) twilight (morning,evening)
     # sun rise,set
-    def almanac_as_dataframe(self):
+
+    def day_obs_report(self, day_obs):
+        display(self.almanac_as_dataframe(day_obs))
+
+    def almanac_as_dataframe(self, day_obs):
         # This display superfluous header: "0, 1"
-        return pd.DataFrame(alm.Almanac().as_dict).T
+        return pd.DataFrame(alm.Almanac(day_obs=day_obs).as_dict).T
 
 
 class NightlyLogReport(Report):
+
+    def day_obs_report(self, day_obs):
+        if adapter:
+            self.time_log_as_markdown(
+                log_title=f'{adapter.service.title()} Report for {day_obs}'
+            )
+
 
     def block_tickets_as_markdown(self,  tickets,
                                   title='## Nightly Jira BLOCKs'):
@@ -133,3 +160,12 @@ class NarrativelogReport(Report):
     def time_log_as_markown(self, records,
                             title='# Exposure Log'):
         pass # TODO use "day_table"
+
+class NightObsReport(Report):
+    """Generate a report that combines all sources using data from one day_obs.
+    This ignores reporting that is done once no matter how many
+    nights (Overview, Links).
+    Generate one page for each observing night. An Observing Night includes
+    the evening of day_obs and morning of the day after day_obs.
+    A page includes: Almanac, NightReport, Exposure, Narrative.
+    """

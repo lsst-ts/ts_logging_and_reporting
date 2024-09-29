@@ -21,12 +21,30 @@
 
 
 import time
-import datetime # datetime, date, time, timedelta
+import datetime as dt
 
+class datetime_iter:
+    def __init__(self, start_datetime, stop_datetime, increment=None):
+        self.start_datetime = start_datetime
+        self.stop_datetime = stop_datetime
+        self.increment = increment if increment else dt.timedelta(days=1)
+
+
+    def __iter__(self):
+        self.date = self.start_datetime
+        return self
+
+    def __next__(self):
+        if self.date <= self.stop_datetime: # INCLUSIVE
+            date = self.date
+            self.date += self.increment
+            return date
+        else:
+            raise StopIteration
 
 # See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633
 # was: datetime_to_dayobs   # TODO remove
-def datetime_to_day_obs(dt) -> str:
+def datetime_to_day_obs(datetime) -> str:
     """Convert a datetime object to day_obs.
     Round to the date of the start of the observing night.
     Both the input datetime and output dayobs are in the same timezone.
@@ -34,7 +52,7 @@ def datetime_to_day_obs(dt) -> str:
 
     Parameters
     ----------
-    dt : `datetime.datetime`
+    datetime : `datetime.datetime`
         The date-time.
 
     Returns
@@ -42,7 +60,7 @@ def datetime_to_day_obs(dt) -> str:
     day_obs : `str`
         The day_obs, as a strung, e.g. 2023-12-25 (YYYY-MM-DD)
     """
-    dodate = (dt - datetime.timedelta(hours=12)).date()
+    dodate = (datetime - dt.timedelta(hours=12)).date()
     return dodate.strftime('%Y-%m-%d')
 
 # day_obs int to day_obs string (YYYY-MM-DD)
@@ -60,14 +78,14 @@ def day_obs_int(day_obs: str) -> int:
 def get_datetime_from_day_obs_str(day_obs):
     match day_obs.lower():
         case 'today':
-            date = datetime.datetime.now().date()
+            date = dt.datetime.now().date()
         case 'yesterday':
-            date = datetime.datetime.now().date() - datetime.timedelta(days=1)
+            date = dt.datetime.now().date() - dt.timedelta(days=1)
         case 'tomorrow':
-            date = datetime.datetime.now().date() + datetime.timedelta(days=1)
+            date = dt.datetime.now().date() + dt.timedelta(days=1)
         case _:
             no_dash = day_obs.replace('-','')
-            date = datetime.datetime.strptime(no_dash, '%Y%m%d').date()
+            date = dt.datetime.strptime(no_dash, '%Y%m%d').date()
     return date
 
 

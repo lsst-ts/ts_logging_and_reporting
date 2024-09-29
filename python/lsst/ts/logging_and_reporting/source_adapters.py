@@ -110,6 +110,13 @@ class SourceAdapter(ABC):
         output_fields = None
         service = None
         endpoints = None
+        # status[endpoint] = dict(endpoint_url, number_of_records, error)
+        # e.g. status['messages'] = dict(endpoint_url='.../messages?...', ...)
+
+        status = dict()
+
+    def get_status(self, endpoint=None):
+        return self.status.get(endpoint or self.primary_endpoint)
 
     def keep_fields(self, recs, outfields):
         """Keep only keys in OUTFIELDS list of RECS (list of dicts)
@@ -230,9 +237,6 @@ class SourceAdapter(ABC):
 
 # Not available on SLAC (usdf) as of 9/9/2024.
 class NightReportAdapter(SourceAdapter):
-    service = "nightreport"
-    endpoints = ['reports']
-    primary_endpoint = 'reports'
     outfields = {
         'confluence_url',
         'date_added',
@@ -250,6 +254,9 @@ class NightReportAdapter(SourceAdapter):
         'user_agent',
         'user_id',
         }
+    service = "nightreport"
+    endpoints = ['reports']
+    primary_endpoint = 'reports'
 
     def __init__(self, *,
                  server_url=None,
@@ -265,12 +272,13 @@ class NightReportAdapter(SourceAdapter):
         self.status = dict()
 
         # Load the data (records) we need from relevant endpoints
-        self.status['reports'] = self.get_reports()
+        self.status[self.primary_endpoint] = self.get_records()
+
 
     def row_str_func(self, datetime_str, rec):
         return f"> {datetime_str} | <pre>{rec['summary']}</pre>"
 
-    def get_reports(self,
+    def get_records(self,
                     site_ids=None,
                     summary=None,
                     is_human='either',
@@ -309,9 +317,9 @@ class NightReportAdapter(SourceAdapter):
             )
         return status
 
-    def nightly_tickets(self, recs):
+    def nightly_tickets(self):
         tickets = defaultdict(set)  # tickets[day_obs] = {ticket_url, ...}
-        for r in recs:
+        for r in self.records:
             ticket_url = r['confluence_url']
             if ticket_url:
                 tickets[r['day_obs']].add(ticket_url)
@@ -319,9 +327,6 @@ class NightReportAdapter(SourceAdapter):
 
 
 class NarrativelogAdapter(SourceAdapter):
-    service = 'narrativelog'
-    endpoints = ['messages',]
-    primary_endpoint = 'messages'
     outfields = {
         # 'category',
         # 'components',
@@ -348,6 +353,9 @@ class NarrativelogAdapter(SourceAdapter):
         # 'user_agent',
         # 'user_id',
     }
+    service = 'narrativelog'
+    endpoints = ['messages',]
+    primary_endpoint = 'messages'
 
     def __init__(self, *,
                  server_url=None,
@@ -363,9 +371,9 @@ class NarrativelogAdapter(SourceAdapter):
         self.status = dict()
 
         # Load the data (records) we need from relevant endpoints
-        self.status['messages'] = self.get_messages()
+        self.status[self.primary_endpoint] = self.get_records()
 
-    def get_messages(self,
+    def get_records(self,
                      site_ids=None,
                      message_text=None,
                      is_human='either',
@@ -426,13 +434,6 @@ class NarrativelogAdapter(SourceAdapter):
 
 class ExposurelogAdapter(SourceAdapter):
     ignore_fields = ['id']
-    service = 'exposurelog'
-    endpoints = [
-        'instruments',
-        'exposures',
-        'messages',
-    ]
-    primary_endpoint = 'messages'
     outfields = {
         'date_added',
         # 'date_invalidated',
@@ -453,6 +454,13 @@ class ExposurelogAdapter(SourceAdapter):
         # 'user_agent',
         # 'user_id',
     }
+    service = 'exposurelog'
+    endpoints = [
+        'instruments',
+        'exposures',
+        'messages',
+    ]
+    primary_endpoint = 'messages'
 
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
@@ -474,7 +482,7 @@ class ExposurelogAdapter(SourceAdapter):
         self.status['instruments'] = self.get_instruments()
         for instrument in self.instruments:
             self.status[f'exposures.{instrument}'] = self.get_exposures(instrument)
-        self.status['messages'] = self.get_messages()
+        self.status[self.primary_endpoint] = self.get_records()
 
 
     @property
@@ -554,8 +562,7 @@ class ExposurelogAdapter(SourceAdapter):
         return status
 
 
-
-    def get_messages(self,
+    def get_records(self,
                      site_ids=None,
                      obs_ids=None,
                      instruments=None,
