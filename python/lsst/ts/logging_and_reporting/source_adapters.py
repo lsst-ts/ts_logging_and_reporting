@@ -129,8 +129,10 @@ class SourceAdapter(ABC):
         return '| Time | Message |\n|--------|------|'
 
     def row_str_func(self, datetime_str, rec):
-        msg = rec['message_text']
-        return f'> {datetime_str} | <pre><code>{msg}</code></pre>'
+        msg = rec['message_text'].strip()
+        #!return f'> {datetime_str} | <pre><code>{msg}</code></pre>'
+        #!return f'```\n{msg}\n```'
+        return f'`{datetime_str}`\n```\n{msg}\n```'
 
 
     # Break on DAY_OBS. Within that, break on DATE, within that only show time.
@@ -261,13 +263,13 @@ class NightReportAdapter(SourceAdapter):
                  limit=None,
                  ):
         super().__init__()
-        self.limit = SourceAdapter.limit if limit is None else limit
         self.server = SourceAdapter.server if server_url is None else server_url
         if min_date:
             self.min_date = min_date
             self.max_date = max_date
             self.min_day_obs = ut.datetime_to_day_obs(min_date)
             self.max_day_obs = ut.datetime_to_day_obs(max_date)
+        self.limit = SourceAdapter.limit if limit is None else limit
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -278,7 +280,10 @@ class NightReportAdapter(SourceAdapter):
 
 
     def row_str_func(self, datetime_str, rec):
-        return f"> {datetime_str} | <pre>{rec['summary']}</pre>"
+        #!return f"> {datetime_str} | <pre>{rec['summary']}</pre>"
+        msg = rec['summary'].strip()
+        return f'`{datetime_str}`\n```\n{msg}\n```'
+
 
     def get_records(self,
                     site_ids=None,
@@ -504,10 +509,12 @@ class ExposurelogAdapter(SourceAdapter):
                )
 
     def row_str_func(self, datetime_str, rec):
+        msg = rec['message_text'].strip()
         return(f"> {datetime_str} "
                f"| {rec['obs_id']} "
                f"| {rec['instrument']} "
-               f"| <pre>{rec['message_text']}</pre>"
+               #! f"| <pre>{msg}</pre>"
+               f'\n```\n{msg}\n```'
                )
 
 
