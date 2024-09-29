@@ -23,10 +23,11 @@
 import traceback
 from warnings import warn
 
+
 class BaseLogrepException(Exception):
     is_an_error_response = True
     status_code = 400
-    error_message = '<NA>'
+    error_message = "<NA>"
     saved_tb = None
 
     def get_subclass_name(self):
@@ -47,27 +48,34 @@ class BaseLogrepException(Exception):
         self.saved_tb = traceback.format_exc()
 
     def __str__(self):
-        return (f'[{self.error_code}] {self.error_message}'
-                f' {self.saved_tb=}')
+        return f"[{self.error_code}] {self.error_message}" f" {self.saved_tb=}"
 
     def to_dict(self):
-        dd = dict(errorMessage=self.error_message,
-                  errorCode=self.error_code,
-                  #! trace=self.saved_tb,
-                  statusCode=self.status_code)
+        dd = dict(
+            errorMessage=self.error_message,
+            errorCode=self.error_code,
+            #! trace=self.saved_tb,
+            statusCode=self.status_code,
+        )
         return dd
 
 
 example_error_from_exposurelog = {
-    'detail': [
-        {'type': 'int_parsing',
-         'loc': ['query', 'min_day_obs'],
-         'msg': 'Input should be a valid integer, unable to parse string as an integer',
-         'input': '2024-08-19'},
-        {'type': 'int_parsing',
-        'loc': ['query', 'max_day_obs'],
-         'msg': 'Input should be a valid integer, unable to parse string as an integer',
-         'input': '2024-09-21'}]}
+    "detail": [
+        {
+            "type": "int_parsing",
+            "loc": ["query", "min_day_obs"],
+            "msg": "Input should be a valid integer, unable to parse string as an integer",
+            "input": "2024-08-19",
+        },
+        {
+            "type": "int_parsing",
+            "loc": ["query", "max_day_obs"],
+            "msg": "Input should be a valid integer, unable to parse string as an integer",
+            "input": "2024-09-21",
+        },
+    ]
+}
 
 
 class BadStatus(BaseLogrepException):
@@ -75,4 +83,5 @@ class BadStatus(BaseLogrepException):
     this will occur when a URL query string parameter is passed a value with
     a bad format.  It may also be that the Service is broken.
     """
-    error_code = 'BADQSTR'
+
+    error_code = "BADQSTR"

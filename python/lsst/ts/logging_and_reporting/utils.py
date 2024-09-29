@@ -19,18 +19,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import time
 import datetime as dt
+import time
 
 
 class datetime_iter:
     def __init__(self, start_datetime, stop_datetime, increment=None):
-        """increment:: datetime.timedelta
-        """
+        """increment:: datetime.timedelta"""
         self.start_datetime = start_datetime
         self.stop_datetime = stop_datetime
         self.increment = increment if increment else dt.timedelta(days=1)
-        self.increasing = (self.increment.total_seconds() >= 0)
+        self.increasing = self.increment.total_seconds() >= 0
 
     def __iter__(self):
         self.date = self.start_datetime
@@ -49,6 +48,7 @@ class datetime_iter:
             return date
         else:
             raise StopIteration
+
 
 # See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633
 # was: datetime_to_dayobs   # TODO remove
@@ -72,40 +72,41 @@ def datetime_to_day_obs(datetime) -> str:
         dodate = (datetime - dt.timedelta(hours=12)).date()
     else:
         dodate = datetime
-    return dodate.strftime('%Y-%m-%d')
+    return dodate.strftime("%Y-%m-%d")
+
 
 # day_obs int to day_obs string (YYYY-MM-DD)
 def day_obs_str(day_obs: int) -> str:
     dos = str(day_obs)
-    return f'{dos[0:4]}-{dos[4:6]}-{dos[6:8]}'  # "YYYY-MM-DD"
+    return f"{dos[0:4]}-{dos[4:6]}-{dos[6:8]}"  # "YYYY-MM-DD"
+
 
 # day_obs str (YYYY-MM-DD) to day_obs int
 def day_obs_int(day_obs: str) -> int:
-    return int(day_obs.replace('-',''))
+    return int(day_obs.replace("-", ""))
+
 
 # day_obs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
 # Allow TODAY, YESTERDAY, TOMORROW
 # was: dos2dt
 def get_datetime_from_day_obs_str(day_obs):
     match day_obs.lower():
-        case 'today':
+        case "today":
             date = dt.datetime.now().date()
-        case 'yesterday':
+        case "yesterday":
             date = dt.datetime.now().date() - dt.timedelta(days=1)
-        case 'tomorrow':
+        case "tomorrow":
             date = dt.datetime.now().date() + dt.timedelta(days=1)
         case _:
-            no_dash = day_obs.replace('-','')
-            date = dt.datetime.strptime(no_dash, '%Y%m%d').date()
+            no_dash = day_obs.replace("-", "")
+            date = dt.datetime.strptime(no_dash, "%Y%m%d").date()
     return date
 
 
-
-
 def tic():
-    """Start timer.
-    """
+    """Start timer."""
     tic.start = time.perf_counter()
+
 
 def toc():
     """Stop timer.
@@ -117,9 +118,10 @@ def toc():
     """
 
     elapsed_seconds = time.perf_counter() - tic.start
-    return elapsed_seconds # fractional
+    return elapsed_seconds  # fractional
 
-class Timer():
+
+class Timer:
     """Elapsed seconds timer.
 
     Multiple instances can be used simultaneously and can overlap.
@@ -148,4 +150,4 @@ class Timer():
     @property
     def toc(self):
         elapsed_seconds = time.perf_counter() - self.start
-        return elapsed_seconds # fractional
+        return elapsed_seconds  # fractional

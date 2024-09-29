@@ -19,19 +19,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import itertools
+from abc import ABC
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
+
 # Python Standard Library
 from urllib.parse import urlencode
-import itertools
-from datetime import datetime, date, time, timedelta
 from warnings import warn
-from collections import defaultdict
-from abc import ABC
-# External Packages
-import requests
-from IPython.display import display, Markdown
-import pandas as pd
+
 # Local Packages
 import lsst.ts.logging_and_reporting.almanac as alm
+import pandas as pd
+
+# External Packages
+import requests
+from IPython.display import Markdown, display
+
 
 def md(markdown_str, color=None):
     # see https://www.w3schools.com/colors/colors_names.asp
@@ -39,6 +43,7 @@ def md(markdown_str, color=None):
         display(Markdown(f"<font color='{color}'>{markdown_str}</font>"))
     else:
         display(Markdown(markdown_str))
+
 
 def mdlist(markdown_list, color=None):
     if markdown_list is None:
@@ -51,17 +56,19 @@ def mdlist(markdown_list, color=None):
 def dict_to_md(in_dict):
     md_list = list()
     for key, content_list in in_dict.items():
-        md_list.append(f'- {key}')
+        md_list.append(f"- {key}")
         for elem in content_list:
-            md_list.append(f'    - {elem}')
+            md_list.append(f"    - {elem}")
     return md_list
 
 
 # TODO move all instances of "row_header", "row_str_func" from source_adapters to here.
 class Report(ABC):
-    def __init__(self, *,
-                 adapter=None, # instance of SourceAdapter
-                 ):
+    def __init__(
+        self,
+        *,
+        adapter=None,  # instance of SourceAdapter
+    ):
         self.source_adapter = adapter
 
     def day_obs_report(self, day_obs):
@@ -71,7 +78,7 @@ class Report(ABC):
         """
         if adapter:
             self.time_log_as_markdown(
-                log_title=f'{adapter.service.title()} Report for {day_obs}'
+                log_title=f"{adapter.service.title()} Report for {day_obs}"
             )
 
     def overview(self):
@@ -79,33 +86,37 @@ class Report(ABC):
         adapter = self.source_adapter
         status = adapter.get_status()
         count = status["number_of_records"]
-        error  =  status["error"]
-        more = '(There may be more.)' if count >= adapter.limit else ''
-        result = error if error else f'Got {count} records. '
-        mdlist([f'## Overview for Service: `{adapter.service}` [{count}]',
+        error = status["error"]
+        more = "(There may be more.)" if count >= adapter.limit else ""
+        result = error if error else f"Got {count} records. "
+        mdlist(
+            [
+                f"## Overview for Service: `{adapter.service}` [{count}]",
                 f'- Endpoint: {status["endpoint_url"]}',
-                ])
-        print(f'- {result} {more}')
+            ]
+        )
+        print(f"- {result} {more}")
 
-
-    def time_log_as_markdown(self,
-                             log_title=None,
-                             zero_message=False,
-                             ):
-        '''Emit markdown for a date-time log.'''
+    def time_log_as_markdown(
+        self,
+        log_title=None,
+        zero_message=False,
+    ):
+        """Emit markdown for a date-time log."""
         adapter = self.source_adapter
         records = adapter.records
         service = adapter.service
-        url = adapter.get_status().get('endpoint_url')
-        title = log_title if log_title else ''
+        url = adapter.get_status().get("endpoint_url")
+        title = log_title if log_title else ""
         if records:
-            md(f'### {title}')
-            table = self.source_adapter.day_table('date_added')
+            md(f"### {title}")
+            table = self.source_adapter.day_table("date_added")
             mdlist(table)
         else:
             if zero_message:
-                md(f'No {service} records found.', color='lightblue')
-                md(f'Used [API Data]({url})')
+                md(f"No {service} records found.", color="lightblue")
+                md(f"Used [API Data]({url})")
+
 
 class AlmanacReport(Report):
     # moon rise,set,illumination %
@@ -113,8 +124,10 @@ class AlmanacReport(Report):
     # sun rise,set
 
     def day_obs_report(self, day_obs):
-        md(f'***Almanac for the observing night starting* {day_obs}**')
-        display(self.almanac_as_dataframe(day_obs).style.hide(axis="columns", subset=None))
+        md(f"***Almanac for the observing night starting* {day_obs}**")
+        display(
+            self.almanac_as_dataframe(day_obs).style.hide(axis="columns", subset=None)
+        )
 
     def almanac_as_dataframe(self, day_obs):
         # This display superfluous header: "0, 1"
@@ -126,19 +139,17 @@ class NightlyLogReport(Report):
     def day_obs_report(self, day_obs):
         if adapter:
             self.time_log_as_markdown(
-                log_title=f'{adapter.service.title()} Report for {day_obs}'
+                log_title=f"{adapter.service.title()} Report for {day_obs}"
             )
 
-
-    def block_tickets_as_markdown(self,  tickets,
-                                  title='## Nightly Jira BLOCKs'):
+    def block_tickets_as_markdown(self, tickets, title="## Nightly Jira BLOCKs"):
         # tickets[day_obs] = {ticket_url, ...}
-        mdstr = ''
+        mdstr = ""
         if title:
             mdstr += title
 
         for day, url_list in tickets.items():
-            mdstr += f'\n- {day}'
+            mdstr += f"\n- {day}"
             for ticket_url in url_list:
                 mdstr += f'\n    - [{ticket_url.replace(front,"")}]({ticket_url})'
         return mdstr
@@ -147,19 +158,19 @@ class NightlyLogReport(Report):
 class ExposurelogReport(Report):
 
     # date, time, obs_id, message_text
-    def time_log_as_markown(self, records,
-                            title='# Exposure Log'):
-        pass # TODO use "day_table"
+    def time_log_as_markown(self, records, title="# Exposure Log"):
+        pass  # TODO use "day_table"
 
     def daily_observation_gap(self, min_day_obs, max_day_obs):
         pass
 
+
 class NarrativelogReport(Report):
 
     # date, time, message_text
-    def time_log_as_markown(self, records,
-                            title='# Exposure Log'):
-        pass # TODO use "day_table"
+    def time_log_as_markown(self, records, title="# Exposure Log"):
+        pass  # TODO use "day_table"
+
 
 class NightObsReport(Report):
     """Generate a report that combines all sources using data from one day_obs.
