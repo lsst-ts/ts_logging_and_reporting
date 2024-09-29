@@ -19,23 +19,31 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 import time
 import datetime as dt
 
+
 class datetime_iter:
     def __init__(self, start_datetime, stop_datetime, increment=None):
+        """increment:: datetime.timedelta
+        """
         self.start_datetime = start_datetime
         self.stop_datetime = stop_datetime
         self.increment = increment if increment else dt.timedelta(days=1)
-
+        self.increasing = (self.increment.total_seconds() >= 0)
 
     def __iter__(self):
         self.date = self.start_datetime
         return self
 
     def __next__(self):
-        if self.date <= self.stop_datetime: # INCLUSIVE
+
+        if self.increasing:
+            not_done = self.date <= self.stop_datetime
+        else:
+            not_done = self.date >= self.stop_datetime
+        if not_done:
+            # INCLUSIVE
             date = self.date
             self.date += self.increment
             return date
@@ -60,7 +68,10 @@ def datetime_to_day_obs(datetime) -> str:
     day_obs : `str`
         The day_obs, as a strung, e.g. 2023-12-25 (YYYY-MM-DD)
     """
-    dodate = (datetime - dt.timedelta(hours=12)).date()
+    if isinstance(datetime, dt.datetime):
+        dodate = (datetime - dt.timedelta(hours=12)).date()
+    else:
+        dodate = datetime
     return dodate.strftime('%Y-%m-%d')
 
 # day_obs int to day_obs string (YYYY-MM-DD)

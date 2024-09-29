@@ -73,8 +73,8 @@ class SourceAdapter(ABC):
     # TODO document class including all class variables.
     def __init__(self, *,
                  server_url=None,
-                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
-                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 min_date=None,  # INCLUSIVE: default=Yesterday
+                 max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
                  offset=0,
                  connect_timeout=1.05,  # seconds
                  read_timeout=2,  # seconds
@@ -87,17 +87,13 @@ class SourceAdapter(ABC):
         range large or you will use lots of memory. Tens of days is probably
         ok.
         """
-        if min_day_obs is None:  # Inclusive
-            min_day_obs = ut.datetime_to_day_obs(
-                datetime.today() - timedelta(days=1))
-        if max_day_obs is None:  # Exclusive
-            max_day_obs = ut.datetime_to_day_obs(
-                datetime.today() + timedelta(days=1))
+        if min_date is None:  # Inclusive
+            min_date = datetime.today() - timedelta(days=1)
+        if max_date is None:  # Exclusive
+            max_date = datetime.today() + timedelta(days=1)
         self.server = server_url or default_server
-        self.min_day_obs = min_day_obs
-        self.max_day_obs = max_day_obs
-        self.min_date = ut.get_datetime_from_day_obs_str(min_day_obs)
-        self.max_date = ut.get_datetime_from_day_obs_str(max_day_obs)
+        self.min_day_obs = min_date.date().isoformat()
+        self.max_day_obs = max_date.date().isoformat()
         self.offset = offset
         self.c_timeout = min(MAX_CONNECT_TIMEOUT,
                              float(connect_timeout))  # seconds
@@ -260,19 +256,25 @@ class NightReportAdapter(SourceAdapter):
 
     def __init__(self, *,
                  server_url=None,
-                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
-                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 min_date=None,  # INCLUSIVE: default=Yesterday
+                 max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
                  limit=None,
                  ):
         super().__init__()
         self.limit = SourceAdapter.limit if limit is None else limit
         self.server = SourceAdapter.server if server_url is None else server_url
+        if min_date:
+            self.min_date = min_date
+            self.max_date = max_date
+            self.min_day_obs = ut.datetime_to_day_obs(min_date)
+            self.max_day_obs = ut.datetime_to_day_obs(max_date)
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
 
         # Load the data (records) we need from relevant endpoints
-        self.status[self.primary_endpoint] = self.get_records()
+        if min_date:
+            self.status[self.primary_endpoint] = self.get_records()
 
 
     def row_str_func(self, datetime_str, rec):
@@ -359,19 +361,25 @@ class NarrativelogAdapter(SourceAdapter):
 
     def __init__(self, *,
                  server_url=None,
-                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
-                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 min_date=None,  # INCLUSIVE: default=Yesterday
+                 max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
                  limit=None,
                  ):
         super().__init__()
         self.limit = SourceAdapter.limit if limit is None else limit
         self.server = SourceAdapter.server if server_url is None else server_url
+        if min_date:
+            self.min_date = min_date
+            self.max_date = max_date
+            self.min_day_obs = ut.datetime_to_day_obs(min_date)
+            self.max_day_obs = ut.datetime_to_day_obs(max_date)
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
 
         # Load the data (records) we need from relevant endpoints
-        self.status[self.primary_endpoint] = self.get_records()
+        if min_date:
+            self.status[self.primary_endpoint] = self.get_records()
 
     def get_records(self,
                      site_ids=None,
@@ -389,14 +397,12 @@ class NarrativelogAdapter(SourceAdapter):
             qparams['site_ids'] = site_ids
         if message_text:
             qparams['message_text'] = message_text
-        if self.min_day_obs:
-            qparams['min_date_added'] = datetime.combine(
-                self.min_date, time()
-            ).isoformat()
-        if self.max_day_obs:
-            qparams['max_date_added'] = datetime.combine(
-                self.max_date, time()
-            ).isoformat()
+        if self.min_date:
+            qparams['min_date_added'] = datetime.combine(self.min_date, time()
+                                                         ).isoformat()
+        if self.max_date:
+            qparams['max_date_added'] = datetime.combine(self.max_date, time()
+                                                         ).isoformat()
         if self.limit:
             qparams['limit'] = self.limit
 
@@ -464,13 +470,18 @@ class ExposurelogAdapter(SourceAdapter):
 
     def __init__(self, *,
                  server_url='https://tucson-teststand.lsst.codes',
-                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
-                 max_day_obs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+                 min_date=None,  # INCLUSIVE: default=Yesterday
+                 max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
                  limit=None,
                  ):
         super().__init__()
-        self.limit = SourceAdapter.limit if limit is None else limit
         self.server = SourceAdapter.server if server_url is None else server_url
+        if min_date:
+            self.min_date = min_date
+            self.max_date = max_date
+            self.min_day_obs = ut.datetime_to_day_obs(min_date)
+            self.max_day_obs = ut.datetime_to_day_obs(max_date)
+        self.limit = SourceAdapter.limit if limit is None else limit
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -482,7 +493,8 @@ class ExposurelogAdapter(SourceAdapter):
         self.status['instruments'] = self.get_instruments()
         for instrument in self.instruments:
             self.status[f'exposures.{instrument}'] = self.get_exposures(instrument)
-        self.status[self.primary_endpoint] = self.get_records()
+        if min_date:
+            self.status[self.primary_endpoint] = self.get_records()
 
 
     @property

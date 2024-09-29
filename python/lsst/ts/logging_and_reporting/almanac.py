@@ -103,7 +103,7 @@ class Almanac:
     @property
     def as_dict(self):
         data_dict =  {
-            '': 'Times in UTC',
+            '': '(times in UTC)',
             'Moon Rise': self.moon_rise_time.iso,
             'Moon Set': self.moon_set_time.iso,
             'Moon Illumination': f'{self.moon_illum:.0%}',

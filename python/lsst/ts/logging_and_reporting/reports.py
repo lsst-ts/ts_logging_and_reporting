@@ -56,28 +56,13 @@ def dict_to_md(in_dict):
             md_list.append(f'    - {elem}')
     return md_list
 
-def adapter_overview(adapter):
-    status = adapter.get_status()
-    count = status["number_of_records"]
-    error  =  status["error"]
-    more = '(There may be more.)' if count >= adapter.limit else ''
-    result = error if error else f'Got {count} records. '
-    mdlist([f'<a id="overview{adapter.service}"></a>\n## Overview for Service: `{adapter.service}` [{count}]',
-            f'- Endpoint: {status["endpoint_url"]}',
-            ])
-    print(f'- {result} {more}')
-
 
 # TODO move all instances of "row_header", "row_str_func" from source_adapters to here.
 class Report(ABC):
     def __init__(self, *,
                  adapter=None, # instance of SourceAdapter
-                 min_day_obs=None,  # INCLUSIVE: default=Yesterday
-                 max_day_obs=None,  # EXCLUSIVE: default=Today
                  ):
         self.source_adapter = adapter
-        self.min_day_obs = min_day_obs
-        self.max_day_obs = max_day_obs
 
     def day_obs_report(self, day_obs):
         """
@@ -88,6 +73,20 @@ class Report(ABC):
             self.time_log_as_markdown(
                 log_title=f'{adapter.service.title()} Report for {day_obs}'
             )
+
+    def overview(self):
+        """Emit overview of a source."""
+        adapter = self.source_adapter
+        status = adapter.get_status()
+        count = status["number_of_records"]
+        error  =  status["error"]
+        more = '(There may be more.)' if count >= adapter.limit else ''
+        result = error if error else f'Got {count} records. '
+        mdlist([f'## Overview for Service: `{adapter.service}` [{count}]',
+                f'- Endpoint: {status["endpoint_url"]}',
+                ])
+        print(f'- {result} {more}')
+
 
     def time_log_as_markdown(self,
                              log_title=None,
@@ -114,7 +113,8 @@ class AlmanacReport(Report):
     # sun rise,set
 
     def day_obs_report(self, day_obs):
-        display(self.almanac_as_dataframe(day_obs))
+        md(f'***Almanac for the observing night starting* {day_obs}**')
+        display(self.almanac_as_dataframe(day_obs).style.hide(axis="columns", subset=None))
 
     def almanac_as_dataframe(self, day_obs):
         # This display superfluous header: "0, 1"
@@ -169,3 +169,5 @@ class NightObsReport(Report):
     the evening of day_obs and morning of the day after day_obs.
     A page includes: Almanac, NightReport, Exposure, Narrative.
     """
+
+    pass
