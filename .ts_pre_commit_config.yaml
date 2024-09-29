@@ -6,5 +6,5 @@ isort: true
 mypy: false
 check-yaml: true
 check-xml: true
-ruff: false
+ruff: true
 towncrier: false

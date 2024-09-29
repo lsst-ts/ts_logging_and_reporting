@@ -164,3 +164,4 @@ cython_debug/
 .flake8
 .isort.cfg
 .mypy.ini
+.ruff.toml
