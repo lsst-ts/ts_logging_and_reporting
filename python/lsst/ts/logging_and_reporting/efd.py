@@ -12,8 +12,7 @@ NOTES:
 
 import asyncio
 import os
-from datetime import date, datetime, time, timedelta
-from warnings import warn
+from datetime import datetime, time
 
 import lsst.ts.logging_and_reporting.utils as ut
 from astropy.time import Time, TimeDelta
@@ -82,7 +81,7 @@ class EfdAdapter(SourceAdapter):
         ut.tic()
         for topic in all_topics:
             if max_topics and (topic_count > max_topics):
-                print(f"Aborting after 100 topics")
+                print("Aborting after 100 topics")
                 break
             print(".", end="", flush=True)
             try:

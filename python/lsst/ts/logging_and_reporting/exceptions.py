@@ -21,7 +21,6 @@
 
 # error_code values should be no bigger than 8 characters 12345678
 import traceback
-from warnings import warn
 
 
 class BaseLogrepException(Exception):
@@ -54,7 +53,7 @@ class BaseLogrepException(Exception):
         dd = dict(
             errorMessage=self.error_message,
             errorCode=self.error_code,
-            #! trace=self.saved_tb,
+            # trace=self.saved_tb,
             statusCode=self.status_code,
         )
         return dd

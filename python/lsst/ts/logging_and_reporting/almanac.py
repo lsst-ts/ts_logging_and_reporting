@@ -1,5 +1,4 @@
 import datetime as dt
-import math
 import warnings
 
 import astropy.coordinates

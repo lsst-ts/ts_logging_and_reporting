@@ -20,8 +20,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-"""\
-TODO: This is considered Proof of Concept  code.
+"""
+TODO: This is considered Proof of Concept code.
 Tests and documentation exist minimally or not at all since until the
 concept is Proven, it all might be thrown away or rewritten.
 """
@@ -29,11 +29,10 @@ concept is Proven, it all might be thrown away or rewritten.
 import itertools
 from abc import ABC
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 
 # Python Standard Library
 from urllib.parse import urlencode
-from warnings import warn
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.exceptions as ex

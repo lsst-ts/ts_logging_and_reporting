@@ -19,21 +19,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import itertools
 from abc import ABC
-from collections import defaultdict
-from datetime import date, datetime, time, timedelta
-
-# Python Standard Library
-from urllib.parse import urlencode
-from warnings import warn
 
 # Local Packages
 import lsst.ts.logging_and_reporting.almanac as alm
 import pandas as pd
 
 # External Packages
-import requests
 from IPython.display import Markdown, display
 
 
