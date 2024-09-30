@@ -10,7 +10,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
     we need for any of our sources.
     """
 
-    timeout = 0.8
+    timeout = (1.05, 2)  # connect, read (seconds)
 
     envs = dict(  # key, server
         summit="https://summit-lsp.lsst.codes",
@@ -24,9 +24,9 @@ class Dashboard:  # TODO Move to its own file (utils.py).
         #    rubin_idf_int = '',
     )
     adapters = [
-        sad.ExposurelogAdapter,
-        sad.NarrativelogAdapter,
         sad.NightReportAdapter,
+        sad.NarrativelogAdapter,
+        sad.ExposurelogAdapter,
     ]
 
     def get_sample_data(self, server):
@@ -48,7 +48,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                     # Made following more complicated to get around
                     # comboniation of BLACK re-write and FLAKE8
                     msg = f"Could not get data from {url}: "
-                    msg += f"{res.content=} {err=}"
+                    msg += f" {err=} {res.content[:300]=}..."
                     warn(msg)
                     samples[url] = None
         return dict(samples)

@@ -100,8 +100,8 @@ class SourceAdapter(ABC):
 
         self.records = None  # else: list of dict
         # Provide the following in subclass
-        self.service = None
-        self.endpoints = None
+        # self.service = None
+        # self.endpoints = None
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         # e.g. status['messages'] = dict(endpoint_url='.../messages?...', ...)
         self.status = dict()
@@ -216,6 +216,9 @@ class SourceAdapter(ABC):
             facet_fields=facflds,
             facets=facets,
         )
+
+    def __str__(self):
+        return f"{self.service}-{self.primary_endpoint} [{self.endpoints}]"
 
 
 # END: class SourceAdapter
@@ -363,13 +366,13 @@ class NarrativelogAdapter(SourceAdapter):
         limit=None,
     ):
         super().__init__()
-        self.limit = SourceAdapter.limit if limit is None else limit
         self.server = server_url if server_url else SourceAdapter.server
         if min_date:
             self.min_date = min_date
             self.max_date = max_date
             self.min_day_obs = ut.datetime_to_day_obs(min_date)
             self.max_day_obs = ut.datetime_to_day_obs(max_date)
+        self.limit = SourceAdapter.limit if limit is None else limit
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -473,7 +476,7 @@ class ExposurelogAdapter(SourceAdapter):
     def __init__(
         self,
         *,
-        server_url="https://tucson-teststand.lsst.codes",
+        server_url=None,
         min_date=None,  # INCLUSIVE: default=Yesterday
         max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
@@ -530,6 +533,8 @@ class ExposurelogAdapter(SourceAdapter):
             qstr = "?instrument=na" if ep == "exposures" else ""
             url = f"{self.server}/{self.service}/{ep}{qstr}"
             try:
+                if verbose:
+                    print(f"DBG try endpoint = {ep}; {url=}")
                 r = requests.get(url, timeout=to)
                 validate_response(r, url)
             except Exception:
