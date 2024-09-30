@@ -50,7 +50,7 @@ class datetime_iter:
             raise StopIteration
 
 
-# See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633
+# See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633  # noqa: E501
 # was: datetime_to_dayobs   # TODO remove
 def datetime_to_day_obs(datetime) -> str:
     """Convert a datetime object to day_obs.

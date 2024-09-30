@@ -30,17 +30,11 @@ import itertools
 from abc import ABC
 from collections import defaultdict
 from datetime import datetime, time, timedelta
-
-# Python Standard Library
 from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.exceptions as ex
-
-# Local Packages
 import lsst.ts.logging_and_reporting.utils as ut
-
-# External Packages
 import requests
 
 MAX_CONNECT_TIMEOUT = 3.1  # seconds
@@ -99,19 +93,18 @@ class SourceAdapter(ABC):
         self.min_day_obs = min_date.date().isoformat()
         self.max_day_obs = max_date.date().isoformat()
         self.offset = offset
-        self.c_timeout = min(MAX_CONNECT_TIMEOUT, float(connect_timeout))  # seconds
+        cto = float(connect_timeout)
+        self.c_timeout = min(MAX_CONNECT_TIMEOUT, cto)  # seconds
         self.r_timeout = min(MAX_READ_TIMEOUT, float(read_timeout))  # seconds
         self.timeout = (self.c_timeout, self.r_timeout)
 
         self.records = None  # else: list of dict
         # Provide the following in subclass
-        output_fields = None
-        service = None
-        endpoints = None
+        self.service = None
+        self.endpoints = None
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         # e.g. status['messages'] = dict(endpoint_url='.../messages?...', ...)
-
-        status = dict()
+        self.status = dict()
 
     def get_status(self, endpoint=None):
         return self.status.get(endpoint or self.primary_endpoint)
@@ -132,8 +125,6 @@ class SourceAdapter(ABC):
 
     def row_str_func(self, datetime_str, rec):
         msg = rec["message_text"].strip()
-        #!return f'> {datetime_str} | <pre><code>{msg}</code></pre>'
-        #!return f'```\n{msg}\n```'
         return f"`{datetime_str}`\n```\n{msg}\n```"
 
     # Break on DAY_OBS. Within that, break on DATE, within that only show time.
@@ -160,7 +151,6 @@ class SourceAdapter(ABC):
             if zero_message:
                 print("Nothing to display.")
             return
-        dates = set([obs_date(r).date() for r in recs])
         table = list()
         # Group by night.
         recs = sorted(recs, key=lambda r: obs_night(r))
@@ -187,16 +177,18 @@ class SourceAdapter(ABC):
         return used
 
     def check_endpoints(self, timeout=None, verbose=True):
-        to = timeout or self.timeout
         if verbose:
-            print(f"Try connect to each endpoint of" f" {self.server}/{self.service} ")
+            msg = "Try connect to each endpoint of "
+            msg += f"{self.server}/{self.service} "
+            print(msg)
+
         url_http_status_code = dict()
         for ep in self.endpoints:
             url = f"{self.server}/{self.service}/{ep}"
             try:
                 r = requests.get(url, timeout=(timeout or self.timeout))
                 validate_response(r, url)
-            except Exception as err:
+            except Exception:
                 url_http_status_code[url] = "GET error"
             else:
                 url_http_status_code[url] = r.status_code
@@ -208,25 +200,6 @@ class SourceAdapter(ABC):
         if len(recs) == 0:
             return dict(fields=[], facet_fields=set(), facets=dict())
 
-        non_cats = set(
-            [
-                "tags",
-                "urls",
-                "message_text",
-                "id",
-                "date_added",
-                "obs_id",
-                "day_obs",
-                "seq_num",
-                "parent_id",
-                "user_id",
-                "date_invalidated",
-                "date_begin",
-                "date_end",
-                "time_lost",  # float
-                # 'systems','subsystems','cscs',  # values need special handling
-            ]
-        )
         flds = set(recs[0].keys())
         if not categorical_fields:
             categorical_fields = flds
@@ -235,8 +208,8 @@ class SourceAdapter(ABC):
 
         # facets(field) = set(value-1, value-2, ...)
         facets = {
-            fld: set([str(r[fld]) for r in recs if not isinstance(r[fld], list)])
-            for fld in facflds
+            f: set([str(r[f]) for r in recs if not isinstance(r[f], list)])
+            for f in facflds
         }
         return dict(
             fields=flds,
@@ -280,7 +253,7 @@ class NightReportAdapter(SourceAdapter):
         limit=None,
     ):
         super().__init__()
-        self.server = SourceAdapter.server if server_url is None else server_url
+        self.server = server_url if server_url else SourceAdapter.server
         if min_date:
             self.min_date = min_date
             self.max_date = max_date
@@ -296,7 +269,6 @@ class NightReportAdapter(SourceAdapter):
             self.status[self.primary_endpoint] = self.get_records()
 
     def row_str_func(self, datetime_str, rec):
-        #!return f"> {datetime_str} | <pre>{rec['summary']}</pre>"
         msg = rec["summary"].strip()
         return f"`{datetime_str}`\n```\n{msg}\n```"
 
@@ -392,7 +364,7 @@ class NarrativelogAdapter(SourceAdapter):
     ):
         super().__init__()
         self.limit = SourceAdapter.limit if limit is None else limit
-        self.server = SourceAdapter.server if server_url is None else server_url
+        self.server = server_url if server_url else SourceAdapter.server
         if min_date:
             self.min_date = min_date
             self.max_date = max_date
@@ -507,7 +479,7 @@ class ExposurelogAdapter(SourceAdapter):
         limit=None,
     ):
         super().__init__()
-        self.server = SourceAdapter.server if server_url is None else server_url
+        self.server = server_url if server_url else SourceAdapter.server
         if min_date:
             self.min_date = min_date
             self.max_date = max_date
@@ -524,7 +496,8 @@ class ExposurelogAdapter(SourceAdapter):
         # in dependency order.
         self.status["instruments"] = self.get_instruments()
         for instrument in self.instruments:
-            self.status[f"exposures.{instrument}"] = self.get_exposures(instrument)
+            endpoint = f"exposures.{instrument}"
+            self.status[endpoint] = self.get_exposures(instrument)
         if min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
@@ -541,14 +514,16 @@ class ExposurelogAdapter(SourceAdapter):
             f"> {datetime_str} "
             f"| {rec['obs_id']} "
             f"| {rec['instrument']} "
-            #! f"| <pre>{msg}</pre>"
+            # f"| <pre>{msg}</pre>"
             f"\n```\n{msg}\n```"
         )
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = timeout or self.timeout
         if verbose:
-            print(f"Try connect to each endpoint of " f"{self.server}/{self.service} ")
+            msg = "Try connect to each endpoint of "
+            msg += f"{self.server}/{self.service} "
+            print(msg)
         url_http_status_code = dict()
 
         for ep in self.endpoints:
@@ -557,7 +532,7 @@ class ExposurelogAdapter(SourceAdapter):
             try:
                 r = requests.get(url, timeout=to)
                 validate_response(r, url)
-            except Exception as err:
+            except Exception:
                 url_http_status_code[url] = "GET error"
             else:
                 url_http_status_code[url] = r.status_code
@@ -666,8 +641,13 @@ class ExposurelogAdapter(SourceAdapter):
         almanac = alm.Almanac(day_obs=day_obs)
         total_observable_hours = almanac.night_hours
         recs = self.get_night_exposures(instrument, day_obs)
+        total = total_observable_hours + len(recs)  # TODO temporarily silly
+        return total
 
     def get_observation_gaps(self, instruments=None):
+        def day_func(r):
+            return r["day_obs"]
+
         if not instruments:
             instruments = self.instruments
         # TODO user specified list of instruments must be subset
@@ -679,25 +659,21 @@ class ExposurelogAdapter(SourceAdapter):
         for instrum in instruments:
             recs = self.exposures[instrum]
             instrum_gaps = dict()
-            for day, dayrecs in itertools.groupby(recs, key=lambda r: r["day_obs"]):
+            for day, dayrecs in itertools.groupby(recs, key=day_func):
                 gaps = list()
                 begin = end = None
                 for rec in dayrecs:
-                    begin = rec["timespan_begin"]
+                    begin = datetime.fromisoformat(rec["timespan_begin"])
                     if end:
                         # span in minutes
-                        diff = (
-                            datetime.fromisoformat(begin) - datetime.fromisoformat(end)
-                        ).total_seconds() / 60.0
-
-                        gaps.append(
-                            (
-                                datetime.fromisoformat(end).time().isoformat(),
-                                datetime.fromisoformat(begin).time().isoformat(),
-                                diff,
-                            )
+                        diff = (begin - end).total_seconds() / 60.0
+                        tuple = (
+                            end.time().isoformat(),
+                            begin.time().isoformat(),
+                            diff,
                         )
-                    end = rec["timespan_end"]
+                        gaps.append(tuple)
+                    end = datetime.fromisoformat(rec["timespan_end"])
                 instrum_gaps[day] = gaps
 
                 # Rollup gap times by day

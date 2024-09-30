@@ -51,10 +51,11 @@ class Almanac:
 
     def get_sun(self):
         # ast(ronoimical) twilight: -18 degrees)
-        self.ast_twilight_morning = self.observer.twilight_morning_astronomical(
+        obs = self.observer
+        self.ast_twilight_morning = obs.twilight_morning_astronomical(
             self.astro_midnight, which="next"
         )
-        self.ast_twilight_evening = self.observer.twilight_evening_astronomical(
+        self.ast_twilight_evening = obs.twilight_evening_astronomical(
             self.astro_midnight, which="previous"
         )
 

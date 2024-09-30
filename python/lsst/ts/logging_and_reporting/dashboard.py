@@ -1,16 +1,13 @@
-# Python Standard Library
 from collections import defaultdict
 from warnings import warn
 
 import lsst.ts.logging_and_reporting.source_adapters as sad
-
-# External Packages
 import requests
 
 
 class Dashboard:  # TODO Move to its own file (utils.py).
-    """Verify that we can get to all the API endpoints and databases we need for
-    any of our sources.
+    """Verify that we can get to all the API endpoints and databases
+    we need for any of our sources.
     """
 
     timeout = 0.8
@@ -48,7 +45,11 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                     else:
                         samples[url] = recs[0]
                 except Exception as err:
-                    warn(f"Could not get data from {url}: {res.content=} {err=}")
+                    # Made following more complicated to get around
+                    # comboniation of BLACK re-write and FLAKE8
+                    msg = f"Could not get data from {url}: "
+                    msg += f"{res.content=} {err=}"
+                    warn(msg)
                     samples[url] = None
         return dict(samples)
 
@@ -59,15 +60,15 @@ class Dashboard:  # TODO Move to its own file (utils.py).
         RETURN: percentage of good connectons.
         """
         url_status = dict()  # url_status[endpoint_url] = http _status_code
-        working = set()  # Set of servers that work for  all our required endpoints.
+        working = set()  # Servers that work for  all our required endpoints.
 
         for env, server in self.envs.items():
             server_all_good = True
             for adapter in self.adapters:
                 service = adapter(server_url=server)
-                stats, adapter_all_good = service.check_endpoints(timeout=timeout)
+                stats, aag = service.check_endpoints(timeout=timeout)
                 url_status.update(stats)
-            server_all_good &= adapter_all_good
+            server_all_good &= aag  # adapter all good
             if server_all_good:
                 working.add(server)
 
@@ -86,7 +87,6 @@ class Dashboard:  # TODO Move to its own file (utils.py).
             f"\nConnected to {good_cnt} out of {total_cnt} endpoints."
             f"({good_cnt/total_cnt:.0%})"
         )
-        goodstr = "\n\t".join(good)
         print(f"Successful connects ({good_cnt}): ")
         for gurl in good:
             print(f"\t{gurl}")
@@ -95,12 +95,6 @@ class Dashboard:  # TODO Move to its own file (utils.py).
         for burl, stat in bad:
             print(f"\t{stat}: {burl}")
 
-        status = dict(
-            num_good=good_cnt,
-            num_total=total_cnt,
-            good_urls=good,
-            bad_ursl=bad,
-        )
         return good_cnt / total_cnt, working
 
 

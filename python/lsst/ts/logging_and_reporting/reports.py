@@ -21,11 +21,8 @@
 
 from abc import ABC
 
-# Local Packages
 import lsst.ts.logging_and_reporting.almanac as alm
 import pandas as pd
-
-# External Packages
 from IPython.display import Markdown, display
 
 
@@ -54,7 +51,8 @@ def dict_to_md(in_dict):
     return md_list
 
 
-# TODO move all instances of "row_header", "row_str_func" from source_adapters to here.
+# TODO move all instances of "row_header", "row_str_func"
+# from source_adapters to here.
 class Report(ABC):
     def __init__(
         self,
@@ -68,6 +66,7 @@ class Report(ABC):
         Create report for one source using data from one
         observing night (day_obs).
         """
+        adapter = self.source_adapter
         if adapter:
             self.time_log_as_markdown(
                 log_title=f"{adapter.service.title()} Report for {day_obs}"
@@ -117,9 +116,8 @@ class AlmanacReport(Report):
 
     def day_obs_report(self, day_obs):
         md(f"***Almanac for the observing night starting* {day_obs}**")
-        display(
-            self.almanac_as_dataframe(day_obs).style.hide(axis="columns", subset=None)
-        )
+        df = self.almanac_as_dataframe(day_obs)
+        display(df.style.hide(axis="columns", subset=None))
 
     def almanac_as_dataframe(self, day_obs):
         # This display superfluous header: "0, 1"
@@ -129,21 +127,33 @@ class AlmanacReport(Report):
 class NightlyLogReport(Report):
 
     def day_obs_report(self, day_obs):
+        adapter = self.source_adapter
         if adapter:
             self.time_log_as_markdown(
                 log_title=f"{adapter.service.title()} Report for {day_obs}"
             )
 
-    def block_tickets_as_markdown(self, tickets, title="## Nightly Jira BLOCKs"):
+    def block_tickets_as_markdown(
+        self,
+        tickets,
+        title="## Nightly Jira BLOCKs",
+    ):
         # tickets[day_obs] = {ticket_url, ...}
         mdstr = ""
         if title:
             mdstr += title
 
+        front = (
+            "https://rubinobs.atlassian.net/projects/"
+            "BLOCK?selectedItem=com.atlassian.plugins."
+            "atlassian-connect-plugin:com.kanoah."
+            "test-manager__main-project-page#!/"
+        )
         for day, url_list in tickets.items():
             mdstr += f"\n- {day}"
             for ticket_url in url_list:
-                mdstr += f'\n    - [{ticket_url.replace(front,"")}]({ticket_url})'
+                str = f'\n    - [{ticket_url.replace(front,"")}]({ticket_url})'
+                mdstr += str
         return mdstr
 
 

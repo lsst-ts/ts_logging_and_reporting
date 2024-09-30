@@ -36,7 +36,8 @@ class EfdAdapter(SourceAdapter):
         super().__init__(server_url=server_url)
 
         self.client = None
-        self.server_url = server_url or os.getenv("EXTERNAL_INSTANCE_URL", Server.usdf)
+        instance_url = os.getenv("EXTERNAL_INSTANCE_URL", Server.usdf)
+        self.server_url = server_url or instance_url
         match self.server_url:
             case Server.summit:
                 self.client = EfdClient("summit_efd")
@@ -146,29 +147,8 @@ class EfdAdapter(SourceAdapter):
         return result
 
 
-async def main():  # TODO clean
-    start_date_string = "2024-09-11T14:00:00"
-    start_date = Time(start_date_string, scale="utc").utc
-
-    end_date_string = "2024-09-11T14:10:00"
-    end_date = Time(end_date_string, scale="utc").utc
-
-    topic = "lsst.sal.Script.logevent_logMessage"
-    fields = ["salIndex", "message", "private_rcvStamp"]
-
-    client = lsst_efd_client.EfdClient("summit_efd")
-    # task = asyncio.create_task(client.select_time_series(topic, fields, start_date, end_date))
-    # result = await task
-    # print(result)
-    results = await client.select_time_series(topic, fields, start_date, end_date)
-    print(type(results))
-    print("######")
-    print(results)
-    print("######")
-    results_list = results.to_dict("records")
-    results_list.sort(key=lambda x: x["private_rcvStamp"], reverse=True)
-    print(results_list)
-    print("######")
+async def main():
+    pass
 
 
 if __name__ == "__main__":
