@@ -286,7 +286,7 @@ class NightReportAdapter(SourceAdapter):
         self.status = dict()
 
         # Load the data (records) we need from relevant endpoints
-        if min_date:
+        if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
     def row_str_func(self, datetime_str, rec):
@@ -315,14 +315,16 @@ class NightReportAdapter(SourceAdapter):
         qstr = urlencode(qparams)
         url = f"{self.server}/{self.service}/reports?{qstr}"
         error = None
+        content = None
         try:
             response = requests.get(url, timeout=self.timeout)
+            content = response.text
             validate_response(response, url)
             recs = response.json()
             recs.sort(key=lambda r: r["day_obs"])
         except Exception as err:
             recs = []
-            error = f"{response.text=} Exception={err}"
+            error = f"{content=} Exception={err}"
 
         self.keep_fields(recs, self.outfields)
         self.records = recs
@@ -391,7 +393,7 @@ class NarrativelogAdapter(SourceAdapter):
         self.status = dict()
 
         # Load the data (records) we need from relevant endpoints
-        if min_date:
+        if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
     def get_records(
@@ -557,14 +559,14 @@ class ExposurelogAdapter(SourceAdapter):
         recs = dict(dummy=[])
         error = None
         try:
-            r = requests.get(url, timeout=self.timeout).json()
+            r = requests.get(url, timeout=self.timeout)
             validate_response(r, url)
             recs = r.json()
         except Exception as err:
             error = str(err)
-
-        # Flatten the lists
-        self.instruments = list(itertools.chain.from_iterable(recs.values()))
+        else:
+            # Flatten the lists
+            self.instruments = list(itertools.chain.from_iterable(recs.values()))
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),
@@ -650,13 +652,56 @@ class ExposurelogAdapter(SourceAdapter):
     # dayobs:: YYYMMDD (int or str)
     # Use almanac begin of night values for dayobs.
     # Use almanac end of night values for dayobs + 1.
-    def night_tally_observation_gaps(self, dayobs, instrument="LSSTComCam"):
+    def OLD_night_tally_observation_gaps(self, dayobs, instrument="LSSTComCam"):
         almanac = alm.Almanac(dayobs=dayobs)
         total_observable_hours = almanac.night_hours
         # recs = self.get_night_exposures(instrument, dayobs)
         recs = self.records
         total = total_observable_hours + len(recs)  # TODO temporarily silly
         return total
+
+    # Our goals is something like this (DM-46102)
+    #
+    # Ref                                       Hours
+    # -------   ----------------------          ------
+    # a         Total Night Hours               9.67
+    # b         Total Exposure Hours            1.23
+    # d         Number of slews                 16
+    # c         Number of exposures             33
+    # e         Total Detector Read hours	0.234
+    # f=e/c	Mean Detector read hours	0.00709
+    # g         Total Slew hours                0.984
+    # h=g/d	Mean Slew hours                 0.0615
+    # i=a-b-e-g Total Idle Time                 7.222
+    #
+    # day_obs:: YYYMMDD (int or str)
+    # Use almanac begin of night values for day_obs.
+    # Use almanac end of night values for day_obs + 1.
+    def night_tally_observation_gaps(self, dayobs):
+        total_exposure_hours = dict()  # d[instrument] = val
+        instrument_tally = dict()  # d[instrument] = tally_dict
+        almanac = alm.Almanac(dayobs=dayobs)
+        total_observable_hours = almanac.night_hours
+        for instrument, records in self.exposures.items():
+            exposure_seconds = 0
+            for rec in records:
+                begin = rec["timespan_begin"]
+                end = rec["timespan_end"]
+                exposure_seconds += (
+                    datetime.fromisoformat(end) - datetime.fromisoformat(begin)
+                ).total_seconds()
+            instrument_tally[instrument] = {
+                "Total Night Hours": total_observable_hours,  # (a)
+                "Total Exposure Hours": exposure_seconds / (60 * 60.0),  # (b)
+                "Number of exposures": len(records),  # (c)
+                "Number of slews": "NA",  # (d)
+            }
+
+        # get_detector_reads()??  UNKNOWN SOURCE                       # ?(e,f)
+
+        # Composition to combine Exposure and Efd (blackboard)
+        # edf.get_targets() => "slewTime"                              # (d,g,h)
+        return instrument_tally
 
     def get_observation_gaps(self, instruments=None):
         def day_func(r):

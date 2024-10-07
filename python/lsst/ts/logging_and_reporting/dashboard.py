@@ -62,6 +62,8 @@ class Dashboard:  # TODO Move to its own file (utils.py).
         url_status = dict()  # url_status[endpoint_url] = http _status_code
         working = set()  # Servers that work for  all our required endpoints.
 
+        if not timeout:
+            timeout = self.timeout
         for env, server in self.envs.items():
             server_all_good = True
             for adapter in self.adapters:
