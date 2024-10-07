@@ -20,11 +20,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-"""
-TODO: This is considered Proof of Concept code.
-Tests and documentation exist minimally or not at all since until the
-concept is Proven, it all might be thrown away or rewritten.
-"""
+# TODO: This is considered Proof of Concept code.
+# Tests and documentation exist minimally or not at all since until the
+# concept is Proven, it all might be thrown away or rewritten.
+
+# NOTE on day_obs vs dayobs:
+# Throughout Rubin, and perhaps Astonomy in general, a single night
+# of observering (both before and after midnight portions) is referred
+# to using 'date_obs' or 'dateobs'.
+# Generaly its used as a single word when refering to a TYPE
+# and as two words when referring to a FIELD. But there are
+# plenty exceptions.  Nonetheless, this is the convention we use.
+# One word most of the time, two_words when its a field such as
+# in a Database or API query string.
 
 import itertools
 from abc import ABC
@@ -71,8 +79,8 @@ class SourceAdapter(ABC):
         self,
         *,
         server_url=None,
-        min_date=None,  # INCLUSIVE: default=Yesterday
-        max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
         offset=0,
         connect_timeout=1.05,  # seconds
         read_timeout=2,  # seconds
@@ -80,18 +88,13 @@ class SourceAdapter(ABC):
         """Load the relevant data for the Source.
 
         Intended to load from all used Source endpoints over the range
-        of day_obs specified in INIT. The day(s) records for each
-        endpoint is stored for later use.  Do not make the day_obs
+        of dayobs specified in INIT. The day(s) records for each
+        endpoint is stored for later use.  Do not make the dayobs
         range large or you will use lots of memory. Tens of days is probably
         ok.
         """
-        if min_date is None:  # Inclusive
-            min_date = datetime.today() - timedelta(days=1)
-        if max_date is None:  # Exclusive
-            max_date = datetime.today() + timedelta(days=1)
+
         self.server = server_url or default_server
-        self.min_day_obs = min_date.date().isoformat()
-        self.max_day_obs = max_date.date().isoformat()
         self.offset = offset
         cto = float(connect_timeout)
         self.c_timeout = min(MAX_CONNECT_TIMEOUT, cto)  # seconds
@@ -105,6 +108,21 @@ class SourceAdapter(ABC):
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         # e.g. status['messages'] = dict(endpoint_url='.../messages?...', ...)
         self.status = dict()
+        self.store_dayobs_range(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
+
+    def store_dayobs_range(
+        self,
+        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
+    ):
+        self.max_date = ut.dayobs2dt(max_dayobs or "TODAY")
+        self.max_dayobs = ut.datetime_to_dayobs(self.max_date)
+
+        if min_dayobs:
+            self.min_date = ut.dayobs2dt(min_dayobs)
+        else:
+            self.min_date = self.max_date - timedelta(days=1)
+        self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
 
     def get_status(self, endpoint=None):
         return self.status.get(endpoint or self.primary_endpoint)
@@ -127,7 +145,7 @@ class SourceAdapter(ABC):
         msg = rec["message_text"].strip()
         return f"`{datetime_str}`\n```\n{msg}\n```"
 
-    # Break on DAY_OBS. Within that, break on DATE, within that only show time.
+    # Break on DAYOBS. Within that, break on DATE, within that only show time.
     def day_table(
         self,
         datetime_field,
@@ -137,10 +155,10 @@ class SourceAdapter(ABC):
     ):
         def obs_night(rec):
             if "day_obs" in rec:
-                return ut.day_obs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
+                return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
             else:
                 dt = datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_day_obs(dt)
+                return ut.datetime_to_dayobs(dt)
 
         def obs_date(rec):
             dt = datetime.fromisoformat(rec[datetime_field])
@@ -251,17 +269,17 @@ class NightReportAdapter(SourceAdapter):
         self,
         *,
         server_url=None,
-        min_date=None,  # INCLUSIVE: default=Yesterday
-        max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        min_dayobs=None,  # INCLUSIVE: default=Yesterday
+        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
     ):
-        super().__init__()
+        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
+        #! if min_date:
+        #!     self.min_date = min_date
+        #!     self.max_date = max_date
+        #!     self.min_dayobs = ut.datetime_to_dayobs(min_date)
+        #!     self.max_dayobs = ut.datetime_to_dayobs(max_date)
         self.server = server_url if server_url else SourceAdapter.server
-        if min_date:
-            self.min_date = min_date
-            self.max_date = max_date
-            self.min_day_obs = ut.datetime_to_day_obs(min_date)
-            self.max_day_obs = ut.datetime_to_day_obs(max_date)
         self.limit = SourceAdapter.limit if limit is None else limit
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -287,10 +305,10 @@ class NightReportAdapter(SourceAdapter):
             qparams["site_ids"] = site_ids
         if summary:
             qparams["summary"] = summary
-        if self.min_day_obs:
-            qparams["min_day_obs"] = ut.day_obs_int(self.min_day_obs)
-        if self.max_day_obs:
-            qparams["max_day_obs"] = ut.day_obs_int(self.max_day_obs)
+        if self.min_dayobs:
+            qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
+        if self.max_dayobs:
+            qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         if self.limit:
             qparams["limit"] = self.limit
 
@@ -361,17 +379,12 @@ class NarrativelogAdapter(SourceAdapter):
         self,
         *,
         server_url=None,
-        min_date=None,  # INCLUSIVE: default=Yesterday
-        max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        min_dayobs=None,  # INCLUSIVE: default=Yesterday
+        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
     ):
-        super().__init__()
+        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
         self.server = server_url if server_url else SourceAdapter.server
-        if min_date:
-            self.min_date = min_date
-            self.max_date = max_date
-            self.min_day_obs = ut.datetime_to_day_obs(min_date)
-            self.max_day_obs = ut.datetime_to_day_obs(max_date)
         self.limit = SourceAdapter.limit if limit is None else limit
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -477,17 +490,12 @@ class ExposurelogAdapter(SourceAdapter):
         self,
         *,
         server_url=None,
-        min_date=None,  # INCLUSIVE: default=Yesterday
-        max_date=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        min_dayobs=None,  # INCLUSIVE: default=Yesterday
+        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
     ):
-        super().__init__()
+        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
         self.server = server_url if server_url else SourceAdapter.server
-        if min_date:
-            self.min_date = min_date
-            self.max_date = max_date
-            self.min_day_obs = ut.datetime_to_day_obs(min_date)
-            self.max_day_obs = ut.datetime_to_day_obs(max_date)
         self.limit = SourceAdapter.limit if limit is None else limit
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -501,7 +509,7 @@ class ExposurelogAdapter(SourceAdapter):
         for instrument in self.instruments:
             endpoint = f"exposures.{instrument}"
             self.status[endpoint] = self.get_exposures(instrument)
-        if min_date:
+        if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
     @property
@@ -566,10 +574,10 @@ class ExposurelogAdapter(SourceAdapter):
 
     def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
-        if self.min_day_obs:
-            qparams["min_day_obs"] = ut.day_obs_int(self.min_day_obs)
-        if self.max_day_obs:
-            qparams["max_day_obs"] = ut.day_obs_int(self.max_day_obs)
+        if self.min_dayobs:
+            qparams["min_dayobs"] = ut.dayobs_int(self.min_dayobs)
+        if self.max_dayobs:
+            qparams["max_dayobs"] = ut.dayobs_int(self.max_dayobs)
         url = f"{self.server}/{self.service}/exposures?{urlencode(qparams)}"
         recs = []
         error = None
@@ -607,10 +615,10 @@ class ExposurelogAdapter(SourceAdapter):
             qparams["obs_ids"] = obs_ids
         if instruments:
             qparams["instruments"] = instruments
-        if self.min_day_obs:
-            qparams["min_day_obs"] = ut.day_obs_int(self.min_day_obs)
-        if self.max_day_obs:
-            qparams["max_day_obs"] = ut.day_obs_int(self.max_day_obs)
+        if self.min_dayobs:
+            qparams["min_dayobs"] = ut.dayobs_int(self.min_dayobs)
+        if self.max_dayobs:
+            qparams["max_dayobs"] = ut.dayobs_int(self.max_dayobs)
         if exposure_flags:
             qparams["exposure_flags"] = exposure_flags
         if self.limit:
@@ -639,13 +647,14 @@ class ExposurelogAdapter(SourceAdapter):
         )
         return status
 
-    # day_obs:: YYYMMDD (int or str)
-    # Use almanac begin of night values for day_obs.
-    # Use almanac end of night values for day_obs + 1.
-    def night_tally_observation_gaps(self, day_obs, instrument="LSSTComCam"):
-        almanac = alm.Almanac(day_obs=day_obs)
+    # dayobs:: YYYMMDD (int or str)
+    # Use almanac begin of night values for dayobs.
+    # Use almanac end of night values for dayobs + 1.
+    def night_tally_observation_gaps(self, dayobs, instrument="LSSTComCam"):
+        almanac = alm.Almanac(dayobs=dayobs)
         total_observable_hours = almanac.night_hours
-        recs = self.get_night_exposures(instrument, day_obs)
+        # recs = self.get_night_exposures(instrument, dayobs)
+        recs = self.records
         total = total_observable_hours + len(recs)  # TODO temporarily silly
         return total
 

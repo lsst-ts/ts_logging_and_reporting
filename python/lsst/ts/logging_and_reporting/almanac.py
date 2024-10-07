@@ -8,20 +8,20 @@ from astropy.time import Time
 
 # Compare to https://www.timeanddate.com/astronomy/chile/santiago
 class Almanac:
-    """Get almanac data for a night give a day_obs.
-    A day_obs is the date of the start of an observing night. Therefore
-    for sunrise and morning twilight we get time on the date AFTER day_obs.
-    For sunset and evening twilight we get time on date of day_obs.
+    """Get almanac data for a night given a dayobs.
+    A dayobs is the date of the start of an observing night. Therefore
+    for sunrise and morning twilight we get time on the date AFTER dayobs.
+    For sunset and evening twilight we get time on date of dayobs.
     For moonrise/set we get the time nearest to the midnight after day_ob.
     Times in UTC.
     """
 
-    def __init__(self, *, day_obs=None, site="Rubin"):
-        if day_obs is None:
+    def __init__(self, *, dayobs=None, site="Rubin"):
+        if dayobs is None:
             astro_day = dt.date.today() - dt.timedelta(days=1)
         else:
             # Allow formats: int, YYYY-MM-DD, YYYYMMDD
-            dobs = str(day_obs).replace("-", "")
+            dobs = str(dayobs).replace("-", "")
             astro_day = dt.datetime.strptime(dobs, "%Y%m%d").date()
 
         with warnings.catch_warnings(action="ignore"):

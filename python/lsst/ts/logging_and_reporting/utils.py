@@ -22,6 +22,16 @@
 import datetime as dt
 import time
 
+# NOTE on day_obs vs dayobs:
+# Throughout Rubin, and perhaps Astonomy in general, a single night
+# of observering (both before and after midnight portions) is referred
+# to using 'date_obs' or 'dateobs'.
+# Generaly its used as a single word when refering to a TYPE
+# and as two words when referring to a FIELD. But there are
+# plenty exceptions.  Nonetheless, this is the convention we use.
+# One word most of the time, two_words when its a field such as
+# in a Database or API query string.
+
 
 class datetime_iter:
     def __init__(self, start_datetime, stop_datetime, increment=None):
@@ -52,8 +62,8 @@ class datetime_iter:
 
 # See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633  # noqa: E501
 # was: datetime_to_dayobs   # TODO remove
-def datetime_to_day_obs(datetime) -> str:
-    """Convert a datetime object to day_obs.
+def datetime_to_dayobs(datetime) -> str:
+    """Convert a datetime object to dayobs.
     Round to the date of the start of the observing night.
     Both the input datetime and output dayobs are in the same timezone.
     Format of dayobs is
@@ -65,8 +75,8 @@ def datetime_to_day_obs(datetime) -> str:
 
     Returns
     -------
-    day_obs : `str`
-        The day_obs, as a strung, e.g. 2023-12-25 (YYYY-MM-DD)
+    dayobs : `str`
+        The dayobs, as a string, e.g. 2023-12-25 (YYYY-MM-DD)
     """
     if isinstance(datetime, dt.datetime):
         dodate = (datetime - dt.timedelta(hours=12)).date()
@@ -75,22 +85,22 @@ def datetime_to_day_obs(datetime) -> str:
     return dodate.strftime("%Y-%m-%d")
 
 
-# day_obs int to day_obs string (YYYY-MM-DD)
-def day_obs_str(day_obs: int) -> str:
-    dos = str(day_obs)
+# dayobs int to dayobs string (YYYY-MM-DD)
+def dayobs_str(dayobs: int) -> str:
+    dos = str(dayobs)
     return f"{dos[0:4]}-{dos[4:6]}-{dos[6:8]}"  # "YYYY-MM-DD"
 
 
-# day_obs str (YYYY-MM-DD) to day_obs int
-def day_obs_int(day_obs: str) -> int:
-    return int(day_obs.replace("-", ""))
+# dayobs str (YYYY-MM-DD) to dayobs int
+def dayobs_int(dayobs: str) -> int:
+    return int(dayobs.replace("-", ""))
 
 
-# day_obs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
+# dayobs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
 # Allow TODAY, YESTERDAY, TOMORROW
 # was: dos2dt
-def get_datetime_from_day_obs_str(day_obs):
-    match day_obs.lower():
+def get_datetime_from_dayobs_str(dayobs):
+    match dayobs.lower():
         case "today":
             date = dt.datetime.now().date()
         case "yesterday":
@@ -98,9 +108,12 @@ def get_datetime_from_day_obs_str(day_obs):
         case "tomorrow":
             date = dt.datetime.now().date() + dt.timedelta(days=1)
         case _:
-            no_dash = day_obs.replace("-", "")
+            no_dash = dayobs.replace("-", "")
             date = dt.datetime.strptime(no_dash, "%Y%m%d").date()
     return date
+
+
+dayobs2dt = get_datetime_from_dayobs_str
 
 
 def tic():
