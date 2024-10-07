@@ -121,7 +121,7 @@ class AlmanacReport(Report):
 
     def almanac_as_dataframe(self, day_obs):
         # This display superfluous header: "0, 1"
-        return pd.DataFrame(alm.Almanac(day_obs=day_obs).as_dict).T
+        return pd.DataFrame(alm.Almanac(dayobs=day_obs).as_dict).T
 
 
 class NightlyLogReport(Report):

@@ -108,16 +108,10 @@ class SourceAdapter(ABC):
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         # e.g. status['messages'] = dict(endpoint_url='.../messages?...', ...)
         self.status = dict()
-        self.store_dayobs_range(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
 
-    def store_dayobs_range(
-        self,
-        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
-        min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
-    ):
+        # Store dayobs range
         self.max_date = ut.dayobs2dt(max_dayobs or "TODAY")
         self.max_dayobs = ut.datetime_to_dayobs(self.max_date)
-
         if min_dayobs:
             self.min_date = ut.dayobs2dt(min_dayobs)
         else:
@@ -274,11 +268,6 @@ class NightReportAdapter(SourceAdapter):
         limit=None,
     ):
         super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
-        #! if min_date:
-        #!     self.min_date = min_date
-        #!     self.max_date = max_date
-        #!     self.min_dayobs = ut.datetime_to_dayobs(min_date)
-        #!     self.max_dayobs = ut.datetime_to_dayobs(max_date)
         self.server = server_url if server_url else SourceAdapter.server
         self.limit = SourceAdapter.limit if limit is None else limit
 
@@ -566,7 +555,8 @@ class ExposurelogAdapter(SourceAdapter):
             error = str(err)
         else:
             # Flatten the lists
-            self.instruments = list(itertools.chain.from_iterable(recs.values()))
+            vals = recs.values()
+            self.instruments = list(itertools.chain.from_iterable(vals))
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),
@@ -649,17 +639,6 @@ class ExposurelogAdapter(SourceAdapter):
         )
         return status
 
-    # dayobs:: YYYMMDD (int or str)
-    # Use almanac begin of night values for dayobs.
-    # Use almanac end of night values for dayobs + 1.
-    def OLD_night_tally_observation_gaps(self, dayobs, instrument="LSSTComCam"):
-        almanac = alm.Almanac(dayobs=dayobs)
-        total_observable_hours = almanac.night_hours
-        # recs = self.get_night_exposures(instrument, dayobs)
-        recs = self.records
-        total = total_observable_hours + len(recs)  # TODO temporarily silly
-        return total
-
     # Our goals is something like this (DM-46102)
     #
     # Ref                                       Hours
@@ -678,7 +657,6 @@ class ExposurelogAdapter(SourceAdapter):
     # Use almanac begin of night values for day_obs.
     # Use almanac end of night values for day_obs + 1.
     def night_tally_observation_gaps(self, dayobs):
-        total_exposure_hours = dict()  # d[instrument] = val
         instrument_tally = dict()  # d[instrument] = tally_dict
         almanac = alm.Almanac(dayobs=dayobs)
         total_observable_hours = almanac.night_hours
@@ -700,7 +678,7 @@ class ExposurelogAdapter(SourceAdapter):
         # get_detector_reads()??  UNKNOWN SOURCE                       # ?(e,f)
 
         # Composition to combine Exposure and Efd (blackboard)
-        # edf.get_targets() => "slewTime"                              # (d,g,h)
+        # edf.get_targets() => "slewTime"                             # (d,g,h)
         return instrument_tally
 
     def get_observation_gaps(self, instruments=None):
