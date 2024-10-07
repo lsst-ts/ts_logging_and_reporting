@@ -152,7 +152,8 @@ class NightlyLogReport(Report):
         for day, url_list in tickets.items():
             mdstr += f"\n- {day}"
             for ticket_url in url_list:
-                str = f'\n    - [{ticket_url.replace(front,"")}]({ticket_url})'
+                tu_str = ticket_url.replace(front, "")
+                str = f"\n    - [{tu_str}]({ticket_url})"
                 mdstr += str
         return mdstr
 
