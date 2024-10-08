@@ -80,7 +80,7 @@ class AllSources:
             )
 
         if targets.empty:
-            return dict
+            return None
 
         num_slews = targets[["slewTime"]].astype(bool).sum(axis=0).squeeze()
         total_slew_seconds = targets[["slewTime"]].sum().squeeze()
