@@ -7,5 +7,5 @@ numpy
 pre-commit
 astroplan
 astropy
-lsst_efd_client
-#lsst.summit.utils
+lsst-efd-client
+
