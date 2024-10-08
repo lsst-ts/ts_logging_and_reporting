@@ -28,15 +28,20 @@ class Server:
 
 
 class EfdAdapter(SourceAdapter):
+    salindex = 2
+
     def __init__(
         self,
         *,
-        server_url=Server.usdf,
+        server_url=None,
+        min_dayobs=None,  # INCLUSIVE: default=Yesterday
+        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        limit=None,
     ):
-        super().__init__(server_url=server_url)
+        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
 
         self.client = None
-        instance_url = os.getenv("EXTERNAL_INSTANCE_URL", Server.usdf)
+        instance_url = os.getenv("EXTERNAL_INSTANCE_URL", self.server)
         self.server_url = server_url or instance_url
         match self.server_url:
             case Server.summit:
@@ -112,35 +117,65 @@ class EfdAdapter(SourceAdapter):
         print(f" DONE in {ut.toc()/60} minutes")
         return populated, errors, topic_count
 
-    async def get_weather(self, days=1, index=301):
-        async def query_nights(topic, fields):
-            # TODO resample
-            series = await self.client.select_time_series(
-                topic, fields, start=start, end=end, index=index
-            )
-            return series
-
+    async def query_nights(self, topic, fields, days=1, index=301):
         end = Time(datetime.combine(self.max_date, time()))
         start = end - TimeDelta(days, format="jd")
-        print(f"DEBUG get_weather: {start=} {end=}")
+        print(f"DEBUG query_nights: {start=} {end=}")
+
+        # TODO resample
+        series = await self.client.select_time_series(
+            topic, fields, start=start, end=end, index=index
+        )
+        return series
+
+    # slewTime (and probably others) are EXPECTED times, not ACTUAL.
+    async def get_targets(self, days=1):
+        topic = "lsst.sal.Scheduler.logevent_target"
+        fields_wanted = [
+            "blockId",
+            "exposureTimes0",
+            "exposureTimes1",
+            "exposureTimes2",
+            "exposureTimes3",
+            "exposureTimes4",
+            "exposureTimes5",
+            "exposureTimes6",
+            "exposureTimes7",
+            "exposureTimes8",
+            "exposureTimes9",
+            "numExposures",
+            "sequenceDuration",
+            "sequenceNVisits",
+            "sequenceVisits",
+            "slewTime",
+        ]
+        end = Time(datetime.combine(self.max_date, time()))
+        print(f"DBG get_targets(): {self.max_date=} {end=}")
+        targets = await self.query_nights(
+            topic, fields_wanted, days=days, index=self.salindex
+        )
+        print(f"DBG get_targets(): {len(targets)=}")
+        return targets
+
+    async def get_weather(self, days=1):
 
         result = dict(
-            ess_wind=await query_nights(
+            ess_wind=await self.query_nights(
                 "lsst.sal.ESS.airFlow", ["speed", "direction"]  # m/s
             ),
-            ess_temp=await query_nights(
+            ess_temp=await self.query_nights(
                 "lsst.sal.ESS.temperature", "temperatureItem0"  # C
             ),
-            ess_dewpoint=await query_nights(
+            ess_dewpoint=await self.query_nights(
                 "lsst.sal.ESS.dewPoint", "dewPointItem"  # C
             ),
-            ess_humidity=await query_nights(
+            ess_humidity=await self.query_nights(
                 "lsst.sal.ESS.relativeHumidity", "relativeHumidityItem"  # %
             ),
-            ess_pressure=await query_nights(
+            ess_pressure=await self.query_nights(
                 "lsst.sal.ESS.pressure", "pressureItem0"  # mbar
             ),
-            dimm_fwhm=await query_nights(
+            dimm_fwhm=await self.query_nights(
                 "lsst.sal.DIMM.logevent_dimmMeasurement", "fwhm"  # arcsec
             ),
         )

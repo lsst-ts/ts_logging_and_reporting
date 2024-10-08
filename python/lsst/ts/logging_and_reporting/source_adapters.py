@@ -41,6 +41,7 @@ from datetime import datetime, time, timedelta
 from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.almanac as alm
+import lsst.ts.logging_and_reporting.efd as efd
 import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.utils as ut
 import requests
@@ -532,8 +533,6 @@ class ExposurelogAdapter(SourceAdapter):
             qstr = "?instrument=na" if ep == "exposures" else ""
             url = f"{self.server}/{self.service}/{ep}{qstr}"
             try:
-                if verbose:
-                    print(f"DBG try endpoint = {ep}; {url=}")
                 r = requests.get(url, timeout=to)
                 validate_response(r, url)
             except Exception:
@@ -639,48 +638,6 @@ class ExposurelogAdapter(SourceAdapter):
         )
         return status
 
-    # Our goals is something like this (DM-46102)
-    #
-    # Ref                                       Hours
-    # -------   ----------------------          ------
-    # a         Total Night Hours               9.67
-    # b         Total Exposure Hours            1.23
-    # d         Number of slews                 16
-    # c         Number of exposures             33
-    # e         Total Detector Read hours	0.234
-    # f=e/c	Mean Detector read hours	0.00709
-    # g         Total Slew hours                0.984
-    # h=g/d	Mean Slew hours                 0.0615
-    # i=a-b-e-g Total Idle Time                 7.222
-    #
-    # day_obs:: YYYMMDD (int or str)
-    # Use almanac begin of night values for day_obs.
-    # Use almanac end of night values for day_obs + 1.
-    def night_tally_observation_gaps(self, dayobs):
-        instrument_tally = dict()  # d[instrument] = tally_dict
-        almanac = alm.Almanac(dayobs=dayobs)
-        total_observable_hours = almanac.night_hours
-        for instrument, records in self.exposures.items():
-            exposure_seconds = 0
-            for rec in records:
-                begin = rec["timespan_begin"]
-                end = rec["timespan_end"]
-                exposure_seconds += (
-                    datetime.fromisoformat(end) - datetime.fromisoformat(begin)
-                ).total_seconds()
-            instrument_tally[instrument] = {
-                "Total Night Hours": total_observable_hours,  # (a)
-                "Total Exposure Hours": exposure_seconds / (60 * 60.0),  # (b)
-                "Number of exposures": len(records),  # (c)
-                "Number of slews": "NA",  # (d)
-            }
-
-        # get_detector_reads()??  UNKNOWN SOURCE                       # ?(e,f)
-
-        # Composition to combine Exposure and Efd (blackboard)
-        # edf.get_targets() => "slewTime"                             # (d,g,h)
-        return instrument_tally
-
     def get_observation_gaps(self, instruments=None):
         def day_func(r):
             return r["day_obs"]
@@ -727,3 +684,93 @@ adapters = [
     NarrativelogAdapter,
     NightReportAdapter,
 ]
+
+
+class AllSources:
+    """Container for all SourceAdapter instances used by LogRep."""
+
+    def __init__(
+        self,
+        *,
+        server_url=None,
+        max_dayobs=None,  # INCLUSIVE: default=YESTERDAY other=YYYY-MM-DD
+        min_dayobs=None,  # INCLUSIVE: default=(max_dayobs - one_day)
+        limit=None,
+    ):
+        # Load data for all needed sources for the selected dayobs range.
+        self.nig_src = NightReportAdapter(
+            server_url=server_url,
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+        )
+        self.exp_src = ExposurelogAdapter(
+            server_url=server_url,
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+        )
+        self.nar_src = NarrativelogAdapter(
+            server_url=server_url,
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+        )
+        self.efd_src = efd.EfdAdapter(
+            server_url=server_url,
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+        )
+
+    # Our goals are something like this (see DM-46102)
+    #
+    # Ref                                       Hours
+    # -------   ----------------------          ------
+    # a         Total Night Hours               9.67
+    # b         Total Exposure Hours            1.23
+    # d         Number of slews                 16
+    # c         Number of exposures             33
+    # e         Total Detector Read hours	0.234
+    # f=e/c	Mean Detector read hours	0.00709
+    # g         Total Slew hours                0.984
+    # h=g/d	Mean Slew hours                 0.0615
+    # i=a-b-e-g Total Idle Time                 7.222
+    #
+    # day_obs:: YYYMMDD (int or str)
+    # Use almanac begin of night values for day_obs.
+    # Use almanac end of night values for day_obs + 1.
+    async def night_tally_observation_gaps(self, dayobs):
+        instrument_tally = dict()  # d[instrument] = tally_dict
+        almanac = alm.Almanac(dayobs=dayobs)
+        total_observable_hours = almanac.night_hours
+
+        targets = await self.efd_src.get_targets()
+        num_slews = targets[["slewTime"]].astype(bool).sum(axis=0).squeeze()
+        total_slew_seconds = targets[["slewTime"]].sum().squeeze()
+
+        for instrument, records in self.exp_src.exposures.items():
+            exposure_seconds = 0
+            for rec in records:
+                begin = rec["timespan_begin"]
+                end = rec["timespan_end"]
+                exposure_seconds += (
+                    datetime.fromisoformat(end) - datetime.fromisoformat(begin)
+                ).total_seconds()
+            instrument_tally[instrument] = {
+                "Total Night hours": total_observable_hours,  # (a)
+                "Total Exposure hours": exposure_seconds / (60 * 60.0),  # (b)
+                "Number of exposures": len(records),  # (c)
+                "Number of slews": num_slews,  # (d)
+                "Total Detector Read hours": "NA",  # (e) UNKNOWN SOURCE
+                "Mean Detector Read hours": "NA",  # (f=e/c)
+                "Total Slew hours": total_slew_seconds / (60 * 60),  # (g)
+                "Mean Slew hours": total_slew_seconds
+                / (60 * 60)
+                / num_slews,  # (h=g/d)
+                "Total Idle Time": "NA",  # (i=a-b-e-g)
+            }
+
+        # get_detector_reads()??  # UNKNOWN SOURCE
+
+        # Composition to combine Exposure and Efd (blackboard)
+        # ts_xml/.../sal_interfaces/Scheduler/Scheduler_Events.xml
+        # https://ts-xml.lsst.io/sal_interfaces/Scheduler.html#slewtime
+        # edf.get_targets() => "slewTime"                             # (d,g,h)
+        return instrument_tally

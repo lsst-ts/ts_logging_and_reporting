@@ -60,8 +60,8 @@ class datetime_iter:
             raise StopIteration
 
 
-# See https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633  # noqa: E501
-# was: datetime_to_dayobs   # TODO remove
+# Idea stoeln from
+# https://github.com/lsst-sitcom/summit_utils/blob/0b3fd8795c9cca32f30cef0c37625c5d96804b74/python/lsst/summit/utils/efdUtils.py#L633  # noqa: E501
 def datetime_to_dayobs(datetime) -> str:
     """Convert a datetime object to dayobs.
     Round to the date of the start of the observing night.
@@ -114,6 +114,13 @@ def get_datetime_from_dayobs_str(dayobs):
 
 
 dayobs2dt = get_datetime_from_dayobs_str
+
+
+def hours_to_hhmmss(decimal_hours):
+    hours = int(decimal_hours)
+    minutes = int((decimal_hours * 60) % 60)
+    seconds = int((decimal_hours * 3600) % 60)
+    return f"{hours:d}:{minutes:02d}:{seconds:02d}"
 
 
 def tic():
