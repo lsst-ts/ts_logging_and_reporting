@@ -116,7 +116,7 @@ def get_datetime_from_dayobs_str(dayobs):
 dayobs2dt = get_datetime_from_dayobs_str
 
 
-def hours_to_hhmmss(decimal_hours):
+def hhmmss(decimal_hours):
     hours = int(decimal_hours)
     minutes = int((decimal_hours * 60) % 60)
     seconds = int((decimal_hours * 3600) % 60)

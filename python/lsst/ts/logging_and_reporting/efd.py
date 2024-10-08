@@ -120,7 +120,6 @@ class EfdAdapter(SourceAdapter):
     async def query_nights(self, topic, fields, days=1, index=301):
         end = Time(datetime.combine(self.max_date, time()))
         start = end - TimeDelta(days, format="jd")
-        print(f"DEBUG query_nights: {start=} {end=}")
 
         # TODO resample
         series = await self.client.select_time_series(
@@ -149,12 +148,10 @@ class EfdAdapter(SourceAdapter):
             "sequenceVisits",
             "slewTime",
         ]
-        end = Time(datetime.combine(self.max_date, time()))
-        print(f"DBG get_targets(): {self.max_date=} {end=}")
+        # end = Time(datetime.combine(self.max_date, time()))
         targets = await self.query_nights(
             topic, fields_wanted, days=days, index=self.salindex
         )
-        print(f"DBG get_targets(): {len(targets)=}")
         return targets
 
     async def get_weather(self, days=1):
