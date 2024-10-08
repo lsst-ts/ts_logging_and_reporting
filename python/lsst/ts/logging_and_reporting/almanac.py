@@ -23,17 +23,20 @@ class Almanac:
             # Allow formats: int, YYYY-MM-DD, YYYYMMDD
             dobs = str(dayobs).replace("-", "")
             astro_day = dt.datetime.strptime(dobs, "%Y%m%d").date()
+            astro_date = dt.datetime.strptime(dobs, "%Y%m%d")
 
         with warnings.catch_warnings(action="ignore"):
             self.loc = astropy.coordinates.EarthLocation.of_site(site)
             self.observer = Observer(self.loc, timezone="Chile/Continental")
             self.astro_day = astro_day
-            day1 = dt.timedelta(days=1)
-            self.astro_midnight = Time(
-                dt.datetime.combine(self.astro_day + day1, dt.time(0, 15)),
-                format="datetime",
-                scale="utc",
-                location=self.loc,
+            self.astro_midnight = self.observer.midnight(
+                Time(
+                    astro_date,
+                    format="datetime",
+                    scale="utc",
+                    location=self.loc,
+                ),
+                which="next",
             )
             self.get_moon()
             self.get_sun()
@@ -96,6 +99,7 @@ class Almanac:
             "Moon Illumination": f"{self.moon_illum:.0%}",
             "Astronomical Twilight (morning)": self.ast_twilight_morning.iso,
             "Astronomical Twilight (evening)": self.ast_twilight_evening.iso,
+            "Solar Midnight": self.astro_midnight.iso,
             "Nautical Twilight (morning)": self.nau_twilight_morning.iso,
             "Nautical Twilight (evening)": self.nau_twilight_evening.iso,
             "Civil Twilight (morning)": self.civ_twilight_morning.iso,
@@ -110,6 +114,7 @@ class Almanac:
             "Moon Illumination": "(% illuminated)",
             "Astronomical Twilight (evening)": "(-18 degrees)",
             "Astronomical Twilight (morning)": "(-18 degrees)",
+            "Solar Midnight": "",
             "Nautical Twilight (evening)": "(-12 degrees)",
             "Nautical Twilight (morning)": "(-12 degrees)",
             "Civil Twilight (evening)": "(-6 degrees)",

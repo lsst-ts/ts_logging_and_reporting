@@ -564,9 +564,9 @@ class ExposurelogAdapter(SourceAdapter):
     def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
         if self.min_dayobs:
-            qparams["min_dayobs"] = ut.dayobs_int(self.min_dayobs)
+            qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
         if self.max_dayobs:
-            qparams["max_dayobs"] = ut.dayobs_int(self.max_dayobs)
+            qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         url = f"{self.server}/{self.service}/exposures?{urlencode(qparams)}"
         recs = []
         error = None
@@ -605,9 +605,9 @@ class ExposurelogAdapter(SourceAdapter):
         if instruments:
             qparams["instruments"] = instruments
         if self.min_dayobs:
-            qparams["min_dayobs"] = ut.dayobs_int(self.min_dayobs)
+            qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
         if self.max_dayobs:
-            qparams["max_dayobs"] = ut.dayobs_int(self.max_dayobs)
+            qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         if exposure_flags:
             qparams["exposure_flags"] = exposure_flags
         if self.limit:

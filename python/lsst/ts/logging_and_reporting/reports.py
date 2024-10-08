@@ -80,12 +80,9 @@ class Report(ABC):
         error = status["error"]
         more = "(There may be more.)" if count >= adapter.limit else ""
         result = error if error else f"Got {count} records. "
-        mdlist(
-            [
-                f"## Overview for Service: `{adapter.service}` [{count}]",
-                f'- Endpoint: {status["endpoint_url"]}',
-            ]
-        )
+
+        print(md(f"## Overview for Service: `{adapter.service}` [{count}]"))
+        print(md(f'- Endpoint: {status["endpoint_url"]}'))
         print(f"- {result} {more}")
 
     def time_log_as_markdown(
@@ -100,6 +97,10 @@ class Report(ABC):
         url = adapter.get_status().get("endpoint_url")
         title = log_title if log_title else ""
         if records:
+            md(
+                f"## Time Log for {self.source_adapter.min_date} "
+                f"to {self.source_adapter.max_date}"
+            )
             md(f"### {title}")
             table = self.source_adapter.day_table("date_added")
             mdlist(table)
@@ -160,19 +161,12 @@ class NightlyLogReport(Report):
 
 class ExposurelogReport(Report):
 
-    # date, time, obs_id, message_text
-    def time_log_as_markown(self, records, title="# Exposure Log"):
-        pass  # TODO use "day_table"
-
     def daily_observation_gap(self, min_day_obs, max_day_obs):
         pass
 
 
 class NarrativelogReport(Report):
-
-    # date, time, message_text
-    def time_log_as_markown(self, records, title="# Exposure Log"):
-        pass  # TODO use "day_table"
+    pass
 
 
 class NightObsReport(Report):
