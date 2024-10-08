@@ -11,8 +11,8 @@ NOTES:
 """
 
 import asyncio
+import datetime as dt
 import os
-from datetime import datetime, time
 
 import lsst.ts.logging_and_reporting.utils as ut
 from astropy.time import Time, TimeDelta
@@ -75,7 +75,7 @@ class EfdAdapter(SourceAdapter):
     #      Possibly due to underlying SQL not matching schema.
     async def find_populated_topics(self, days=1, max_topics=None):
         topic_count = 0
-        end = Time(datetime.combine(self.max_date, time()))
+        end = Time(dt.datetime.combine(self.max_date, dt.time()))
         start = end - TimeDelta(days, format="jd")
         errors = dict()  # errors[topic] = error_message
         populated = dict()  # populated[topic] = [field, ...]
@@ -117,9 +117,9 @@ class EfdAdapter(SourceAdapter):
         print(f" DONE in {ut.toc()/60} minutes")
         return populated, errors, topic_count
 
-    async def query_nights(self, topic, fields, days=1, index=301):
-        end = Time(datetime.combine(self.max_date, time()))
-        start = end - TimeDelta(days, format="jd")
+    async def query_nights(self, topic, fields, index=301):
+        start = Time(self.min_date)
+        end = Time(self.max_date)
 
         # TODO resample
         series = await self.client.select_time_series(
@@ -128,21 +128,10 @@ class EfdAdapter(SourceAdapter):
         return series
 
     # slewTime (and probably others) are EXPECTED times, not ACTUAL.
-    async def get_targets(self, days=1):
+    async def get_targets(self):
         topic = "lsst.sal.Scheduler.logevent_target"
         fields_wanted = [
             "blockId",
-            "exposureTimes0",
-            "exposureTimes1",
-            "exposureTimes2",
-            "exposureTimes3",
-            "exposureTimes4",
-            "exposureTimes5",
-            "exposureTimes6",
-            "exposureTimes7",
-            "exposureTimes8",
-            "exposureTimes9",
-            "numExposures",
             "sequenceDuration",
             "sequenceNVisits",
             "sequenceVisits",
@@ -150,7 +139,9 @@ class EfdAdapter(SourceAdapter):
         ]
         # end = Time(datetime.combine(self.max_date, time()))
         targets = await self.query_nights(
-            topic, fields_wanted, days=days, index=self.salindex
+            topic,
+            fields_wanted,
+            index=self.salindex,
         )
         return targets
 

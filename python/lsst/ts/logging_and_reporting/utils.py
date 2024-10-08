@@ -110,7 +110,7 @@ def get_datetime_from_dayobs_str(dayobs):
         case _:
             no_dash = dayobs.replace("-", "")
             date = dt.datetime.strptime(no_dash, "%Y%m%d").date()
-    return date
+    return dt.datetime.combine(date, dt.time(12))
 
 
 dayobs2dt = get_datetime_from_dayobs_str

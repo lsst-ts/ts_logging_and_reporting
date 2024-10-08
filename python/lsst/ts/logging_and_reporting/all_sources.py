@@ -40,6 +40,15 @@ class AllSources:
         )
         # This space for rent by ConsDB
 
+        # Get the common min/max date/dayobs from just one source.
+        # They are the same for all of them.
+        self.max_date = self.nig_src.max_date
+        self.min_date = self.nig_src.min_date
+        self.max_dayobs = self.nig_src.max_dayobs
+        self.min_dayobs = self.nig_src.min_dayobs
+
+    # END init
+
     # Our goals are something like this (see DM-46102)
     #
     # Ref                                       Hours
@@ -57,12 +66,22 @@ class AllSources:
     # day_obs:: YYYMMDD (int or str)
     # Use almanac begin of night values for day_obs.
     # Use almanac end of night values for day_obs + 1.
-    async def night_tally_observation_gaps(self, dayobs):
-        instrument_tally = dict()  # d[instrument] = tally_dict
-        almanac = alm.Almanac(dayobs=dayobs)
-        total_observable_hours = almanac.night_hours
+    async def night_tally_observation_gaps(self, verbose=True):
 
-        targets = await self.efd_src.get_targets()
+        instrument_tally = dict()  # d[instrument] = tally_dict
+        almanac = alm.Almanac(dayobs=self.min_dayobs)
+        total_observable_hrs = almanac.night_hours
+
+        targets = await self.efd_src.get_targets()  # a DataFrame
+        if verbose:
+            print(
+                f"AllSources().get_targets() got {len(targets)} targets "
+                f"using date range {self.min_date} to {self.max_date}. "
+            )
+
+        if targets.empty:
+            return dict
+
         num_slews = targets[["slewTime"]].astype(bool).sum(axis=0).squeeze()
         total_slew_seconds = targets[["slewTime"]].sum().squeeze()
 
@@ -73,24 +92,24 @@ class AllSources:
                 end = dt.datetime.fromisoformat(rec["timespan_end"])
                 exposure_seconds += (end - begin).total_seconds()
             num_exposures = len(records)
-            exposure_hours = exposure_seconds / (60 * 60.0)
-            slew_hours = total_slew_seconds / (60 * 60)
-            idle_hours = (
-                total_observable_hours
-                - exposure_hours
-                # - detector_read_hours
-                - slew_hours
+            exposure_hrs = exposure_seconds / (60 * 60.0)
+            slew_hrs = total_slew_seconds / (60 * 60)
+            idle_hrs = (
+                total_observable_hrs
+                - exposure_hrs
+                # - detector_read_hrs
+                - slew_hrs
             )
             instrument_tally[instrument] = {
-                "Total Night hours": hhmmss(total_observable_hours),  # (a)
-                "Total Exposure hours": hhmmss(exposure_hours),  # (b)
+                "Total Night (HH:MM:SS)": hhmmss(total_observable_hrs),  # (a)
+                "Total Exposure (HH:MM:SS)": hhmmss(exposure_hrs),  # (b)
                 "Number of exposures": num_exposures,  # (c)
                 "Number of slews": num_slews,  # (d)
-                "Total Detector Read hours": "NA",  # (e) UNKNOWN SOURCE
-                "Mean Detector Read hours": "NA",  # (f=e/c)
-                "Total Slew hours": hhmmss(slew_hours),  # (g)
-                "Mean Slew hours": hhmmss(slew_hours / num_slews),  # (h=g/d)
-                "Total Idle hours": hhmmss(idle_hours),  # (i=a-b-e-g)
+                "Total Detector Read (HH:MM:SS)": "NA",  # (e) UNKNOWN SOURCE
+                "Mean Detector Read (HH:MM:SS)": "NA",  # (f=e/c)
+                "Total Slew (HH:MM:SS)": hhmmss(slew_hrs),  # (g)
+                "Mean Slew (HH:MM:SS)": hhmmss(slew_hrs / num_slews),  # (g/d)
+                "Total Idle (HH:MM:SS)": hhmmss(idle_hrs),  # (i=a-b-e-g)
             }
 
         # get_detector_reads()??  # UNKNOWN SOURCE
