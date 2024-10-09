@@ -29,6 +29,11 @@ class Server:
 
 class EfdAdapter(SourceAdapter):
     salindex = 2
+    service = "efd"
+    endpoints = [
+        "targets",
+    ]
+    primary_endpoint = "targets"
 
     def __init__(
         self,
@@ -61,6 +66,13 @@ class EfdAdapter(SourceAdapter):
                     f"{Server.summit}, {Server.usdf}, {Server.tucson}"
                 )
                 raise Exception(msg)
+
+        self.targets = None
+        self.status["targets"] = dict(
+            endpoint_url="NA",
+            number_of_records=0,
+            error=None,
+        )
 
     async def get_topics(self):
         self.topics = await self.client.get_topics()
@@ -129,6 +141,9 @@ class EfdAdapter(SourceAdapter):
 
     # slewTime (and probably others) are EXPECTED times, not ACTUAL.
     async def get_targets(self):
+        if self.targets is not None:  # is cached
+            return self.targets
+
         topic = "lsst.sal.Scheduler.logevent_target"
         fields_wanted = [
             "blockId",
@@ -142,6 +157,12 @@ class EfdAdapter(SourceAdapter):
             topic,
             fields_wanted,
             index=self.salindex,
+        )
+        self.targets = targets
+        self.status["targets"] = dict(
+            endpoint_url="NA",
+            number_of_records=len(targets),
+            error=None,
         )
         return targets
 

@@ -119,3 +119,19 @@ class AllSources:
         # https://ts-xml.lsst.io/sal_interfaces/Scheduler.html#slewtime
         # edf.get_targets() => "slewTime"                             # (d,g,h)
         return instrument_tally
+
+    def records_per_source(self):
+        sources = [
+            self.nig_src,
+            self.exp_src,
+            self.nar_src,
+            self.efd_src,
+        ]
+
+        # Until efd.get_targets is run, it will report 0 records.
+        # That method is run in: await allsrc.night_tally_observation_gaps()
+        res = {
+            src.service: src.status[src.primary_endpoint]["number_of_records"]
+            for src in sources
+        }
+        return res

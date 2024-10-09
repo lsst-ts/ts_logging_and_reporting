@@ -95,13 +95,8 @@ class Report(ABC):
         records = adapter.records
         service = adapter.service
         url = adapter.get_status().get("endpoint_url")
-        title = log_title if log_title else ""
         if records:
-            md(
-                f"## Time Log for {self.source_adapter.min_date} "
-                f"to {self.source_adapter.max_date}"
-            )
-            md(f"### {title}")
+            md("## Time Log")
             table = self.source_adapter.day_table("date_added")
             mdlist(table)
         else:

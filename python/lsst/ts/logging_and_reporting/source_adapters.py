@@ -78,7 +78,7 @@ class SourceAdapter(ABC):
         self,
         *,
         server_url=None,
-        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        max_dayobs=None,  # EXCLUSIVE: default=TODAY other=YYYY-MM-DD
         min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
         offset=0,
         connect_timeout=1.05,  # seconds
@@ -101,9 +101,9 @@ class SourceAdapter(ABC):
         self.timeout = (self.c_timeout, self.r_timeout)
 
         self.records = None  # else: list of dict
-        # Provide the following in subclass
-        # self.service = None
-        # self.endpoints = None
+
+        # Provide the following in subclasses: self.service, self.endpoints
+
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         # e.g. status['messages'] = dict(endpoint_url='.../messages?...', ...)
         self.status = dict()
@@ -115,6 +115,7 @@ class SourceAdapter(ABC):
             self.min_date = ut.dayobs2dt(min_dayobs)
         else:
             self.min_date = self.max_date - timedelta(days=1)
+        assert self.min_date < self.max_date
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
 
     def get_status(self, endpoint=None):
@@ -138,7 +139,6 @@ class SourceAdapter(ABC):
         msg = rec["message_text"].strip()
         return f"`{datetime_str}`\n```\n{msg}\n```"
 
-    # Break on DAYOBS. Within that, break on DATE, within that only show time.
     def day_table(
         self,
         datetime_field,
@@ -146,6 +146,9 @@ class SourceAdapter(ABC):
         row_str_func=None,
         zero_message=False,
     ):
+        """Break on DAYOBS.
+        Within that, break on DATE, within that only show time."""
+
         def obs_night(rec):
             if "day_obs" in rec:
                 return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
@@ -277,6 +280,50 @@ class NightReportAdapter(SourceAdapter):
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
+    # Nightreport
+    def day_table(
+        self,
+        datetime_field,
+        dayobs_field=None,
+        row_str_func=None,
+        zero_message=False,
+    ):
+        """Break on TELESCOPE, DATE. Within that only show time."""
+
+        def obs_night(rec):
+            if "day_obs" in rec:
+                return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
+            else:
+                dt = datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_dayobs(dt)
+
+        def obs_date(rec):
+            dt = datetime.fromisoformat(rec[datetime_field])
+            return dt.replace(microsecond=0)
+
+        def telescope(rec):
+            return rec["telescope"]
+
+        recs = self.records
+        if len(recs) == 0:
+            if zero_message:
+                print("Nothing to display.")
+            return
+
+        table = list()
+        # Sort by TELESCOPE, then by OBS_DATE.
+        recs = sorted(recs, key=obs_date)
+        recs = sorted(recs, key=telescope)
+        for tele, g0 in itertools.groupby(recs, key=telescope):
+            table.append(f"### Telescope: {tele}")
+            for rec in g0:
+                attrstr = f'{str(obs_date(rec))} {rec.get("user_id")}'
+                table.append(f"{self.row_str_func(attrstr, rec)}")
+                crew_list = rec.get("observers_crew", [])
+                crew_str = ", ".join(crew_list)
+                table.append(f"*Observer Crew: {crew_str}*")
+        return table
+
     def row_str_func(self, datetime_str, rec):
         msg = rec["summary"].strip()
         return f"`{datetime_str}`\n```\n{msg}\n```"
@@ -357,7 +404,7 @@ class NarrativelogAdapter(SourceAdapter):
         "time_lost_type",
         # 'urls',
         # 'user_agent',
-        # 'user_id',
+        "user_id",
     }
     service = "narrativelog"
     endpoints = [
@@ -383,6 +430,43 @@ class NarrativelogAdapter(SourceAdapter):
         # Load the data (records) we need from relevant endpoints
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
+
+    # Narrativelog
+    def day_table(
+        self,
+        datetime_field,
+        dayobs_field=None,
+        row_str_func=None,
+        zero_message=False,
+    ):
+        """Break on DATE. Within that show time, author."""
+
+        def obs_night(rec):
+            if "day_obs" in rec:
+                return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
+            else:
+                dt = datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_dayobs(dt)
+
+        def obs_date(rec):
+            dt = datetime.fromisoformat(rec[datetime_field])
+            return dt.replace(microsecond=0)
+
+        recs = self.records
+        if len(recs) == 0:
+            if zero_message:
+                print("Nothing to display.")
+            return
+
+        table = list()
+
+        recs = sorted(recs, key=obs_date)
+        recs = sorted(recs, key=obs_night)
+        for tele, g0 in itertools.groupby(recs, key=obs_night):
+            for rec in g0:
+                attrstr = f'{str(obs_date(rec))} {rec.get("user_id")}'
+                table.append(f"{self.row_str_func(attrstr, rec)}")
+        return table
 
     def get_records(
         self,
@@ -561,6 +645,8 @@ class ExposurelogAdapter(SourceAdapter):
         )
         return status
 
+    # RETURNS status: dict[endpoint_url, number_of_records, error]
+    # SIDE-EFFECT: puts records in self.exposures
     def get_exposures(self, instrument, registry=1):
         qparams = dict(instrument=instrument, registery=registry)
         if self.min_dayobs:
