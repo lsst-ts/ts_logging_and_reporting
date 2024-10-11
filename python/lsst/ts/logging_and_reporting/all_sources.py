@@ -40,6 +40,8 @@ class AllSources:
         )
         # This space for rent by ConsDB
 
+        self.server_url = server_url
+
         # Get the common min/max date/dayobs from just one source.
         # They are the same for all of them.
         self.max_date = self.nig_src.max_date
@@ -66,7 +68,7 @@ class AllSources:
     # day_obs:: YYYMMDD (int or str)
     # Use almanac begin of night values for day_obs.
     # Use almanac end of night values for day_obs + 1.
-    async def night_tally_observation_gaps(self, verbose=True):
+    async def night_tally_observation_gaps(self, verbose=False):
 
         instrument_tally = dict()  # d[instrument] = tally_dict
         almanac = alm.Almanac(dayobs=self.min_dayobs)
@@ -85,6 +87,12 @@ class AllSources:
         num_slews = targets[["slewTime"]].astype(bool).sum(axis=0).squeeze()
         total_slew_seconds = targets[["slewTime"]].sum().squeeze()
 
+        # per Merlin: There is no practical way to get actual detector read
+        # time.  He has done some experiments and inferred that it is
+        # 2.3 seconds.  He recommends hardcoding the value.
+        mean_detector_hrs = 2.3 / (60 * 60.0)
+
+        # Scot says care only about: ComCam, LSSTCam and  Latiss
         for instrument, records in self.exp_src.exposures.items():
             exposure_seconds = 0
             for rec in records:
@@ -92,27 +100,29 @@ class AllSources:
                 end = dt.datetime.fromisoformat(rec["timespan_end"])
                 exposure_seconds += (end - begin).total_seconds()
             num_exposures = len(records)
+            detector_hrs = len(records) * mean_detector_hrs
+
             exposure_hrs = exposure_seconds / (60 * 60.0)
-            slew_hrs = total_slew_seconds / (60 * 60)
+            slew_hrs = total_slew_seconds / (60 * 60.0)
             idle_hrs = (
                 total_observable_hrs
                 - exposure_hrs
                 # - detector_read_hrs
                 - slew_hrs
             )
+
             instrument_tally[instrument] = {
                 "Total Night (HH:MM:SS)": hhmmss(total_observable_hrs),  # (a)
                 "Total Exposure (HH:MM:SS)": hhmmss(exposure_hrs),  # (b)
                 "Number of exposures": num_exposures,  # (c)
                 "Number of slews": num_slews,  # (d)
-                "Total Detector Read (HH:MM:SS)": "NA",  # (e) UNKNOWN SOURCE
-                "Mean Detector Read (HH:MM:SS)": "NA",  # (f=e/c)
+                "Total Detector Read (HH:MM:SS)": hhmmss(detector_hrs),  # (e)
+                # Next: (f=e/c)
+                "Mean Detector Read (HH:MM:SS)": hhmmss(mean_detector_hrs),
                 "Total Slew (HH:MM:SS)": hhmmss(slew_hrs),  # (g)
                 "Mean Slew (HH:MM:SS)": hhmmss(slew_hrs / num_slews),  # (g/d)
                 "Total Idle (HH:MM:SS)": hhmmss(idle_hrs),  # (i=a-b-e-g)
             }
-
-        # get_detector_reads()??  # UNKNOWN SOURCE
 
         # Composition to combine Exposure and Efd (blackboard)
         # ts_xml/.../sal_interfaces/Scheduler/Scheduler_Events.xml

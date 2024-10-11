@@ -81,7 +81,7 @@ class Report(ABC):
         more = "(There may be more.)" if count >= adapter.limit else ""
         result = error if error else f"Got {count} records. "
 
-        print(md(f"## Overview for Service: `{adapter.service}` [{count}]"))
+        print(md(f"### Overview for Service: `{adapter.service}` [{count}]"))
         print(md(f'- Endpoint: {status["endpoint_url"]}'))
         print(f"- {result} {more}")
 
@@ -96,7 +96,6 @@ class Report(ABC):
         service = adapter.service
         url = adapter.get_status().get("endpoint_url")
         if records:
-            md("## Time Log")
             table = self.source_adapter.day_table("date_added")
             mdlist(table)
         else:

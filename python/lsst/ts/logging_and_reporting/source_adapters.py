@@ -139,6 +139,7 @@ class SourceAdapter(ABC):
         msg = rec["message_text"].strip()
         return f"`{datetime_str}`\n```\n{msg}\n```"
 
+    # ABC
     def day_table(
         self,
         datetime_field,
@@ -321,7 +322,9 @@ class NightReportAdapter(SourceAdapter):
                 table.append(f"{self.row_str_func(attrstr, rec)}")
                 crew_list = rec.get("observers_crew", [])
                 crew_str = ", ".join(crew_list)
-                table.append(f"*Observer Crew: {crew_str}*")
+                status = rec.get("telescope_status", "NA")
+                table.append(f"Telescope Status: *{status}*")
+                table.append(f"Observer Crew: *{crew_str}*")
         return table
 
     def row_str_func(self, datetime_str, rec):
@@ -574,13 +577,14 @@ class ExposurelogAdapter(SourceAdapter):
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
-        self.instruments = list()  # [instrument, ...]
+        self.instruments = dict()  # dict[instrument] = registry
+
         self.exposures = dict()  # dd[instrument] = [rec, ...]
 
         # Load the data (records) we need from relevant endpoints
         # in dependency order.
         self.status["instruments"] = self.get_instruments()
-        for instrument in self.instruments:
+        for instrument in self.instruments.keys():
             endpoint = f"exposures.{instrument}"
             self.status[endpoint] = self.get_exposures(instrument)
         if self.min_date:
@@ -589,8 +593,8 @@ class ExposurelogAdapter(SourceAdapter):
     @property
     def row_header(self):
         return (
-            "| Time | OBS ID | Telescope | Message |\n"
-            "|------|--------|-----------|---------|"
+            "| Time | OBS ID | Instrument | Message |\n"
+            "|------|--------|------------|---------|"
         )
 
     def row_str_func(self, datetime_str, rec):
@@ -602,6 +606,47 @@ class ExposurelogAdapter(SourceAdapter):
             # f"| <pre>{msg}</pre>"
             f"\n```\n{msg}\n```"
         )
+
+    # Exposurelog
+    def day_table(
+        self,
+        datetime_field,
+        dayobs_field=None,
+        row_str_func=None,
+        zero_message=False,
+    ):
+        """Break on INSTRUMENT, DATE. Within that only show time."""
+
+        def obs_night(rec):
+            if "day_obs" in rec:
+                return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
+            else:
+                dt = datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_dayobs(dt)
+
+        def obs_date(rec):
+            dt = datetime.fromisoformat(rec[datetime_field])
+            return dt.replace(microsecond=0)
+
+        def instrument(rec):
+            return rec["instrument"]
+
+        recs = self.records
+        if len(recs) == 0:
+            if zero_message:
+                print("Nothing to display.")
+            return
+
+        table = list()
+        # Sort by INSTRUMENT, then by OBS_DATE.
+        recs = sorted(recs, key=obs_date)
+        recs = sorted(recs, key=instrument)
+        for instrum, g0 in itertools.groupby(recs, key=instrument):
+            table.append(f"### Instrument: {instrum}")
+            for rec in g0:
+                attrstr = f'{str(obs_date(rec))} {rec.get("user_id")}'
+                table.append(f"{self.row_str_func(attrstr, rec)}")
+        return table
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = timeout or self.timeout
@@ -635,9 +680,11 @@ class ExposurelogAdapter(SourceAdapter):
         except Exception as err:
             error = str(err)
         else:
-            # Flatten the lists
-            vals = recs.values()
-            self.instruments = list(itertools.chain.from_iterable(vals))
+            self.instruments = {
+                instrum: int(reg.replace("butler_instruments_", ""))
+                for reg, inst_list in recs.items()
+                for instrum in inst_list
+            }
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),
@@ -647,8 +694,9 @@ class ExposurelogAdapter(SourceAdapter):
 
     # RETURNS status: dict[endpoint_url, number_of_records, error]
     # SIDE-EFFECT: puts records in self.exposures
-    def get_exposures(self, instrument, registry=1):
-        qparams = dict(instrument=instrument, registery=registry)
+    def get_exposures(self, instrument, verbose=False):
+        registry = self.instruments[instrument]
+        qparams = dict(instrument=instrument, registry=registry)
         if self.min_dayobs:
             qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
         if self.max_dayobs:
@@ -657,6 +705,8 @@ class ExposurelogAdapter(SourceAdapter):
         recs = []
         error = None
         try:
+            if verbose:
+                print(f"DBG get_exposures {url=}")
             recs = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
             error = str(err)
@@ -722,19 +772,13 @@ class ExposurelogAdapter(SourceAdapter):
         )
         return status
 
-    def get_observation_gaps(self, instruments=None):
+    def get_observation_gaps(self):
         def day_func(r):
             return r["day_obs"]
 
-        if not instruments:
-            instruments = self.instruments
-        # TODO user specified list of instruments must be subset
-        assert isinstance(
-            instruments, list
-        ), f'"instruments" must be a list.  Got {instruments!r}'
         # inst_day_rollup[instrument] => dict[day] => exposureGapInMinutes
         inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
-        for instrum in instruments:
+        for instrum in self.instruments.keys():
             recs = self.exposures[instrum]
             instrum_gaps = dict()
             for day, dayrecs in itertools.groupby(recs, key=day_func):
