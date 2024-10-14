@@ -1,4 +1,28 @@
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 import datetime as dt
+import itertools
+from collections import defaultdict
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.efd as efd
@@ -30,6 +54,10 @@ class AllSources:
         )
         self.nar_src = sad.NarrativelogAdapter(
             server_url=server_url,
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+        )
+        self.alm_src = alm.Almanac(
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
         )
@@ -71,7 +99,7 @@ class AllSources:
     async def night_tally_observation_gaps(self, verbose=False):
 
         instrument_tally = dict()  # d[instrument] = tally_dict
-        almanac = alm.Almanac(dayobs=self.min_dayobs)
+        almanac = self.alm_src
         total_observable_hrs = almanac.night_hours
 
         targets = await self.efd_src.get_targets()  # a DataFrame
@@ -145,3 +173,52 @@ class AllSources:
             for src in sources
         }
         return res
+
+    def get_observation_gaps(self):
+        def day_func(r):
+            return r["day_obs"]
+
+        # inst_day_rollup[instrument] => dict[day] => exposureGapInMinutes
+        inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
+        instrum_gaps = defaultdict(dict)
+        for instrum in self.exp_src.instruments.keys():
+            recs = self.exp_src.exposures[instrum]
+            for day, dayrecs in itertools.groupby(recs, key=day_func):
+                gaps = list()
+                durations = list()
+                begin = prev_end = None
+                for rec in dayrecs:
+                    begin = dt.datetime.fromisoformat(rec["timespan_begin"])
+                    this_end = dt.datetime.fromisoformat(rec["timespan_end"])
+                    exp_secs = (begin - this_end).total_seconds()
+                    if prev_end is None:  # First exposure
+                        durations.append(exp_secs)
+                        tuple = (
+                            None,  # Start of exposure gap
+                            0,  # Gap duration (minutes
+                            begin.time().isoformat(),  # Start of exposure
+                            exp_secs,
+                        )
+                    else:  # Subsequent (non-first) exposures
+                        gap_secs = (begin - prev_end).total_seconds()
+                        durations.append(exp_secs)
+                        durations.append(gap_secs)
+                        tuple = (
+                            prev_end.time().isoformat(),  # Start of exp GAP
+                            gap_secs,
+                            begin.time().isoformat(),  # Start of exposure
+                            exp_secs,
+                        )
+                    gaps.append(tuple)
+                    prev_end = dt.datetime.fromisoformat(rec["timespan_end"])
+                instrum_gaps[instrum][day] = gaps
+                # Rollup gap times by day
+                for day, tuples in instrum_gaps[instrum].items():
+                    inst_day_rollup[instrum][day] = sum([t[1] for t in tuples])
+
+        return inst_day_rollup, instrum_gaps
+
+    def get_slews(self):
+        """time when MTMount azimuthInPosition and elevationInPosition events
+        have their inPosition items set to False and then again when they
+        turn True."""

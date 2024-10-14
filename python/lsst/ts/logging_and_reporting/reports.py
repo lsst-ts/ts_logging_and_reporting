@@ -21,7 +21,6 @@
 
 from abc import ABC
 
-import lsst.ts.logging_and_reporting.almanac as alm
 import pandas as pd
 from IPython.display import Markdown, display
 
@@ -102,6 +101,7 @@ class Report(ABC):
             if zero_message:
                 md(f"No {service} records found.", color="lightblue")
                 md(f"Used [API Data]({url})")
+        md("-------------")
 
 
 class AlmanacReport(Report):
@@ -109,14 +109,15 @@ class AlmanacReport(Report):
     # (astronomical,nautical,civil) twilight (morning,evening)
     # sun rise,set
 
-    def day_obs_report(self, day_obs):
-        md(f"***Almanac for the observing night starting* {day_obs}**")
-        df = self.almanac_as_dataframe(day_obs)
+    def day_obs_report(self):
+        dayobs = self.source_adapter.min_dayobs
+        md(f"***Almanac for the observing night starting* {dayobs}**")
+        df = self.almanac_as_dataframe()
         display(df.style.hide(axis="columns", subset=None))
 
-    def almanac_as_dataframe(self, day_obs):
+    def almanac_as_dataframe(self):
         # This display superfluous header: "0, 1"
-        return pd.DataFrame(alm.Almanac(dayobs=day_obs).as_dict).T
+        return pd.DataFrame(self.source_adapter.as_dict).T
 
 
 class NightlyLogReport(Report):

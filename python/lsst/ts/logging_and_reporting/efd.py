@@ -15,6 +15,7 @@ import datetime as dt
 import os
 
 import lsst.ts.logging_and_reporting.utils as ut
+import pandas as pd
 from astropy.time import Time, TimeDelta
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 from lsst_efd_client import EfdClient
@@ -68,6 +69,7 @@ class EfdAdapter(SourceAdapter):
                 raise Exception(msg)
 
         self.targets = None
+        self.mount_moves = None
         self.status["targets"] = dict(
             endpoint_url="NA",
             number_of_records=0,
@@ -77,6 +79,12 @@ class EfdAdapter(SourceAdapter):
     async def get_topics(self):
         self.topics = await self.client.get_topics()
         return self.topics
+
+    async def get_fields_from_topics(self, topic_list):
+        topic_dict = dict()
+        for topic in topic_list:
+            topic_dict[topic] = await self.client.get_fields(topic)
+        return topic_dict
 
     # Ran <2024-09-26 Thu> (during possible USDF-dev issues)
     #   Run time: 111 minutes
@@ -129,9 +137,11 @@ class EfdAdapter(SourceAdapter):
         print(f" DONE in {ut.toc()/60} minutes")
         return populated, errors, topic_count
 
-    async def query_nights(self, topic, fields, index=301):
-        start = Time(self.min_date)
-        end = Time(self.max_date)
+    async def query_nights(
+        self, topic, fields, min_date=None, max_date=None, index=None
+    ):
+        start = Time(min_date or self.min_date)
+        end = Time(max_date or self.max_date)
 
         # TODO resample
         series = await self.client.select_time_series(
@@ -166,26 +176,66 @@ class EfdAdapter(SourceAdapter):
         )
         return targets
 
+    # Dates found:
+    #   display(sorted(set([str(t.date()) for t in moves.index])))
+    async def get_mount_moves(self):
+        if self.mount_moves is not None:  # is cached
+            return self.mount_moves
+
+        topics = [
+            "lsst.sal.ATDome.logevent_azimuthInPosition",
+            "lsst.sal.ATMCS.logevent_azimuthInPosition",
+            "lsst.sal.MTMount.logevent_azimuthInPosition",
+            "lsst.sal.ATDome.logevent_elevationInPosition",
+            "lsst.sal.ATMCS.logevent_elevationInPosition",
+            "lsst.sal.MTMount.logevent_elevationInPosition",
+        ]
+        fields_wanted = [
+            "inPosition",
+        ]
+
+        moves = dict()
+        for topic in topics:
+            colname = topic.replace("lsst.sal.", "").replace(".logevent_", "_")
+            colname = colname.replace("InPosition", "")
+            print(f"DBG get_mount_moves: {topic=} {colname=}")
+            series = await self.query_nights(topic, fields_wanted)
+            moves[topic] = series.rename(columns={"inPosition": colname})
+        df = pd.concat(moves.values(), axis=1)
+        return df
+
     async def get_weather(self, days=1):
 
         result = dict(
             ess_wind=await self.query_nights(
-                "lsst.sal.ESS.airFlow", ["speed", "direction"]  # m/s
+                "lsst.sal.ESS.airFlow",
+                ["speed", "direction"],  # m/s
+                index=self.salindex,
             ),
             ess_temp=await self.query_nights(
-                "lsst.sal.ESS.temperature", "temperatureItem0"  # C
+                "lsst.sal.ESS.temperature",
+                "temperatureItem0",  # C
+                index=self.salindex,
             ),
             ess_dewpoint=await self.query_nights(
-                "lsst.sal.ESS.dewPoint", "dewPointItem"  # C
+                "lsst.sal.ESS.dewPoint",
+                "dewPointItem",  # C
+                index=self.salindex,
             ),
             ess_humidity=await self.query_nights(
-                "lsst.sal.ESS.relativeHumidity", "relativeHumidityItem"  # %
+                "lsst.sal.ESS.relativeHumidity",
+                "relativeHumidityItem",  # %
+                index=self.salindex,
             ),
             ess_pressure=await self.query_nights(
-                "lsst.sal.ESS.pressure", "pressureItem0"  # mbar
+                "lsst.sal.ESS.pressure",
+                "pressureItem0",  # mbar
+                index=self.salindex,
             ),
             dimm_fwhm=await self.query_nights(
-                "lsst.sal.DIMM.logevent_dimmMeasurement", "fwhm"  # arcsec
+                "lsst.sal.DIMM.logevent_dimmMeasurement",
+                "fwhm",  # arcsec
+                index=self.salindex,
             ),
         )
         return result

@@ -34,10 +34,10 @@
 # One word most of the time, two_words when its a field such as
 # in a Database or API query string.
 
+import datetime as dt
 import itertools
 from abc import ABC
 from collections import defaultdict
-from datetime import datetime, time, timedelta
 from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.exceptions as ex
@@ -114,7 +114,7 @@ class SourceAdapter(ABC):
         if min_dayobs:
             self.min_date = ut.dayobs2dt(min_dayobs)
         else:
-            self.min_date = self.max_date - timedelta(days=1)
+            self.min_date = self.max_date - dt.timedelta(days=1)
         assert self.min_date < self.max_date
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
 
@@ -132,10 +132,10 @@ class SourceAdapter(ABC):
                     del rec[f]
 
     @property
-    def row_header(self):
+    def OBSOLETE_row_header(self):
         return "| Time | Message |\n|--------|------|"
 
-    def row_str_func(self, datetime_str, rec):
+    def OBSOLETE_row_str_func(self, datetime_str, rec):
         msg = rec["message_text"].strip()
         return f"`{datetime_str}`\n```\n{msg}\n```"
 
@@ -144,7 +144,7 @@ class SourceAdapter(ABC):
         self,
         datetime_field,
         dayobs_field=None,
-        row_str_func=None,
+        # row_str_func=None,
         zero_message=False,
     ):
         """Break on DAYOBS.
@@ -154,12 +154,12 @@ class SourceAdapter(ABC):
             if "day_obs" in rec:
                 return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
             else:
-                dt = datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(dt)
+                rdt = dt.datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_dayobs(rdt)
 
         def obs_date(rec):
-            dt = datetime.fromisoformat(rec[datetime_field])
-            return dt.replace(microsecond=0)
+            rdt = dt.datetime.fromisoformat(rec[datetime_field])
+            return rdt.replace(microsecond=0)
 
         recs = self.records
         if len(recs) == 0:
@@ -168,17 +168,17 @@ class SourceAdapter(ABC):
             return
         table = list()
         # Group by night.
-        recs = sorted(recs, key=lambda r: obs_night(r))
-        for night, g0 in itertools.groupby(recs, key=lambda r: obs_night(r)):
+        recs = sorted(recs, key=obs_night)
+        for night, g0 in itertools.groupby(recs, key=obs_night):
             # Group by date
             table.append(f"## NIGHT: {night}: ")
-            for date, g1 in itertools.groupby(g0, key=lambda r: obs_date(r)):
+            for date, g1 in itertools.groupby(g0, key=obs_date):
                 table.append(f"### DATE: {date.date()}: ")
                 for rec in g0:
-                    dt = obs_date(rec)
-                    dtstr = str(dt.time())
-                    table.append(f"{self.row_str_func(dtstr, rec)}")
-        table.append(":EOT")
+                    msg = rec["message_text"].strip()
+                    rdt = obs_date(rec)
+                    dtstr = str(rdt.time())
+                    table.append(f"{dtstr}\n```\n{msg}\n```")
         return table
 
     @property
@@ -286,7 +286,7 @@ class NightReportAdapter(SourceAdapter):
         self,
         datetime_field,
         dayobs_field=None,
-        row_str_func=None,
+        # row_str_func=None,
         zero_message=False,
     ):
         """Break on TELESCOPE, DATE. Within that only show time."""
@@ -295,12 +295,12 @@ class NightReportAdapter(SourceAdapter):
             if "day_obs" in rec:
                 return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
             else:
-                dt = datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(dt)
+                rdt = dt.datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_dayobs(rdt)
 
         def obs_date(rec):
-            dt = datetime.fromisoformat(rec[datetime_field])
-            return dt.replace(microsecond=0)
+            rdt = dt.datetime.fromisoformat(rec[datetime_field])
+            return rdt.replace(microsecond=0)
 
         def telescope(rec):
             return rec["telescope"]
@@ -318,16 +318,16 @@ class NightReportAdapter(SourceAdapter):
         for tele, g0 in itertools.groupby(recs, key=telescope):
             table.append(f"### Telescope: {tele}")
             for rec in g0:
-                attrstr = f'{str(obs_date(rec))} {rec.get("user_id")}'
-                table.append(f"{self.row_str_func(attrstr, rec)}")
+                msg = rec["summary"].strip()
+                table.append(f"```\n{msg}\n```")
                 crew_list = rec.get("observers_crew", [])
                 crew_str = ", ".join(crew_list)
                 status = rec.get("telescope_status", "NA")
                 table.append(f"Telescope Status: *{status}*")
-                table.append(f"Observer Crew: *{crew_str}*")
+                table.append(f"Authors: *{crew_str}*")
         return table
 
-    def row_str_func(self, datetime_str, rec):
+    def OBSOLETE_row_str_func(self, datetime_str, rec):  # TODO remove
         msg = rec["summary"].strip()
         return f"`{datetime_str}`\n```\n{msg}\n```"
 
@@ -439,7 +439,7 @@ class NarrativelogAdapter(SourceAdapter):
         self,
         datetime_field,
         dayobs_field=None,
-        row_str_func=None,
+        # row_str_func=None,
         zero_message=False,
     ):
         """Break on DATE. Within that show time, author."""
@@ -448,12 +448,12 @@ class NarrativelogAdapter(SourceAdapter):
             if "day_obs" in rec:
                 return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
             else:
-                dt = datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(dt)
+                rdt = dt.datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_dayobs(rdt)
 
         def obs_date(rec):
-            dt = datetime.fromisoformat(rec[datetime_field])
-            return dt.replace(microsecond=0)
+            rdt = dt.datetime.fromisoformat(rec[datetime_field])
+            return rdt.replace(microsecond=0)
 
         recs = self.records
         if len(recs) == 0:
@@ -463,12 +463,14 @@ class NarrativelogAdapter(SourceAdapter):
 
         table = list()
 
-        recs = sorted(recs, key=obs_date)
+        # Sort by OBS_NIGHT
         recs = sorted(recs, key=obs_night)
         for tele, g0 in itertools.groupby(recs, key=obs_night):
             for rec in g0:
-                attrstr = f'{str(obs_date(rec))} {rec.get("user_id")}'
-                table.append(f"{self.row_str_func(attrstr, rec)}")
+                rec_dt = dt.datetime.fromisoformat(rec[datetime_field])
+                rec_time = rec_dt.time().replace(microsecond=0).isoformat()
+                msg = rec["message_text"].strip()
+                table.append(f"{rec_time}\n```\n{msg}\n```")
         return table
 
     def get_records(
@@ -489,12 +491,12 @@ class NarrativelogAdapter(SourceAdapter):
         if message_text:
             qparams["message_text"] = message_text
         if self.min_date:
-            qparams["min_date_added"] = datetime.combine(
-                self.min_date, time()
+            qparams["min_date_added"] = dt.datetime.combine(
+                self.min_date, dt.time()
             ).isoformat()
         if self.max_date:
-            qparams["max_date_added"] = datetime.combine(
-                self.max_date, time()
+            qparams["max_date_added"] = dt.datetime.combine(
+                self.max_date, dt.time()
             ).isoformat()
         if self.limit:
             qparams["limit"] = self.limit
@@ -522,15 +524,15 @@ class NarrativelogAdapter(SourceAdapter):
 
     def get_timelost(self, recs, rollup="day"):
         def iso_date_begin(rec):
-            return datetime.fromisoformat(rec["date_begin"]).date().isoformat()
+            rdt = dt.datetime.fromisoformat(rec["date_begin"])
+            return rdt.date().isoformat()
 
         day_tl = dict()  # day_tl[day] = totalDayTimeLost
         for day, dayrecs in itertools.groupby(recs, key=iso_date_begin):
             day_tl[day] = sum([r["time_lost"] for r in dayrecs])
         return day_tl
 
-
-# END: class NarrativelogAdapter
+    # END: class NarrativelogAdapter
 
 
 class ExposurelogAdapter(SourceAdapter):
@@ -590,19 +592,11 @@ class ExposurelogAdapter(SourceAdapter):
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
-    @property
-    def row_header(self):
-        return (
-            "| Time | OBS ID | Instrument | Message |\n"
-            "|------|--------|------------|---------|"
-        )
-
-    def row_str_func(self, datetime_str, rec):
+    def OBSOLETE_row_str_func(self, datetime_str, rec):  # TODO remove
         msg = rec["message_text"].strip()
         return (
-            f"> {datetime_str} "
-            f"| {rec['obs_id']} "
-            f"| {rec['instrument']} "
+            f"{rec['obs_id']} "
+            f"- {datetime_str} "
             # f"| <pre>{msg}</pre>"
             f"\n```\n{msg}\n```"
         )
@@ -612,7 +606,7 @@ class ExposurelogAdapter(SourceAdapter):
         self,
         datetime_field,
         dayobs_field=None,
-        row_str_func=None,
+        # row_str_func=None,
         zero_message=False,
     ):
         """Break on INSTRUMENT, DATE. Within that only show time."""
@@ -621,15 +615,18 @@ class ExposurelogAdapter(SourceAdapter):
             if "day_obs" in rec:
                 return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
             else:
-                dt = datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(dt)
+                rdt = dt.datetime.fromisoformat(rec[datetime_field])
+                return ut.datetime_to_dayobs(rdt)
 
         def obs_date(rec):
-            dt = datetime.fromisoformat(rec[datetime_field])
-            return dt.replace(microsecond=0)
+            rdt = dt.datetime.fromisoformat(rec[datetime_field])
+            return rdt.replace(microsecond=0)
 
         def instrument(rec):
             return rec["instrument"]
+
+        def obs_id(rec):
+            return rec["obs_id"]
 
         recs = self.records
         if len(recs) == 0:
@@ -638,14 +635,18 @@ class ExposurelogAdapter(SourceAdapter):
             return
 
         table = list()
-        # Sort by INSTRUMENT, then by OBS_DATE.
-        recs = sorted(recs, key=obs_date)
+        # Sort by INSTRUMENT, then by OBS_ID.
+        recs = sorted(recs, key=obs_id)
         recs = sorted(recs, key=instrument)
         for instrum, g0 in itertools.groupby(recs, key=instrument):
             table.append(f"### Instrument: {instrum}")
-            for rec in g0:
-                attrstr = f'{str(obs_date(rec))} {rec.get("user_id")}'
-                table.append(f"{self.row_str_func(attrstr, rec)}")
+            for obsid, g1 in itertools.groupby(recs, key=obs_id):
+                recs = list(g1)
+                attrstr = f"#### {obsid} - {recs[0][datetime_field]}"
+                table.append(f"{attrstr}\n")
+                for rec in recs:
+                    msg = rec["message_text"].strip()
+                    table.append(f"```\n{msg}\n```")
         return table
 
     def check_endpoints(self, timeout=None, verbose=True):
@@ -771,38 +772,6 @@ class ExposurelogAdapter(SourceAdapter):
             error=error,
         )
         return status
-
-    def get_observation_gaps(self):
-        def day_func(r):
-            return r["day_obs"]
-
-        # inst_day_rollup[instrument] => dict[day] => exposureGapInMinutes
-        inst_day_rollup = defaultdict(dict)  # Instrument/Day rollup
-        for instrum in self.instruments.keys():
-            recs = self.exposures[instrum]
-            instrum_gaps = dict()
-            for day, dayrecs in itertools.groupby(recs, key=day_func):
-                gaps = list()
-                begin = end = None
-                for rec in dayrecs:
-                    begin = datetime.fromisoformat(rec["timespan_begin"])
-                    if end:
-                        # span in minutes
-                        diff = (begin - end).total_seconds() / 60.0
-                        tuple = (
-                            end.time().isoformat(),
-                            begin.time().isoformat(),
-                            diff,
-                        )
-                        gaps.append(tuple)
-                    end = datetime.fromisoformat(rec["timespan_end"])
-                instrum_gaps[day] = gaps
-
-                # Rollup gap times by day
-                for day, tuples in instrum_gaps.items():
-                    inst_day_rollup[instrum][day] = sum([t[2] for t in tuples])
-
-        return inst_day_rollup
 
 
 # END: class ExposurelogAdapter

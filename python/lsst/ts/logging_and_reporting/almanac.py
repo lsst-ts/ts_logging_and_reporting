@@ -4,10 +4,11 @@ import warnings
 import astropy.coordinates
 from astroplan import Observer
 from astropy.time import Time
+from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 
 
 # Compare to https://www.timeanddate.com/astronomy/chile/santiago
-class Almanac:
+class Almanac(SourceAdapter):
     """Get almanac data for a night given a dayobs.
     A dayobs is the date of the start of an observing night. Therefore
     for sunrise and morning twilight we get time on the date AFTER dayobs.
@@ -16,14 +17,20 @@ class Almanac:
     Times in UTC.
     """
 
-    def __init__(self, *, dayobs=None, site="Rubin"):
-        if dayobs is None:
-            astro_day = dt.date.today() - dt.timedelta(days=1)
-        else:
-            # Allow formats: int, YYYY-MM-DD, YYYYMMDD
-            dobs = str(dayobs).replace("-", "")
-            astro_day = dt.datetime.strptime(dobs, "%Y%m%d").date()
-            astro_date = dt.datetime.strptime(dobs, "%Y%m%d")
+    def __init__(
+        self,
+        *,
+        min_dayobs=None,  # INCLUSIVE: default=Yesterday
+        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
+        site="Rubin",
+    ):
+        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
+
+        dayobs = self.min_dayobs
+        # Allow formats: int, YYYY-MM-DD, YYYYMMDD
+        dobs = str(dayobs).replace("-", "")
+        astro_day = dt.datetime.strptime(dobs, "%Y%m%d").date()
+        astro_date = dt.datetime.strptime(dobs, "%Y%m%d")
 
         with warnings.catch_warnings(action="ignore"):
             self.loc = astropy.coordinates.EarthLocation.of_site(site)
