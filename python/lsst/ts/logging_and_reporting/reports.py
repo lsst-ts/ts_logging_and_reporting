@@ -25,12 +25,30 @@ import pandas as pd
 from IPython.display import Markdown, display
 
 
-def md(markdown_str, color=None):
+def md(markdown_str, color=None, background=None):
     # see https://www.w3schools.com/colors/colors_names.asp
-    if color:
-        display(Markdown(f"<font color='{color}'>{markdown_str}</font>"))
+    if color or background:
+        fg = f"color:{color};" if color else ""
+        bg = f"background-color:{background};"
+        newtxt = f'<font style="{fg}{bg}">{markdown_str}</font>'
+        print(f"{newtxt=}")
+        display(Markdown(newtxt))
     else:
         display(Markdown(markdown_str))
+
+
+htmlgood = (
+    '<font style="background-color:green; '
+    'color:white; font-size:20px">&nbsp;G&nbsp;</font>'
+)
+htmlquestion = (
+    '<font style="background-color:yellow; '
+    'color:black; font-size:20px">&nbsp;?&nbsp;</font>'
+)
+htmlbad = (
+    '<font style="background-color:red; '
+    'color:black; font-size:20px">&nbsp;R&nbsp;</font>'
+)
 
 
 def mdlist(markdown_list, color=None):
@@ -84,21 +102,17 @@ class Report(ABC):
         print(md(f'- Endpoint: {status["endpoint_url"]}'))
         print(f"- {result} {more}")
 
-    def time_log_as_markdown(
-        self,
-        log_title=None,
-        zero_message=False,
-    ):
+    def time_log_as_markdown(self, zero_message=False):
         """Emit markdown for a date-time log."""
         adapter = self.source_adapter
         records = adapter.records
-        service = adapter.service
-        url = adapter.get_status().get("endpoint_url")
         if records:
             table = self.source_adapter.day_table("date_added")
             mdlist(table)
         else:
             if zero_message:
+                service = adapter.service
+                url = adapter.get_status().get("endpoint_url")
                 md(f"No {service} records found.", color="lightblue")
                 md(f"Used [API Data]({url})")
         md("-------------")

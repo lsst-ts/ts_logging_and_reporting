@@ -41,6 +41,7 @@ from collections import defaultdict
 from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.exceptions as ex
+import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
 import requests
 
@@ -323,7 +324,7 @@ class NightReportAdapter(SourceAdapter):
                 crew_str = ", ".join(crew_list)
                 status = rec.get("telescope_status", "Not Available")
                 table.append(f"Telescope Status: {status}")
-                table.append(f"Authors: {crew_str}")
+                table.append(f"*Authors: {crew_str}*")
         return table
 
     def OBSOLETE_row_str_func(self, datetime_str, rec):  # TODO remove
@@ -637,8 +638,15 @@ class ExposurelogAdapter(SourceAdapter):
                 recs = list(g1)
                 attrstr = f"{obsid} : {recs[0][datetime_field]}"
                 for rec in recs:
+                    match rec.get("exposure_flag"):
+                        case "junk":
+                            flag = rep.htmlbad
+                        case "questionable":
+                            flag = rep.htmlquestion
+                        case _:
+                            flag = rep.htmlgood
                     msg = rec["message_text"].strip()
-                    table.append(f"* {attrstr}\n    - `{msg}`")
+                    table.append(f"* {attrstr}\n    - {flag}`{msg}`")
         return table
 
     def check_endpoints(self, timeout=None, verbose=True):
@@ -767,6 +775,7 @@ class ExposurelogAdapter(SourceAdapter):
 
 
 # END: class ExposurelogAdapter
+
 
 adapters = [
     ExposurelogAdapter,
