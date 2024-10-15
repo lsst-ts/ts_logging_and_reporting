@@ -286,7 +286,6 @@ class NightReportAdapter(SourceAdapter):
         self,
         datetime_field,
         dayobs_field=None,
-        # row_str_func=None,
         zero_message=False,
     ):
         """Break on TELESCOPE, DATE. Within that only show time."""
@@ -322,9 +321,9 @@ class NightReportAdapter(SourceAdapter):
                 table.append(f"```\n{msg}\n```")
                 crew_list = rec.get("observers_crew", [])
                 crew_str = ", ".join(crew_list)
-                status = rec.get("telescope_status", "NA")
-                table.append(f"Telescope Status: *{status}*")
-                table.append(f"Authors: *{crew_str}*")
+                status = rec.get("telescope_status", "Not Available")
+                table.append(f"Telescope Status: {status}")
+                table.append(f"Authors: {crew_str}")
         return table
 
     def OBSOLETE_row_str_func(self, datetime_str, rec):  # TODO remove
@@ -602,13 +601,7 @@ class ExposurelogAdapter(SourceAdapter):
         )
 
     # Exposurelog
-    def day_table(
-        self,
-        datetime_field,
-        dayobs_field=None,
-        # row_str_func=None,
-        zero_message=False,
-    ):
+    def day_table(self, datetime_field, dayobs_field=None, zero_message=False):
         """Break on INSTRUMENT, DATE. Within that only show time."""
 
         def obs_night(rec):
@@ -642,11 +635,10 @@ class ExposurelogAdapter(SourceAdapter):
             table.append(f"### Instrument: {instrum}")
             for obsid, g1 in itertools.groupby(recs, key=obs_id):
                 recs = list(g1)
-                attrstr = f"#### {obsid} - {recs[0][datetime_field]}"
-                table.append(f"{attrstr}\n")
+                attrstr = f"{obsid} : {recs[0][datetime_field]}"
                 for rec in recs:
                     msg = rec["message_text"].strip()
-                    table.append(f"```\n{msg}\n```")
+                    table.append(f"* {attrstr}\n    - `{msg}`")
         return table
 
     def check_endpoints(self, timeout=None, verbose=True):
