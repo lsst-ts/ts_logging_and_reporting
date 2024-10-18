@@ -37,10 +37,10 @@ parameters:
     type: boolean
     description: >
       Enable experimental parsing of error messages pasted into logs.
-    default: True
+    default: true
   exp_tally:
     type: boolean
     description: >
       Enable experimental tally of exposures with specific values of
       selected fields.
-    default: True
+    default: true
