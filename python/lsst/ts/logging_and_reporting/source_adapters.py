@@ -18,6 +18,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# #############################################################################
 
 
 # TODO: This is considered Proof of Concept code.
@@ -72,7 +73,7 @@ def validate_response(response, endpoint_url):
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters."""
 
-    limit = 99
+    limit = 999
 
     # TODO document class including all class variables.
     def __init__(
@@ -132,13 +133,10 @@ class SourceAdapter(ABC):
                 for f in nukefields:
                     del rec[f]
 
+    # ABC
     @property
-    def OBSOLETE_row_header(self):
-        return "| Time | Message |\n|--------|------|"
-
-    def OBSOLETE_row_str_func(self, datetime_str, rec):
-        msg = rec["message_text"].strip()
-        return f"`{datetime_str}`\n```\n{msg}\n```"
+    def urls(self):
+        return []
 
     # ABC
     def day_table(
@@ -282,6 +280,16 @@ class NightReportAdapter(SourceAdapter):
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
+    @property
+    def urls(self):
+        """RETURN flattened list of all URLs."""
+        nig_urls = [
+            [r.get("confluence_url", [])]
+            for r in self.records
+            if r.get("confluence_url") != ""
+        ]
+        return set(itertools.chain.from_iterable(nig_urls))
+
     # Nightreport
     def day_table(
         self,
@@ -323,13 +331,12 @@ class NightReportAdapter(SourceAdapter):
                 crew_list = rec.get("observers_crew", [])
                 crew_str = ", ".join(crew_list)
                 status = rec.get("telescope_status", "Not Available")
+                url = rec.get("confluence_url")
+                if url and len(url) > 0:
+                    table.append(f"Confluence page: {rep.mdfragmentlink(url)}")
                 table.append(f"Telescope Status: {status}")
                 table.append(f"*Authors: {crew_str}*")
         return table
-
-    def OBSOLETE_row_str_func(self, datetime_str, rec):  # TODO remove
-        msg = rec["summary"].strip()
-        return f"`{datetime_str}`\n```\n{msg}\n```"
 
     def get_records(
         self,
@@ -384,29 +391,29 @@ class NightReportAdapter(SourceAdapter):
 
 class NarrativelogAdapter(SourceAdapter):
     outfields = {
-        # 'category',
-        # 'components',
-        # 'cscs',
+        "category",
+        "components",
+        "cscs",
         "date_added",
-        # 'date_begin',
-        # 'date_end',
-        # 'date_invalidated',
-        # 'id',
-        # 'is_human',
-        # 'is_valid',
-        # 'level',
+        "date_begin",
+        "date_end",
+        "date_invalidated",
+        "id",
+        "is_human",
+        "is_valid",
+        "level",
         "message_text",
-        # 'parent_id',
-        # 'primary_hardware_components',
-        # 'primary_software_components',
-        # 'site_id',
-        # 'subsystems',
-        # 'systems',
-        # 'tags',
+        "parent_id",
+        "primary_hardware_components",
+        "primary_software_components",
+        "site_id",
+        "subsystems",
+        "systems",
+        "tags",
         "time_lost",
         "time_lost_type",
-        # 'urls',
-        # 'user_agent',
+        "urls",
+        "user_agent",
         "user_id",
     }
     service = "narrativelog"
@@ -433,6 +440,12 @@ class NarrativelogAdapter(SourceAdapter):
         # Load the data (records) we need from relevant endpoints
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
+
+    @property
+    def urls(self):
+        """RETURN flattened list of all URLs."""
+        rurls = [r.get("urls", []) for r in self.records]
+        return set(itertools.chain.from_iterable(rurls))
 
     # Narrativelog
     def day_table(
@@ -468,9 +481,13 @@ class NarrativelogAdapter(SourceAdapter):
         for tele, g0 in itertools.groupby(recs, key=obs_night):
             for rec in g0:
                 rec_dt = dt.datetime.fromisoformat(rec[datetime_field])
-                rec_time = rec_dt.time().replace(microsecond=0).isoformat()
+                # rec_time = rec_dt.time().replace(microsecond=0).isoformat()
                 msg = rec["message_text"].strip()
-                table.append(f"{rec_time}\n```\n{msg}\n```")
+                table.append(f"- **{rec_dt}** {rep.htmlcode(msg)}")
+
+                if rec.get("urls"):
+                    for url in rec.get("urls"):
+                        table.append(f"- Link: {rep.mdpathlink(url)}")
         return table
 
     def get_records(
@@ -539,23 +556,23 @@ class ExposurelogAdapter(SourceAdapter):
     ignore_fields = ["id"]
     outfields = {
         "date_added",
-        # 'date_invalidated',
+        "date_invalidated",
         "day_obs",
-        # 'exposure_flag',
-        # 'id',
+        "exposure_flag",
+        "id",
         "instrument",
-        # 'is_human',
-        # 'is_valid',
-        # 'level',
+        "is_human",
+        "is_valid",
+        "level",
         "message_text",
         "obs_id",
-        # 'parent_id',
-        # 'seq_num',
-        # 'site_id',
-        # 'tags',
-        # 'urls',
-        # 'user_agent',
-        # 'user_id',
+        "parent_id",
+        "seq_num",
+        "site_id",
+        "tags",
+        "urls",
+        "user_agent",
+        "user_id",
     }
     service = "exposurelog"
     endpoints = [
@@ -592,14 +609,11 @@ class ExposurelogAdapter(SourceAdapter):
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
 
-    def OBSOLETE_row_str_func(self, datetime_str, rec):  # TODO remove
-        msg = rec["message_text"].strip()
-        return (
-            f"{rec['obs_id']} "
-            f"- {datetime_str} "
-            # f"| <pre>{msg}</pre>"
-            f"\n```\n{msg}\n```"
-        )
+    @property
+    def urls(self):
+        """RETURN flattened list of all URLs."""
+        rurls = [r.get("urls", []) for r in self.records]
+        return set(itertools.chain.from_iterable(rurls))
 
     # Exposurelog
     def day_table(self, datetime_field, dayobs_field=None, zero_message=False):
@@ -636,6 +650,8 @@ class ExposurelogAdapter(SourceAdapter):
             table.append(f"### Instrument: {instrum}")
             for obsid, g1 in itertools.groupby(recs, key=obs_id):
                 recs = list(g1)
+                rec = recs[0]
+
                 attrstr = f"{obsid} : {recs[0][datetime_field]}"
                 for rec in recs:
                     match rec.get("exposure_flag"):
@@ -647,6 +663,10 @@ class ExposurelogAdapter(SourceAdapter):
                             flag = rep.htmlgood
                     msg = rec["message_text"].strip()
                     table.append(f"* {attrstr}\n    - {flag}`{msg}`")
+                    if rec.get("urls"):
+                        for url in rec.get("urls"):
+                            table.append(f"- Link: {rep.mdpathlink(url)}")
+
         return table
 
     def check_endpoints(self, timeout=None, verbose=True):
@@ -702,6 +722,8 @@ class ExposurelogAdapter(SourceAdapter):
             qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
+        if self.limit:
+            qparams["limit"] = self.limit
         url = f"{self.server}/{self.service}/exposures?{urlencode(qparams)}"
         recs = []
         error = None
@@ -711,6 +733,9 @@ class ExposurelogAdapter(SourceAdapter):
             recs = requests.get(url, timeout=self.timeout).json()
         except Exception as err:
             error = str(err)
+
+        # #! sprogram  = rec.get("science_program")
+        # #! progstr = sprogram if sprogram else ' '
 
         self.exposures[instrument] = recs
         status = dict(

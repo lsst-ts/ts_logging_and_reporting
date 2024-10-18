@@ -204,8 +204,7 @@ class EfdAdapter(SourceAdapter):
         df = pd.concat(moves.values(), axis=1)
         return df
 
-    async def get_weather(self, days=1):
-
+    async def query_weather_from_sal_components(self, days=1):
         result = dict(
             ess_wind=await self.query_nights(
                 "lsst.sal.ESS.airFlow",

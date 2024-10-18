@@ -18,11 +18,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# #############################################################################
 
 
 import datetime as dt
 import itertools
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.efd as efd
@@ -79,6 +80,10 @@ class AllSources:
 
     # END init
 
+    @property
+    def dayobs_range(self):
+        return (self.min_dayobs, self.max_dayobs)
+
     # Our goals are something like this (see DM-46102)
     #
     # Ref                                       Hours
@@ -122,12 +127,15 @@ class AllSources:
 
         # Scot says care only about: ComCam, LSSTCam and  Latiss
         for instrument, records in self.exp_src.exposures.items():
+            num_exposures = len(records)
+            if num_exposures == 0:
+                continue
+
             exposure_seconds = 0
             for rec in records:
                 begin = dt.datetime.fromisoformat(rec["timespan_begin"])
                 end = dt.datetime.fromisoformat(rec["timespan_end"])
                 exposure_seconds += (end - begin).total_seconds()
-            num_exposures = len(records)
             detector_hrs = len(records) * mean_detector_hrs
 
             exposure_hrs = exposure_seconds / (60 * 60.0)
@@ -222,3 +230,63 @@ class AllSources:
         """time when MTMount azimuthInPosition and elevationInPosition events
         have their inPosition items set to False and then again when they
         turn True."""
+
+        pass
+
+    @property
+    def urls(self):
+        return self.nar_src.urls | self.exp_src.urls
+
+
+# display(all.get_facets(allsrc.exp_src.exposures['LATISS']))
+def get_facets(records, fieldnames=None, ignore_fields=None):
+    diversity_theshold = 0.5  # no facets for high numOfUniqueVals/total
+    if ignore_fields is None:
+        ignore_fields = []
+    flds = fieldnames if fieldnames else set(records[0].keys())
+    if ignore_fields is None:
+        ignore_fields = [fname for fname in flds if "date" in fname]
+        ignore_fields.append("day_obs")
+    facflds = set(flds) - set(ignore_fields)
+    # facets(fieldname) = set(value-1, value-2, ...)
+    facets = {
+        fld: set([str(r[fld]) for r in records if not isinstance(r[fld], list)])
+        for fld in facflds
+    }
+
+    # Remove facets for fields that are mostly unique across records
+    too_diverse = set()
+    total = len(records)
+    for k, v in facets.items():
+        if (len(v) / total) > diversity_theshold:
+            too_diverse.add(k)
+    for fname in too_diverse:
+        del facets[fname]
+        ignore_fields.append(fname)
+    return facets, ignore_fields
+
+
+# pd.DataFrame.from_dict(all.facet_counts(allsrc.exp_src.exposures['LATISS']),
+#                        orient='index')
+def facet_counts(records, fieldnames=None, ignore_fields=None):
+    if len(records) == 0:
+        return None
+    facets, ignored = get_facets(
+        records, fieldnames=fieldnames, ignore_fields=ignore_fields
+    )
+    fc = {k: len(v) for k, v in facets.items()}
+    fc["total"] = len(records)
+    return fc
+
+
+def uniform_field_counts(records):
+    """Count number of records of each value in a Uniform Fields.
+    A Uniform Field is one that only has a small number of values.
+    RETURN: dict[fieldname] -> dict[value] -> count
+    """
+    if len(records) == 0:
+        return None
+    facets, ignored = get_facets(records)
+    del facets["day_obs"]
+    del facets["instrument"]
+    return {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}

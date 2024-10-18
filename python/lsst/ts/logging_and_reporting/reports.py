@@ -20,6 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from abc import ABC
+from urllib.parse import urlparse
 
 import pandas as pd
 from IPython.display import Markdown, display
@@ -49,6 +50,20 @@ htmlbad = (
     '<font style="background-color:red; '
     'color:black; font-size:20px">&nbsp;R&nbsp;</font>'
 )
+
+
+def mdpathlink(url, remove="/browse/"):
+    return f"[{urlparse(url).path.replace(remove,'')}]({url})"
+
+
+def mdfragmentlink(url, remove="!/"):
+    return f"[{urlparse(url).fragment.replace(remove,'')}]({url})"
+
+
+def htmlcode(text, background="white"):
+    #  #! return f'<code style="background-color: {background};">{text}</code>'
+    #  #! return f'<code>{text}</code>'
+    return f"<pre>{text}</pre>"
 
 
 def mdlist(markdown_list, color=None):
@@ -125,7 +140,7 @@ class AlmanacReport(Report):
 
     def day_obs_report(self):
         dayobs = self.source_adapter.min_dayobs
-        md(f"***Almanac for the observing night starting* {dayobs}**")
+        md(f"**Almanac for the observing night starting {dayobs}**")
         df = self.almanac_as_dataframe()
         display(df.style.hide(axis="columns", subset=None))
 

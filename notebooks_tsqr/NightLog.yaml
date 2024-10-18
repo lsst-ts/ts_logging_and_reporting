@@ -15,6 +15,10 @@ parameters:
     type: string
     description: >
       The last observing night to report on. (Allowed: YYYY-MM-DD,
+      TODAY, YESTERDAY) You probably want YESTERDAY. A value of TODAY
+      means the last night shown will be the one that starts tonight.`
+    detailed_description: >
+      The last observing night to report on. (Allowed: YYYY-MM-DD,
       TODAY, YESTERDAY) The report will include all observing nights
       upto and including, day_obs.  You probably want YESTERDAY
       (meaning the last night shown will be the one that started at
@@ -29,3 +33,14 @@ parameters:
     default: 1
     minimum: 1
     maximum: 9
+  exp_parsing:
+    type: boolean
+    description: >
+      Enable experimental parsing of error messages pasted into logs.
+    default: True
+  exp_tally:
+    type: boolean
+    description: >
+      Enable experimental tally of exposures with specific values of
+      selected fields.
+    default: True

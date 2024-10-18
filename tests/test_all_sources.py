@@ -18,6 +18,10 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# #############################################################################
+
+# EXAMPLE:
+#   pytest tests/test_all_sources.py
 
 import datetime as dt
 import unittest
@@ -39,27 +43,25 @@ class TestBackEnd(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_3(self):
-        actual = (ut.get_datetime_from_dayobs_str("today"),)
-        expected = dt.datetime.now()
-        expected.replace(hour=12, minutes=0, seconds=0, microsecond=0)
+        actual = ut.get_datetime_from_dayobs_str("today")
+        expected = dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_4(self):
-        actual = (ut.get_datetime_from_dayobs_str("TODAY"),)
-        expected = dt.datetime.now()
-        expected.replace(hour=12, minutes=0, seconds=0, microsecond=0)
+        actual = ut.get_datetime_from_dayobs_str("TODAY")
+        expected = dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_5(self):
-        actual = (ut.get_datetime_from_dayobs_str("YESTERDAY"),)
+        actual = ut.get_datetime_from_dayobs_str("YESTERDAY")
         expected = dt.datetime.now() - dt.timedelta(days=1)
-        expected.replace(hour=12, minutes=0, seconds=0, microsecond=0)
+        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_6(self):
-        actual = (ut.get_datetime_from_dayobs_str("TOMORROW"),)
+        actual = ut.get_datetime_from_dayobs_str("TOMORROW")
         expected = dt.datetime.now() + dt.timedelta(days=1)
-        expected.replace(hour=12, minutes=0, seconds=0, microsecond=0)
+        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
 
 
