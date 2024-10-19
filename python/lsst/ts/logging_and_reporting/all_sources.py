@@ -250,8 +250,8 @@ def get_facets(records, fieldnames=None, ignore_fields=None):
     facflds = set(flds) - set(ignore_fields)
     # facets(fieldname) = set(value-1, value-2, ...)
     facets = {
-        fld: set([str(r[fld]) for r in records if not isinstance(r[fld], list)])
-        for fld in facflds
+        f: set([str(r[f]) for r in records if not isinstance(r[f], list)])
+        for f in facflds
     }
 
     # Remove facets for fields that are mostly unique across records
