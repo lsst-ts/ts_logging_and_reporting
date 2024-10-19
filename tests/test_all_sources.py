@@ -44,12 +44,14 @@ class TestBackEnd(unittest.TestCase):
 
     def test_get_datetime_from_dayobs_str_3(self):
         actual = ut.get_datetime_from_dayobs_str("today")
-        expected = dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+        expected = dt.datetime.now()
+        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_4(self):
         actual = ut.get_datetime_from_dayobs_str("TODAY")
-        expected = dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+        expected = dt.datetime.now()
+        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_5(self):
@@ -58,11 +60,19 @@ class TestBackEnd(unittest.TestCase):
         expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
 
-    def test_get_datetime_from_dayobs_str_6(self):
+    def test_wget_datetime_from_dayobs_str_6(self):
         actual = ut.get_datetime_from_dayobs_str("TOMORROW")
         expected = dt.datetime.now() + dt.timedelta(days=1)
         expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
         self.assertEqual(actual, expected)
+
+    def test_AllSources(self):
+        # TODO insure init loads all sources
+        self.assertTrue(False, "NOT IMPLEMENTED")
+
+    def test_AllReports(self):
+        # TODO insure init works
+        self.assertTrue(False, "NOT IMPLEMENTED")
 
 
 if __name__ == "__main__":
