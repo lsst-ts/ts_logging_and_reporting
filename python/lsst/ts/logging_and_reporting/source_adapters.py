@@ -42,6 +42,7 @@ from collections import defaultdict
 from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.exceptions as ex
+import lsst.ts.logging_and_reporting.parse_message as pam
 import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
 import requests
@@ -345,7 +346,11 @@ class NightReportAdapter(SourceAdapter):
         is_human="either",
         is_valid="true",
     ):
-        qparams = dict(is_human=is_human, is_valid=is_valid)
+        qparams = dict(
+            is_human=is_human,
+            is_valid=is_valid,
+            order_by="-day_obs",
+        )
         if site_ids:
             qparams["site_ids"] = site_ids
         if summary:
@@ -452,8 +457,8 @@ class NarrativelogAdapter(SourceAdapter):
         self,
         datetime_field,
         dayobs_field=None,
-        # row_str_func=None,
         zero_message=False,
+        use_parser=True,
     ):
         """Break on DATE. Within that show time, author."""
 
@@ -481,9 +486,14 @@ class NarrativelogAdapter(SourceAdapter):
         for tele, g0 in itertools.groupby(recs, key=obs_night):
             for rec in g0:
                 rec_dt = dt.datetime.fromisoformat(rec[datetime_field])
-                # rec_time = rec_dt.time().replace(microsecond=0).isoformat()
-                msg = rec["message_text"].strip()
-                table.append(f"- **{rec_dt}** {rep.htmlcode(msg)}")
+                new = rec.get("error_message")
+                if new:
+                    msg = new
+                else:
+                    msg = rep.htmlcode(rec["message_text"].strip())
+                table.append(f"- **{rec_dt}**")
+                table.append("\n" + msg + "\n")
+                # print(f'DEBUG src_nar.day_table: BEGIN_NAR{msg}END_NAR')  # TODO
 
                 if rec.get("urls"):
                     for url in rec.get("urls"):
@@ -501,7 +511,7 @@ class NarrativelogAdapter(SourceAdapter):
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
-            order_by="-date_begin",
+            order_by="-date_added",
         )
         if site_ids:
             qparams["site_ids"] = site_ids
@@ -531,6 +541,7 @@ class NarrativelogAdapter(SourceAdapter):
             error = str(err)
 
         self.keep_fields(recs, self.outfields)
+        pam.markup_error(recs)
         self.records = recs
         status = dict(
             endpoint_url=url,
@@ -662,11 +673,14 @@ class ExposurelogAdapter(SourceAdapter):
                         case _:
                             flag = rep.htmlgood
                     msg = rec["message_text"].strip()
-                    table.append(f"* {attrstr}\n    - {flag}`{msg}`")
-                    if rec.get("urls"):
-                        for url in rec.get("urls"):
-                            table.append(f"- Link: {rep.mdpathlink(url)}")
-
+                    links = ", ".join([rep.mdpathlink(url) for url in rec.get("urls")])
+                    linkstr = "" if links == "" else f"\n    - Links: {links}"
+                    table.append(f"* {attrstr}" f"\n    - {flag}`{msg}`" f"{linkstr}")
+                    #!if rec.get("urls"):
+                    #!    for url in rec.get("urls"):
+                    #!        table.append(f"\n    - Link: {rep.mdpathlink(url)}")
+                    #!else:
+                    #!    table.append(f"\n    - Link: NONE")
         return table
 
     def check_endpoints(self, timeout=None, verbose=True):
@@ -758,7 +772,7 @@ class ExposurelogAdapter(SourceAdapter):
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
-            order_by="-date_added",
+            order_by="-day_obs",
         )
         if site_ids:
             qparams["site_ids"] = site_ids

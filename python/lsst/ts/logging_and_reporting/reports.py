@@ -60,10 +60,11 @@ def mdfragmentlink(url, remove="!/"):
     return f"[{urlparse(url).fragment.replace(remove,'')}]({url})"
 
 
-def htmlcode(text, background="white"):
-    #  #! return f'<code style="background-color: {background};">{text}</code>'
-    #  #! return f'<code>{text}</code>'
-    return f"<pre>{text}</pre>"
+def htmlcode(text, fgcolor="black", bgcolor="LightGray", size="1em"):
+    style = f"color: {fgcolor}; " f"background-color: {bgcolor}; " f"font-size: {size}"
+
+    elem = "pre"  # code
+    return f"<{elem} {style=}>{text}</{elem}>"
 
 
 def mdlist(markdown_list, color=None):
