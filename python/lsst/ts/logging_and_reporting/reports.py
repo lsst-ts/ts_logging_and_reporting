@@ -65,9 +65,11 @@ def htmlcode(text, fgcolor="black", bgcolor="LightGray", size="1em"):
     style = ""
     style += f"color: {fgcolor}; "
     style += f"background-color: {bgcolor}; "
-    style += f"font-size: {size}"
+    style += f"font-size: {size}; "
+    style += "margin-left: 40px; "
 
-    elem = "pre"  # code
+    # code, samp, pre
+    elem = "pre"
     return f"<{elem} {style=}>{text}</{elem}>"
 
 

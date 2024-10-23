@@ -540,7 +540,7 @@ class NarrativelogAdapter(SourceAdapter):
             error = str(err)
 
         self.keep_fields(recs, self.outfields)
-        pam.markup_error(recs)
+        pam.markup_errors(recs)
         self.records = recs
         status = dict(
             endpoint_url=url,
