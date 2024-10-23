@@ -493,7 +493,6 @@ class NarrativelogAdapter(SourceAdapter):
                     msg = rep.htmlcode(rec["message_text"].strip())
                 table.append(f"- **{rec_dt}**")
                 table.append("\n" + msg + "\n")
-                # print(f'DEBUG src_nar.day_table: BEGIN_NAR{msg}END_NAR')  # TODO
 
                 if rec.get("urls"):
                     for url in rec.get("urls"):
@@ -673,14 +672,15 @@ class ExposurelogAdapter(SourceAdapter):
                         case _:
                             flag = rep.htmlgood
                     msg = rec["message_text"].strip()
-                    links = ", ".join([rep.mdpathlink(url) for url in rec.get("urls")])
+                    plinks = [rep.mdpathlink(url) for url in rec.get("urls")]
+                    links = ", ".join(plinks)
                     linkstr = "" if links == "" else f"\n    - Links: {links}"
-                    table.append(f"* {attrstr}" f"\n    - {flag}`{msg}`" f"{linkstr}")
-                    #!if rec.get("urls"):
-                    #!    for url in rec.get("urls"):
-                    #!        table.append(f"\n    - Link: {rep.mdpathlink(url)}")
-                    #!else:
-                    #!    table.append(f"\n    - Link: NONE")
+
+                    # BLACK workaround
+                    str = ""
+                    str += f"* {attrstr}"
+                    str += f"\n    - {flag}`{msg}`" f"{linkstr}"
+                    table.append(str)
         return table
 
     def check_endpoints(self, timeout=None, verbose=True):
