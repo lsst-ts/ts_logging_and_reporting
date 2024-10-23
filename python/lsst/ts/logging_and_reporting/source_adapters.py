@@ -486,12 +486,16 @@ class NarrativelogAdapter(SourceAdapter):
         for tele, g0 in itertools.groupby(recs, key=obs_night):
             for rec in g0:
                 rec_dt = dt.datetime.fromisoformat(rec[datetime_field])
+                attrstr = ""
+                attrstr += f"**{rec_dt}**"
+                attrstr += f" | {rec.get('time_lost')}"
+                attrstr += f" | {rec.get('time_lost_type')}"
                 new = rec.get("error_message")
                 if new:
                     msg = new
                 else:
                     msg = rep.htmlcode(rec["message_text"].strip())
-                table.append(f"- **{rec_dt}**")
+                table.append(f"- {attrstr}")
                 table.append("\n" + msg + "\n")
 
                 if rec.get("urls"):

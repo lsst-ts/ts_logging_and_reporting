@@ -61,7 +61,6 @@ def mdfragmentlink(url, remove="!/"):
 
 
 def htmlcode(text, fgcolor="black", bgcolor="LightGray", size="1em"):
-    # BLACK prevents me from breaking string into multilines nicely
     style = ""
     style += f"color: {fgcolor}; "
     style += f"background-color: {bgcolor}; "
