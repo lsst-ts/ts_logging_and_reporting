@@ -287,8 +287,8 @@ def uniform_field_counts(records):
     if len(records) == 0:
         return None
     facets, ignored = get_facets(records)
-    del facets["day_obs"]
-    del facets["instrument"]
-    del facets["target_name"]
-    del facets["group_name"]
+    facets.pop("day_obs", None)
+    facets.pop("instrument", None)
+    facets.pop("target_name", None)
+    facets.pop("group_name", None)
     return {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
