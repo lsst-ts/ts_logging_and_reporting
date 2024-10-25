@@ -34,8 +34,8 @@ re_tb = re.compile(r"\b(Traceback \(most recent call last\):.*)", flags=flags)
 
 def highlight_code(matchobj):
     text = html.escape(matchobj.group(1))
-    # LightCoral
-    return rep.htmlcode(text, bgcolor="#FFDDDD", size="0.875em")
+    # light red
+    return rep.htmlcode(text, bgcolor="#FFDDDD", size="0.875em", left=20)
 
 
 def markup_errors(records, src_field="message_text"):

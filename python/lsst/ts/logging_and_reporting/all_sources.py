@@ -21,6 +21,7 @@
 # #############################################################################
 
 
+import copy
 import datetime as dt
 import itertools
 from collections import Counter, defaultdict
@@ -47,16 +48,19 @@ class AllSources:
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
+            limit=limit,
         )
         self.exp_src = sad.ExposurelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
+            limit=limit,
         )
         self.nar_src = sad.NarrativelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
+            limit=limit,
         )
         self.alm_src = alm.Almanac(
             min_dayobs=min_dayobs,
@@ -106,6 +110,16 @@ class AllSources:
         instrument_tally = dict()  # d[instrument] = tally_dict
         almanac = self.alm_src
         total_observable_hrs = almanac.night_hours
+
+        # lost[day][lost_type] = totalTimeLost
+        lost = self.get_time_lost()
+
+        # total_type[type] = total_hrs
+        total_type = {
+            type: sum([lost[d].get(type, 0) for d in lost.keys()])
+            for d, types in lost.items()
+            for type, hours in types.items()
+        }
 
         targets = await self.efd_src.get_targets()  # a DataFrame
         if verbose:
@@ -159,6 +173,10 @@ class AllSources:
                 "Mean Slew (HH:MM:SS)": hhmmss(slew_hrs / num_slews),  # (g/d)
                 "Total Idle (HH:MM:SS)": hhmmss(idle_hrs),  # (i=a-b-e-g)
             }
+            # total_type[type] = total_hrs
+            for lost_type, hrs in total_type.items():
+                lt_key = f"Total {lost_type} loss (HH:MM:SS)"
+                instrument_tally[instrument][lt_key] = hhmmss(hrs)
 
         # Composition to combine Exposure and Efd (blackboard)
         # ts_xml/.../sal_interfaces/Scheduler/Scheduler_Events.xml
@@ -181,6 +199,28 @@ class AllSources:
             for src in sources
         }
         return res
+
+    def get_time_lost(self, rollup="day"):
+        """RETURN dict[dayobs] => day_time_lost (hours)"""
+        # Units of hours determined my inspection and comparison of:
+        #   time_lost, date_begin, date_end
+
+        def date_begin(rec):
+            rdt = dt.datetime.fromisoformat(rec["date_begin"])
+            return rdt.date().isoformat()
+
+        def lost_type(rec):
+            return rec["time_lost_type"]
+
+        day_tl = defaultdict(dict)  # day_tl[day][lost_type] = totalTimeLost
+        # Sort by DATE, within that by TYPE
+        recs = copy.copy(self.nar_src.records)
+        recs = sorted(recs, key=lost_type)
+        recs = sorted(recs, key=date_begin)
+        for day, day_grp in itertools.groupby(recs, key=date_begin):
+            for type, type_grp in itertools.groupby(day_grp, key=lost_type):
+                day_tl[day][type] = sum([r["time_lost"] for r in type_grp])
+        return day_tl
 
     def get_observation_gaps(self):
         def day_func(r):
@@ -261,7 +301,7 @@ def get_facets(records, fieldnames=None, ignore_fields=None):
         if (len(v) / total) > diversity_theshold:
             too_diverse.add(k)
     for fname in too_diverse:
-        del facets[fname]
+        facets.pop(fname, None)
         ignore_fields.append(fname)
     return facets, ignore_fields
 
@@ -279,16 +319,21 @@ def facet_counts(records, fieldnames=None, ignore_fields=None):
     return fc
 
 
+# (This is not the count of football jerseys in play. )
 def uniform_field_counts(records):
-    """Count number of records of each value in a Uniform Fields.
+    """Count number of records of each value in a Uniform Field.
     A Uniform Field is one that only has a small number of values.
     RETURN: dict[fieldname] -> dict[value] -> count
     """
     if len(records) == 0:
         return None
     facets, ignored = get_facets(records)
+    # Explicitly remove tables that we expect to be useless.
     facets.pop("day_obs", None)
     facets.pop("instrument", None)
     facets.pop("target_name", None)
     facets.pop("group_name", None)
-    return {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
+    facets.pop("seq_num", None)
+    counts = {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
+    totals = {k: sum(v.values()) for k, v in counts.items()}
+    return counts, totals

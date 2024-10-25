@@ -74,8 +74,6 @@ def validate_response(response, endpoint_url):
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters."""
 
-    limit = 999
-
     # TODO document class including all class variables.
     def __init__(
         self,
@@ -84,6 +82,7 @@ class SourceAdapter(ABC):
         max_dayobs=None,  # EXCLUSIVE: default=TODAY other=YYYY-MM-DD
         min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
         offset=0,
+        limit=None,
         connect_timeout=1.05,  # seconds
         read_timeout=2,  # seconds
     ):
@@ -95,9 +94,9 @@ class SourceAdapter(ABC):
         range large or you will use lots of memory. Tens of days is probably
         ok.
         """
-
         self.server = server_url or default_server
         self.offset = offset
+        self.limit = limit if limit else 9
         cto = float(connect_timeout)
         self.c_timeout = min(MAX_CONNECT_TIMEOUT, cto)  # seconds
         self.r_timeout = min(MAX_READ_TIMEOUT, float(read_timeout))  # seconds
@@ -270,9 +269,12 @@ class NightReportAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
     ):
-        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
-        self.server = server_url if server_url else SourceAdapter.server
-        self.limit = SourceAdapter.limit if limit is None else limit
+        super().__init__(
+            server_url=server_url,
+            max_dayobs=max_dayobs,
+            min_dayobs=min_dayobs,
+            limit=limit,
+        )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -321,7 +323,7 @@ class NightReportAdapter(SourceAdapter):
             return
 
         table = list()
-        # Sort by TELESCOPE, then by OBS_DATE.
+        # Sort by TELESCOPE, within that by OBS_DATE.
         recs = sorted(recs, key=obs_date)
         recs = sorted(recs, key=telescope)
         for tele, g0 in itertools.groupby(recs, key=telescope):
@@ -350,6 +352,7 @@ class NightReportAdapter(SourceAdapter):
             is_human=is_human,
             is_valid=is_valid,
             order_by="-day_obs",
+            limit=self.limit,
         )
         if site_ids:
             qparams["site_ids"] = site_ids
@@ -359,8 +362,6 @@ class NightReportAdapter(SourceAdapter):
             qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
-        if self.limit:
-            qparams["limit"] = self.limit
 
         qstr = urlencode(qparams)
         url = f"{self.server}/{self.service}/reports?{qstr}"
@@ -435,9 +436,19 @@ class NarrativelogAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
     ):
-        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
-        self.server = server_url if server_url else SourceAdapter.server
-        self.limit = SourceAdapter.limit if limit is None else limit
+        super().__init__(
+            server_url=server_url,
+            max_dayobs=max_dayobs,
+            min_dayobs=min_dayobs,
+            limit=limit,
+        )
+        self.verbose = False
+
+        if self.verbose:
+            print(
+                "NarrativeLogAdapter("
+                f"{server_url=}, {max_dayobs=}, {min_dayobs=}, {limit=}"
+            )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -481,22 +492,34 @@ class NarrativelogAdapter(SourceAdapter):
 
         table = list()
 
+        show_fields = [
+            "components",
+            "primary_software_components",
+            "primary_hardware_components",
+        ]
+
         # Sort by OBS_NIGHT
         recs = sorted(recs, key=obs_night)
+        # time_lost_type=weather is RARE
         for tele, g0 in itertools.groupby(recs, key=obs_night):
             for rec in g0:
                 rec_dt = dt.datetime.fromisoformat(rec[datetime_field])
                 attrstr = ""
                 attrstr += f"**{rec_dt}**"
-                attrstr += f" | {rec.get('time_lost')}"
-                attrstr += f" | {rec.get('time_lost_type')}"
+                attrstr += f" Time Lost: {rec.get('time_lost')};"
+                attrstr += f" Time Lost Type: {rec.get('time_lost_type')};"
                 new = rec.get("error_message")
                 if new:
                     msg = new
                 else:
                     msg = rep.htmlcode(rec["message_text"].strip())
-                table.append(f"- {attrstr}")
-                table.append("\n" + msg + "\n")
+                mdstr = ""
+                mdstr += f"- {attrstr}"
+                for fname in show_fields:
+                    mdstr += f"\n    - {fname}: {rec.get(fname)}"
+
+                mdstr += "\n\n" + msg + "\n"
+                table.append(mdstr)
 
                 if rec.get("urls"):
                     for url in rec.get("urls"):
@@ -515,6 +538,7 @@ class NarrativelogAdapter(SourceAdapter):
             is_human=is_human,
             is_valid=is_valid,
             order_by="-date_added",
+            limit=self.limit,
         )
         if site_ids:
             qparams["site_ids"] = site_ids
@@ -528,11 +552,11 @@ class NarrativelogAdapter(SourceAdapter):
             qparams["max_date_added"] = dt.datetime.combine(
                 self.max_date, dt.time()
             ).isoformat()
-        if self.limit:
-            qparams["limit"] = self.limit
 
         qstr = urlencode(qparams)
         url = f"{self.server}/{self.service}/messages?{qstr}"
+        if self.verbose:
+            print(f"Using endpoint {url=}")
         error = None
         try:
             r = requests.get(url, timeout=self.timeout)
@@ -552,16 +576,6 @@ class NarrativelogAdapter(SourceAdapter):
             error=error,
         )
         return status
-
-    def get_timelost(self, recs, rollup="day"):
-        def iso_date_begin(rec):
-            rdt = dt.datetime.fromisoformat(rec["date_begin"])
-            return rdt.date().isoformat()
-
-        day_tl = dict()  # day_tl[day] = totalDayTimeLost
-        for day, dayrecs in itertools.groupby(recs, key=iso_date_begin):
-            day_tl[day] = sum([r["time_lost"] for r in dayrecs])
-        return day_tl
 
     # END: class NarrativelogAdapter
 
@@ -604,9 +618,12 @@ class ExposurelogAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
     ):
-        super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
-        self.server = server_url if server_url else SourceAdapter.server
-        self.limit = SourceAdapter.limit if limit is None else limit
+        super().__init__(
+            server_url=server_url,
+            max_dayobs=max_dayobs,
+            min_dayobs=min_dayobs,
+            limit=limit,
+        )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -660,14 +677,15 @@ class ExposurelogAdapter(SourceAdapter):
         # Sort by INSTRUMENT, then by OBS_ID.
         recs = sorted(recs, key=obs_id)
         recs = sorted(recs, key=instrument)
-        for instrum, g0 in itertools.groupby(recs, key=instrument):
-            table.append(f"### Instrument: {instrum}")
-            for obsid, g1 in itertools.groupby(recs, key=obs_id):
-                recs = list(g1)
-                rec = recs[0]
+        for instrum, inst_grp in itertools.groupby(recs, key=instrument):
+            inst_list = list(inst_grp)
+            table.append(f"### Instrument: {instrum} ({len(inst_list)})")
+            for obsid, obs_grp in itertools.groupby(inst_list, key=obs_id):
+                obs_list = list(obs_grp)
+                rec = obs_list[0]
 
-                attrstr = f"{obsid} : {recs[0][datetime_field]}"
-                for rec in recs:
+                attrstr = f"{obsid} : {rec[datetime_field]}"
+                for rec in obs_list:
                     match rec.get("exposure_flag"):
                         case "junk":
                             flag = rep.htmlbad
@@ -735,13 +753,15 @@ class ExposurelogAdapter(SourceAdapter):
     # SIDE-EFFECT: puts records in self.exposures
     def get_exposures(self, instrument, verbose=False):
         registry = self.instruments[instrument]
-        qparams = dict(instrument=instrument, registry=registry)
+        qparams = dict(
+            instrument=instrument,
+            registry=registry,
+            limit=self.limit,
+        )
         if self.min_dayobs:
             qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
-        if self.limit:
-            qparams["limit"] = self.limit
         url = f"{self.server}/{self.service}/exposures?{urlencode(qparams)}"
         recs = []
         error = None
@@ -777,6 +797,7 @@ class ExposurelogAdapter(SourceAdapter):
             is_human=is_human,
             is_valid=is_valid,
             order_by="-day_obs",
+            limit=self.limit,
         )
         if site_ids:
             qparams["site_ids"] = site_ids
@@ -790,8 +811,6 @@ class ExposurelogAdapter(SourceAdapter):
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         if exposure_flags:
             qparams["exposure_flags"] = exposure_flags
-        if self.limit:
-            qparams["limit"] = self.limit
 
         qstr = urlencode(qparams)
         url = f"{self.server}/{self.service}/messages?{qstr}"

@@ -60,12 +60,12 @@ def mdfragmentlink(url, remove="!/"):
     return f"[{urlparse(url).fragment.replace(remove,'')}]({url})"
 
 
-def htmlcode(text, fgcolor="black", bgcolor="LightGray", size="1em"):
+def htmlcode(text, fgcolor="black", bgcolor="white", size="1em", left=0):
     style = ""
     style += f"color: {fgcolor}; "
     style += f"background-color: {bgcolor}; "
     style += f"font-size: {size}; "
-    style += "margin-left: 40px; "
+    style += f"margin-left: {left}px; "
 
     # code, samp, pre
     elem = "pre"
