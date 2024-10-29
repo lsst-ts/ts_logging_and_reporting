@@ -182,7 +182,7 @@ class Server:
 
 def wrap_dataframe_columns(df):
     def spacify(name):
-        str(name).replace("_", " ")
+        return str(name).replace("_", " ")
 
     column_map = {colname: spacify(colname) for colname in df.columns}
     return df.rename(columns=column_map)

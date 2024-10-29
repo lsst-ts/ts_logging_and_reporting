@@ -333,15 +333,20 @@ def uniform_field_counts(
     RETURN: dict[fieldname] -> dict[value] -> count
     """
     if len(records) == 0:
-        return None, None
-    facets, ignored = get_facets(records)
+        return None
+    use_fields = [
+        "observation_reason",
+        "observation_type",
+        "science_program",
+    ]
+    facets, ignored = get_facets(records, fieldnames=use_fields)
     # Explicitly remove tables that we expect to be useless.
-    facets.pop("day_obs", None)
-    facets.pop("instrument", None)
-    facets.pop("target_name", None)
-    facets.pop("group_name", None)
-    facets.pop("seq_num", None)
-    facets.pop("exposure_time", None)
+    # facets.pop("day_obs", None)
+    # facets.pop("instrument", None)
+    # facets.pop("target_name", None)
+    # facets.pop("group_name", None)
+    # facets.pop("seq_num", None)
+    # facets.pop("exposure_time", None)
     counts = {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
     root = (
         f"{server}/times-square/github/lsst-ts/ts_logging_and_reporting"

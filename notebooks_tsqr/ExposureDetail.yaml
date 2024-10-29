@@ -28,15 +28,15 @@ parameters:
     description: >
       Instrument used for exposures.
     default: "LSSTComCam"
-  obs_reason:
+  observation_reason:
     type: string
     description: >
       Observation reason.
     default: "ALL"
-  obs_type:
+  observation_type:
     type: string
     description: >
-      Observation reason.
+      Observation Type.
     default: "ALL"
   science_program:
     type: string
