@@ -21,7 +21,12 @@
 
 
 import matplotlib.pyplot as plt
-from lsst.summit.utils import ConsDbClient
+try:
+    from lsst.summit.utils import ConsDbClient
+    
+    have_consdb = True
+except:
+    have_consdb = False
 
 
 class ConsDbConnection:
@@ -32,7 +37,7 @@ class ConsDbConnection:
         self.url = url
         self.day_obs = day_obs
         self.day_obs_int = int(day_obs.replace("-", ""))
-        self.client = ConsDbClient(url)
+        self.client = ConsDbClient(url) if have_consdb else None
 
     def query_visit(self, instrument: str, type: str = "visit1"):
         """Query visit1 and visit1_quicklook tables and join the data on
@@ -46,6 +51,7 @@ class ConsDbConnection:
             quicklook = self.client.query(ccdvisit1_quicklook)
         except Exception as erry:
             print(f"{erry=}")
+            return None
 
         # Join both on visit_id so we can access obs_start for a time axis
         return visits.join(quicklook, on="visit_id", lsuffix="", rsuffix="_q")
@@ -59,6 +65,7 @@ class ConsDbConnection:
             exposures = self.client.query(exposure_query)
         except Exception as erry:
             print(f"{erry=}")
+            return None
 
         return exposures
 
@@ -82,7 +89,7 @@ def plot_ra_dec(y, x):
 URL = "http://consdb-pq.consdb:8080/consdb"
 day_obs = "2024-06-26"
 instruments = "latiss, lsstcomcamsim, lsstcomcam"
-
+"""
 for instrument in instruments:
     db_client = ConsDbConnection(URL, day_obs)
     visits = db_client.query_visit(instrument=instrument)
@@ -101,3 +108,4 @@ for instrument in instruments:
     ra = exposures["s_ra"]
     dec = exposures["s_dec"]
     plot_ra_dec(dec, ra)
+"""
