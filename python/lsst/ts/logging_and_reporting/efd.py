@@ -21,13 +21,6 @@ from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 from lsst_efd_client import EfdClient
 
 
-# Servers we might use
-class Server:
-    summit = "https://summit-lsp.lsst.codes"
-    usdf = "https://usdf-rsp-dev.slac.stanford.edu"
-    tucson = "https://tucson-teststand.lsst.codes"
-
-
 class EfdAdapter(SourceAdapter):
     salindex = 2
     service = "efd"
@@ -50,21 +43,21 @@ class EfdAdapter(SourceAdapter):
         instance_url = os.getenv("EXTERNAL_INSTANCE_URL", self.server)
         self.server_url = server_url or instance_url
         match self.server_url:
-            case Server.summit:
+            case ut.Server.summit:
                 self.client = EfdClient("summit_efd")
-            case Server.usdf:
+            case ut.Server.usdf:
                 self.client = EfdClient("usdf_efd")
                 os.environ["RUBIN_SIM_DATA_DIR"] = (
                     "/sdf/data/rubin/shared/rubin_sim_data"
                 )
-            case Server.tucson:
+            case ut.Server.tucson:
                 pass
             case _:
                 msg = (
                     f"Unknown server from EXTERNAL_INSTANCE (env var).  "
                     f"Got {self.server_url=} "
                     f"Expected one of: "
-                    f"{Server.summit}, {Server.usdf}, {Server.tucson}"
+                    f"{ut.Server.summit}, {ut.Server.usdf}, {ut.Server.tucson}"
                 )
                 raise Exception(msg)
 

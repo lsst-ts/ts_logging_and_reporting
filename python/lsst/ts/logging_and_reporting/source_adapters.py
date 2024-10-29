@@ -45,6 +45,7 @@ import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.parse_message as pam
 import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
+import pandas as pd
 import requests
 
 MAX_CONNECT_TIMEOUT = 3.1  # seconds
@@ -705,6 +706,50 @@ class ExposurelogAdapter(SourceAdapter):
                     table.append(str)
         return table
 
+    # /exposurelog/exposures?instrument=LSSTComCamSim
+    def exposure_detail(
+        self,
+        instrument,
+        science_program=None,
+        observation_type=None,
+        observation_reason=None,
+    ):
+        fields = [
+            "obs_id",
+            "timespan_begin",  # 'time',
+            "seq_num",
+            "observation_type",
+            "observation_reason",
+            "science_program",
+            "exposure_time",
+            # 'physical_filter',
+            # 'nimage',
+            # 'hasPD',
+            # 'metadata',
+        ]
+        program = science_program
+        recs = [
+            r
+            for r in self.exposures[instrument]
+            if (
+                ((program is None) or (r["science_program"] == program))
+                and (
+                    (observation_type is None)
+                    or (r["observation_type"] == observation_type)
+                )
+                and (
+                    (observation_reason is None)
+                    or (r["observation_reason"] == observation_reason)
+                )
+            )
+        ]
+        if len(recs) == 0:
+            return "No matching records"
+
+        # #!df = pd.DataFrame(self.exposures[instrument])[fields]
+        df = pd.DataFrame(recs)[fields]
+        return ut.wrap_dataframe_columns(df)
+
     def check_endpoints(self, timeout=None, verbose=True):
         to = timeout or self.timeout
         if verbose:
@@ -776,6 +821,16 @@ class ExposurelogAdapter(SourceAdapter):
         # #! progstr = sprogram if sprogram else ' '
 
         self.exposures[instrument] = recs
+        for r in recs:
+            exp_secs = (
+                dt.datetime.fromisoformat(r["timespan_end"])
+                - dt.datetime.fromisoformat(r["timespan_end"])
+            ).total_seconds()
+            r["exposure_time"] = exp_secs
+
+        # exposure_lut[instrument] => dict[obsid] => rec
+        self.exposure_lut = {instrument: {r["obs_id"]: r} for r in recs}
+
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),
@@ -828,6 +883,9 @@ class ExposurelogAdapter(SourceAdapter):
 
         self.keep_fields(recs, self.outfields)
         self.records = recs
+        # messages[instrument] => dict[obsid] => rec
+        self.messages = {r["instrument"]: {r["obs_id"]: r} for r in recs}
+
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),

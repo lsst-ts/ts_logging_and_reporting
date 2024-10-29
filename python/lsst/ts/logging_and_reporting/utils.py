@@ -171,3 +171,18 @@ class Timer:
     def toc(self):
         elapsed_seconds = time.perf_counter() - self.start
         return elapsed_seconds  # fractional
+
+
+# Servers we might use
+class Server:
+    summit = "https://summit-lsp.lsst.codes"
+    usdf = "https://usdf-rsp-dev.slac.stanford.edu"
+    tucson = "https://tucson-teststand.lsst.codes"
+
+
+def wrap_dataframe_columns(df):
+    def spacify(name):
+        str(name).replace("_", " ")
+
+    column_map = {colname: spacify(colname) for colname in df.columns}
+    return df.rename(columns=column_map)

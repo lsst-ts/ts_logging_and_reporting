@@ -273,6 +273,10 @@ class AllSources:
 
         pass
 
+    def tally_exposure_flags(self, instrument):
+        fc = facet_counts(self.exp_src.records, fieldnames=["exposure_flag"])
+        return fc
+
     @property
     def urls(self):
         return self.nar_src.urls | self.exp_src.urls
@@ -320,13 +324,16 @@ def facet_counts(records, fieldnames=None, ignore_fields=None):
 
 
 # (This is not the count of football jerseys in play. )
-def uniform_field_counts(records):
+def uniform_field_counts(
+    records,
+    server="https://usdf-rsp-dev.slac.stanford.edu",
+):
     """Count number of records of each value in a Uniform Field.
     A Uniform Field is one that only has a small number of values.
     RETURN: dict[fieldname] -> dict[value] -> count
     """
     if len(records) == 0:
-        return None
+        return None, None
     facets, ignored = get_facets(records)
     # Explicitly remove tables that we expect to be useless.
     facets.pop("day_obs", None)
@@ -334,6 +341,19 @@ def uniform_field_counts(records):
     facets.pop("target_name", None)
     facets.pop("group_name", None)
     facets.pop("seq_num", None)
+    facets.pop("exposure_time", None)
     counts = {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
-    totals = {k: sum(v.values()) for k, v in counts.items()}
-    return counts, totals
+    root = (
+        f"{server}/times-square/github/lsst-ts/ts_logging_and_reporting"
+        + "/ExposureDetail"
+    )
+    link_to_detail = {
+        fname: {
+            fvalue: f'<a href="{root}?{fname}={fvalue}">{num}</a>'
+            for fvalue, num in tally.items()
+        }
+        for fname, tally in counts.items()
+    }
+    return link_to_detail
+    # #!totals = {k: sum(v.values()) for k,v in counts.items()}
+    # #! return counts,totals
