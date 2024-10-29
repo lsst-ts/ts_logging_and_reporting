@@ -744,7 +744,12 @@ class ExposurelogAdapter(SourceAdapter):
             )
         ]
         if len(recs) == 0:
-            return "No matching records"
+            msg = (
+                f"No matching records after appling filters "
+                f"to {len(self.exposures[instrument])} exposures "
+                f"for {instrument=!r}."
+            )
+            return msg
 
         # #!df = pd.DataFrame(self.exposures[instrument])[fields]
         df = pd.DataFrame(recs)[fields]
@@ -883,8 +888,10 @@ class ExposurelogAdapter(SourceAdapter):
 
         self.keep_fields(recs, self.outfields)
         self.records = recs
-        # messages[instrument] => dict[obsid] => rec
-        self.messages = {r["instrument"]: {r["obs_id"]: r} for r in recs}
+        # messages[instrument] => [rec, ...]
+        self.messages = dict()
+        for instrum in set([r["instrument"] for r in recs]):
+            self.messages[instrum] = [r for r in recs if instrum == r["instrument"]]
 
         status = dict(
             endpoint_url=url,

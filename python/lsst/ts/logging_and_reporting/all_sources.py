@@ -31,6 +31,7 @@ import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.efd as efd
 import lsst.ts.logging_and_reporting.source_adapters as sad
 import lsst.ts.logging_and_reporting.utils as ut
+import pandas as pd
 from lsst.ts.logging_and_reporting.utils import hhmmss
 
 
@@ -276,8 +277,11 @@ class AllSources:
         pass
 
     def tally_exposure_flags(self, instrument):
-        fc = facet_counts(self.exp_src.records, fieldnames=["exposure_flag"])
-        return fc
+        # ... make sure we have counts for all three
+        tally = Counter(good=0, questionable=0, junk=0)
+        tally.update([r["exposure_flag"] for r in self.exp_src.messages[instrument]])
+        df = pd.DataFrame.from_dict(tally, orient="index").T
+        return df  # .style.hide(axis="index")
 
     @property
     def urls(self):
