@@ -291,8 +291,9 @@ class AllSources:
         """
 
         def gen_link(fname, fvalue, num):
+            oneday = dt.timedelta(days=1)
             qparams = {
-                "day_obs": ut.datetime_to_dayobs(self.max_date),
+                "day_obs": ut.datetime_to_dayobs(self.max_date - oneday),
                 "number_of_days": (self.max_date - self.min_date).days,
                 "instrument": instrument,
                 fname: fvalue,
