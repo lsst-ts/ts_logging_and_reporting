@@ -53,11 +53,11 @@ htmlbad = (
 
 
 def mdpathlink(url, remove="/browse/"):
-    return f"[{urlparse(url).path.replace(remove,'')}]({url})"
+    return f"[{urlparse(url).path.replace(remove, '')}]({url})"
 
 
 def mdfragmentlink(url, remove="!/"):
-    return f"[{urlparse(url).fragment.replace(remove,'')}]({url})"
+    return f"[{urlparse(url).fragment.replace(remove, '')}]({url})"
 
 
 def htmlcode(text, fgcolor="black", bgcolor="white", size="1em", left=0):
