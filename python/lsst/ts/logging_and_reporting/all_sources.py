@@ -25,10 +25,12 @@ import copy
 import datetime as dt
 import itertools
 from collections import Counter, defaultdict
+from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.efd as efd
 import lsst.ts.logging_and_reporting.source_adapters as sad
+import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting.utils import hhmmss
 
 
@@ -281,6 +283,52 @@ class AllSources:
     def urls(self):
         return self.nar_src.urls | self.exp_src.urls
 
+    # (This is not the "count of football jerseys" in play!)
+    def uniform_exposure_field_counts(self, instrument):
+        """Count number of records of each value in a Uniform Field.
+        A Uniform Field is one that only has a small number of values.
+        RETURN: dict[fieldname] -> dict[value] -> count
+        """
+
+        def gen_link(fname, fvalue, num):
+            qparams = {
+                "day_obs": ut.datetime_to_dayobs(self.max_date),
+                "number_of_days": (self.max_date - self.min_date).days,
+                "instrument": instrument,
+                fname: fvalue,
+            }
+            url = f"{self.server_url}/times-square/github/"
+            url += "lsst-ts/ts_logging_and_reporting/ExposureDetail"
+            url += f"?{urlencode(qparams)}"
+            return f"<a href={url}>{num}</a>"
+
+        records = self.exp_src.exposures[instrument]
+        if len(records) == 0:
+            return None
+        use_fields = [
+            "observation_reason",
+            "observation_type",
+            "science_program",
+        ]
+        facets, ignored = get_facets(records, fieldnames=use_fields)
+        # Explicitly remove tables that we expect to be useless.
+        # facets.pop("day_obs", None)
+        # facets.pop("instrument", None)
+        # facets.pop("target_name", None)
+        # facets.pop("group_name", None)
+        # facets.pop("seq_num", None)
+        # facets.pop("exposure_time", None)
+        counts = {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
+        link_to_detail = {
+            fname: {
+                fvalue: gen_link(fname, fvalue, num) for fvalue, num in tally.items()
+            }
+            for fname, tally in counts.items()
+        }
+        return link_to_detail
+        # #!totals = {k: sum(v.values()) for k,v in counts.items()}
+        # #! return counts,totals
+
 
 # display(all.get_facets(allsrc.exp_src.exposures['LATISS']))
 def get_facets(records, fieldnames=None, ignore_fields=None):
@@ -321,44 +369,3 @@ def facet_counts(records, fieldnames=None, ignore_fields=None):
     fc = {k: len(v) for k, v in facets.items()}
     fc["total"] = len(records)
     return fc
-
-
-# (This is not the count of football jerseys in play. )
-def uniform_field_counts(
-    records,
-    server="https://usdf-rsp-dev.slac.stanford.edu",
-):
-    """Count number of records of each value in a Uniform Field.
-    A Uniform Field is one that only has a small number of values.
-    RETURN: dict[fieldname] -> dict[value] -> count
-    """
-    if len(records) == 0:
-        return None
-    use_fields = [
-        "observation_reason",
-        "observation_type",
-        "science_program",
-    ]
-    facets, ignored = get_facets(records, fieldnames=use_fields)
-    # Explicitly remove tables that we expect to be useless.
-    # facets.pop("day_obs", None)
-    # facets.pop("instrument", None)
-    # facets.pop("target_name", None)
-    # facets.pop("group_name", None)
-    # facets.pop("seq_num", None)
-    # facets.pop("exposure_time", None)
-    counts = {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
-    root = (
-        f"{server}/times-square/github/lsst-ts/ts_logging_and_reporting"
-        + "/ExposureDetail"
-    )
-    link_to_detail = {
-        fname: {
-            fvalue: f'<a href="{root}?{fname}={fvalue}">{num}</a>'
-            for fvalue, num in tally.items()
-        }
-        for fname, tally in counts.items()
-    }
-    return link_to_detail
-    # #!totals = {k: sum(v.values()) for k,v in counts.items()}
-    # #! return counts,totals
