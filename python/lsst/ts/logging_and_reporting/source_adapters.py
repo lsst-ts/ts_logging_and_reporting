@@ -743,13 +743,13 @@ class ExposurelogAdapter(SourceAdapter):
                 )
             )
         ]
-        if len(recs) == 0:
-            msg = (
-                f"No matching records after appling filters "
-                f"to {len(self.exposures[instrument])} exposures "
-                f"for {instrument=!r}."
-            )
-            return msg
+        # if len(recs) == 0:
+        #     msg = (
+        #         f"No matching records after appling filters "
+        #         f"to {len(self.exposures[instrument])} exposures "
+        #         f"for {instrument=!r}."
+        #     )
+        #     return msg
 
         # #!df = pd.DataFrame(self.exposures[instrument])[fields]
         df = pd.DataFrame(recs)[fields]
