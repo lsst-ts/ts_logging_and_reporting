@@ -35,9 +35,6 @@ __all__ = ["__version__"]
 __version__ = "{version}"
 """
 
-[tool.black]
-line-length = 89
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 
