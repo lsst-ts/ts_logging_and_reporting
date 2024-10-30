@@ -23,7 +23,7 @@
 import traceback
 
 
-class BaseLogrepException(Exception):
+class BaseLogrepError(Exception):
     is_an_error_response = True
     status_code = 400
     error_message = "<NA>"
@@ -83,7 +83,7 @@ example_error_from_exposurelog = {
 }
 
 
-class BadStatus(BaseLogrepException):
+class StatusError(BaseLogrepError):
     """Non-200 HTTP status from API endpoint. Typically
     this will occur when a URL query string parameter is passed a value with
     a bad format.  It may also be that the Service is broken.

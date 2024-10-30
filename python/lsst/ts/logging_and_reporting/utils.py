@@ -33,7 +33,7 @@ import time
 # in a Database or API query string.
 
 
-class datetime_iter:
+class DatetimeIter:
     def __init__(self, start_datetime, stop_datetime, increment=None):
         """increment:: datetime.timedelta"""
         self.start_datetime = start_datetime
