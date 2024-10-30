@@ -233,7 +233,11 @@ class SourceAdapter(ABC):
         )
 
     def __str__(self):
-        return f"{self.service}-{self.primary_endpoint} [{self.endpoints}]"
+        return (
+            f"{self.server}: "
+            f"{self.min_dayobs} to {self.max_dayobs} [{self.limit}] "
+            f"{self.service} endpoints={self.endpoints}"
+        )
 
 
 # END: class SourceAdapter
@@ -743,17 +747,16 @@ class ExposurelogAdapter(SourceAdapter):
                 )
             )
         ]
-        # if len(recs) == 0:
-        #     msg = (
-        #         f"No matching records after appling filters "
-        #         f"to {len(self.exposures[instrument])} exposures "
-        #         f"for {instrument=!r}."
-        #     )
-        #     return msg
+        print(
+            f"DEBUG exp_src.exposure_detail(): "
+            f"{len(self.exposures[instrument])} => {len(recs)} "
+        )
 
-        # #!df = pd.DataFrame(self.exposures[instrument])[fields]
-        df = pd.DataFrame(recs)[fields]
-        return ut.wrap_dataframe_columns(df)
+        if len(recs) > 0:
+            df = pd.DataFrame(recs)[fields]
+            return ut.wrap_dataframe_columns(df)
+        else:
+            return pd.DataFrame()
 
     def check_endpoints(self, timeout=None, verbose=True):
         to = timeout or self.timeout
