@@ -747,10 +747,10 @@ class ExposurelogAdapter(SourceAdapter):
                 )
             )
         ]
-        print(
-            f"DEBUG exp_src.exposure_detail(): "
-            f"{len(self.exposures[instrument])} => {len(recs)} "
-        )
+        # print(
+        #     f"DEBUG exp_src.exposure_detail(): "
+        #     f"{len(self.exposures[instrument])} => {len(recs)} "
+        # )
 
         if len(recs) > 0:
             df = pd.DataFrame(recs)[fields]
