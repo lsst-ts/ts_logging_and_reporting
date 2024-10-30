@@ -21,12 +21,14 @@
 
 
 import matplotlib.pyplot as plt
+
 try:
     from lsst.summit.utils import ConsDbClient
-    
+
     have_consdb = True
-except:
+except Exception as error:
     have_consdb = False
+    print(f"{error = }")
 
 
 class ConsDbConnection:
@@ -86,26 +88,29 @@ def plot_ra_dec(y, x):
     plt.show()
 
 
-URL = "http://consdb-pq.consdb:8080/consdb"
-day_obs = "2024-06-26"
-instruments = "latiss, lsstcomcamsim, lsstcomcam"
-"""
-for instrument in instruments:
-    db_client = ConsDbConnection(URL, day_obs)
-    visits = db_client.query_visit(instrument=instrument)
-    exposures = db_client.query_exposure(instrument=instrument)
+def make_plots(day_obs, instruments=["latiss, lsstcomcamsim, lsstcomcam"]):
+    URL = "http://consdb-pq.consdb:8080/consdb"
 
-    # This is our time axis for each visit
-    obs_start = visits["obs_start"]
+    for instrument in instruments:
+        db_client = ConsDbConnection(URL, day_obs)
+        visits = db_client.query_visit(instrument=instrument)
+        exposures = db_client.query_exposure(instrument=instrument)
+        if visits:
+            # This is our time axis for each visit
+            obs_start = visits["obs_start"]
 
-    psf_area = visits["psf_area"]
-    plot(psf_area, obs_start)
-    sky_bg = visits["sky_bg"]
-    plot(sky_bg, obs_start)
-    zero_point = visits["zero_point"]
-    plot(zero_point, obs_start)
+            psf_area = visits["psf_area"]
+            plot(psf_area, obs_start)
+            sky_bg = visits["sky_bg"]
+            plot(sky_bg, obs_start)
+            zero_point = visits["zero_point"]
+            plot(zero_point, obs_start)
 
-    ra = exposures["s_ra"]
-    dec = exposures["s_dec"]
-    plot_ra_dec(dec, ra)
-"""
+        if exposures:
+            ra = exposures["s_ra"]
+            dec = exposures["s_dec"]
+            plot_ra_dec(dec, ra)
+
+
+if __name__ == "main":
+    make_plots("2024-10-24")
