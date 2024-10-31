@@ -27,6 +27,8 @@ parameters:
     type: string
     description: >
       Instrument used for exposures.
+      One of: LSSTComCamSim, LATISS, LSSTComCam, LSSTCam,
+      StarTrackerFast, StarTrackerNarrow, StarTrackerWide
     default: "LSSTComCam"
   observation_reason:
     type: string

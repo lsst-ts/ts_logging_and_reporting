@@ -56,6 +56,8 @@ tucson = "https://tucson-teststand.lsst.codes"
 
 default_server = usdf
 
+maximum_record_limit = 9000
+
 
 def all_endpoints(server):
     endpoints = itertools.chain.from_iterable(
@@ -75,6 +77,8 @@ def validate_response(response, endpoint_url):
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters."""
 
+    default_record_limit = 10  # Adapter specific default
+
     # TODO document class including all class variables.
     def __init__(
         self,
@@ -83,9 +87,10 @@ class SourceAdapter(ABC):
         max_dayobs=None,  # EXCLUSIVE: default=TODAY other=YYYY-MM-DD
         min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
         offset=0,
-        limit=None,
+        limit=None,  # max records to read in one API call
         connect_timeout=1.05,  # seconds
         read_timeout=2,  # seconds
+        verbose=False,
     ):
         """Load the relevant data for the Source.
 
@@ -96,8 +101,11 @@ class SourceAdapter(ABC):
         ok.
         """
         self.server = server_url or default_server
+        self.verbose = verbose
         self.offset = offset
-        self.limit = limit if limit else 9
+        if limit is None:
+            limit = self.__class__.default_record_limit
+        self.limit = min(limit, maximum_record_limit)
         cto = float(connect_timeout)
         self.c_timeout = min(MAX_CONNECT_TIMEOUT, cto)  # seconds
         self.r_timeout = min(MAX_READ_TIMEOUT, float(read_timeout))  # seconds
@@ -262,6 +270,7 @@ class NightReportAdapter(SourceAdapter):
         "user_agent",
         "user_id",
     }
+    default_record_limit = 100  # Adapter specific default
     service = "nightreport"
     endpoints = ["reports"]
     primary_endpoint = "reports"
@@ -273,12 +282,14 @@ class NightReportAdapter(SourceAdapter):
         min_dayobs=None,  # INCLUSIVE: default=Yesterday
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
+        verbose=False,
     ):
         super().__init__(
             server_url=server_url,
             max_dayobs=max_dayobs,
             min_dayobs=min_dayobs,
             limit=limit,
+            verbose=verbose,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -353,10 +364,12 @@ class NightReportAdapter(SourceAdapter):
         is_human="either",
         is_valid="true",
     ):
+        endpoint = f"{self.server}/{self.service}/reports"
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
             order_by="-day_obs",
+            offset=0,
             limit=self.limit,
         )
         if site_ids:
@@ -368,19 +381,21 @@ class NightReportAdapter(SourceAdapter):
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
 
-        qstr = urlencode(qparams)
-        url = f"{self.server}/{self.service}/reports?{qstr}"
         error = None
-        content = None
+        recs = []
         try:
-            response = requests.get(url, timeout=self.timeout)
-            content = response.text
-            validate_response(response, url)
-            recs = response.json()
-            recs.sort(key=lambda r: r["day_obs"])
+            while len(recs) <= maximum_record_limit:
+                url = f"{endpoint}?{urlencode(qparams)}"
+                response = requests.get(url, timeout=self.timeout)
+                validate_response(response, url)
+                page = response.json()
+                recs += page
+                if len(page) < self.limit:
+                    break  # we defintely got all we asked for
+                qparams["offset"] += len(page)
         except Exception as err:
             recs = []
-            error = f"{content=} Exception={err}"
+            error = f"{response.text=} Exception={err}"
 
         self.keep_fields(recs, self.outfields)
         self.records = recs
@@ -427,6 +442,7 @@ class NarrativelogAdapter(SourceAdapter):
         "user_agent",
         "user_id",
     }
+    default_record_limit = 1000  # Adapter specific default
     service = "narrativelog"
     endpoints = [
         "messages",
@@ -440,15 +456,15 @@ class NarrativelogAdapter(SourceAdapter):
         min_dayobs=None,  # INCLUSIVE: default=Yesterday
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
+        verbose=False,
     ):
         super().__init__(
             server_url=server_url,
             max_dayobs=max_dayobs,
             min_dayobs=min_dayobs,
             limit=limit,
+            verbose=verbose,
         )
-        self.verbose = False
-
         if self.verbose:
             print(
                 "NarrativeLogAdapter("
@@ -537,12 +553,16 @@ class NarrativelogAdapter(SourceAdapter):
         message_text=None,
         is_human="either",
         is_valid="true",
-        offset=None,
     ):
+        endpoint = f"{self.server}/{self.service}/messages"
+        if self.verbose:
+            print(f"Using {endpoint=}")
+
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
             order_by="-date_added",
+            offset=0,
             limit=self.limit,
         )
         if site_ids:
@@ -558,16 +578,20 @@ class NarrativelogAdapter(SourceAdapter):
                 self.max_date, dt.time()
             ).isoformat()
 
-        qstr = urlencode(qparams)
-        url = f"{self.server}/{self.service}/messages?{qstr}"
-        if self.verbose:
-            print(f"Using endpoint {url=}")
         error = None
+        recs = []
         try:
-            r = requests.get(url, timeout=self.timeout)
-            validate_response(r, url)
-            recs = r.json()
-            recs.sort(key=lambda r: r["date_begin"])
+            while len(recs) <= maximum_record_limit:
+                url = f"{endpoint}?{urlencode(qparams)}"
+                if self.verbose:
+                    print(f"Using {url=}")
+                response = requests.get(url, timeout=self.timeout)
+                validate_response(response, url)
+                page = response.json()
+                recs += page
+                if len(page) < self.limit:
+                    break  # we defintely got all we asked for
+                qparams["offset"] += len(page)
         except Exception as err:
             recs = []
             error = str(err)
@@ -607,6 +631,7 @@ class ExposurelogAdapter(SourceAdapter):
         "user_agent",
         "user_id",
     }
+    default_record_limit = 2000  # Adapter specific default
     service = "exposurelog"
     endpoints = [
         "instruments",
@@ -622,12 +647,14 @@ class ExposurelogAdapter(SourceAdapter):
         min_dayobs=None,  # INCLUSIVE: default=Yesterday
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
+        verbose=False,
     ):
         super().__init__(
             server_url=server_url,
             max_dayobs=max_dayobs,
             min_dayobs=min_dayobs,
             limit=limit,
+            verbose=verbose,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -731,27 +758,27 @@ class ExposurelogAdapter(SourceAdapter):
             # 'hasPD',
             # 'metadata',
         ]
-        program = science_program
+
+        program = science_program and science_program.lower()
+        otype = observation_type and observation_type.lower()
+        reason = observation_reason and observation_reason.lower()
         recs = [
             r
             for r in self.exposures[instrument]
-            if (
-                ((program is None) or (r["science_program"] == program))
-                and (
-                    (observation_type is None)
-                    or (r["observation_type"] == observation_type)
-                )
-                and (
-                    (observation_reason is None)
-                    or (r["observation_reason"] == observation_reason)
-                )
-            )
+            if ((program is None) or (r["science_program"].lower() == program))
+            and ((otype is None) or (r["observation_type"].lower() == otype))
+            and ((reason is None) or (r["observation_reason"].lower() == reason))
         ]
-        # print(
-        #     f"DEBUG exp_src.exposure_detail(): "
-        #     f"{len(self.exposures[instrument])} => {len(recs)} "
-        # )
-
+        if self.verbose:
+            print(
+                f"exposure_detail({instrument}, "
+                f"{science_program=},{observation_type=},{observation_reason=}):"
+            )
+            print(
+                f"{program=} {otype=} {reason=} "
+                f"pre-filter={len(self.exposures[instrument])} "
+                f"post-filter={len(recs)}"
+            )
         if len(recs) > 0:
             df = pd.DataFrame(recs)[fields]
             return ut.wrap_dataframe_columns(df)
@@ -804,24 +831,39 @@ class ExposurelogAdapter(SourceAdapter):
 
     # RETURNS status: dict[endpoint_url, number_of_records, error]
     # SIDE-EFFECT: puts records in self.exposures
-    def get_exposures(self, instrument, verbose=False):
+    # /exposurelog/exposures
+    # ?registry=2&instrument=LATISS&order_by=-timespan_end&offset=0&limit=50
+    def get_exposures(self, instrument):
+        endpoint = f"{self.server}/{self.service}/exposures"
+        if self.verbose:
+            print(f"DBG get_exposures {endpoint=}")
+
         registry = self.instruments[instrument]
         qparams = dict(
-            instrument=instrument,
             registry=registry,
+            instrument=instrument,
+            order_by="-timespan_end",
+            offset=0,
             limit=self.limit,
         )
         if self.min_dayobs:
             qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
-        url = f"{self.server}/{self.service}/exposures?{urlencode(qparams)}"
         recs = []
         error = None
         try:
-            if verbose:
-                print(f"DBG get_exposures {url=}")
-            recs = requests.get(url, timeout=self.timeout).json()
+            while len(recs) <= maximum_record_limit:
+                if self.verbose:
+                    print(f"DBG get_exposures qstr: {urlencode(qparams)}")
+                url = f"{endpoint}?{urlencode(qparams)}"
+                page = requests.get(url, timeout=self.timeout).json()
+                recs += page
+                if self.verbose:
+                    print(f"DBG get_exposures {len(page)=} {len(recs)=}")
+                if len(page) < self.limit:
+                    break  # we defintely got all we asked for
+                qparams["offset"] += len(page)
         except Exception as err:
             error = str(err)
 
@@ -856,10 +898,15 @@ class ExposurelogAdapter(SourceAdapter):
         is_valid="true",
         exposure_flags=None,
     ):
+        endpoint = f"{self.server}/{self.service}/messages"
+        if self.verbose:
+            print(f"DBG get_records: {endpoint=}")
+
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
             order_by="-day_obs",
+            offset=0,
             limit=self.limit,
         )
         if site_ids:
@@ -876,18 +923,23 @@ class ExposurelogAdapter(SourceAdapter):
             qparams["exposure_flags"] = exposure_flags
 
         qstr = urlencode(qparams)
-        url = f"{self.server}/{self.service}/messages?{qstr}"
+        url = f"{endpoint}?{qstr}"
         recs = []
         error = None
         try:
-            response = requests.get(url, timeout=self.timeout)
-            validate_response(response, url)
-            recs = response.json()
+            while len(recs) <= maximum_record_limit:
+                if self.verbose:
+                    print(f"DBG get_records qstr: {urlencode(qparams)}")
+                url = f"{endpoint}?{urlencode(qparams)}"
+                response = requests.get(url, timeout=self.timeout)
+                validate_response(response, url)
+                page = response.json()
+                recs += page
+                if len(page) < self.limit:
+                    break  # we defintely got all we asked for
+                qparams["offset"] += len(page)
         except Exception as err:
             error = str(err)
-
-        if recs:
-            recs.sort(key=lambda r: r["day_obs"])
 
         self.keep_fields(recs, self.outfields)
         self.records = recs

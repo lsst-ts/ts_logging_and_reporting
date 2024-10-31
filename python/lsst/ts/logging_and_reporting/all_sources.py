@@ -45,25 +45,26 @@ class AllSources:
         max_dayobs=None,  # INCLUSIVE: default=YESTERDAY other=YYYY-MM-DD
         min_dayobs=None,  # INCLUSIVE: default=(max_dayobs - one_day)
         limit=None,
+        verbose=False,
     ):
         # Load data for all needed sources for the selected dayobs range.
         self.nig_src = sad.NightReportAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
-            limit=limit,
+            verbose=verbose,
         )
         self.exp_src = sad.ExposurelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
-            limit=limit,
+            verbose=verbose,
         )
         self.nar_src = sad.NarrativelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
-            limit=limit,
+            verbose=verbose,
         )
         self.alm_src = alm.Almanac(
             min_dayobs=min_dayobs,
@@ -194,11 +195,11 @@ class AllSources:
             self.nar_src,
             self.efd_src,
         ]
-
-        # Until efd.get_targets is run, it will report 0 records.
-        # That method is run in: await allsrc.night_tally_observation_gaps()
         res = {
-            src.service: src.status[src.primary_endpoint]["number_of_records"]
+            src.service: {
+                endpoint: (ed["number_of_records"], ed["endpoint_url"])
+                for endpoint, ed in src.status.items()
+            }
             for src in sources
         }
         return res
