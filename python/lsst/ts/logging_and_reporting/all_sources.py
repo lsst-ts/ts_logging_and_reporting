@@ -204,6 +204,27 @@ class AllSources:
         }
         return res
 
+    def get_data_status(self):
+        """Get status of data loaded from all sources."""
+        sources = [
+            self.nig_src,
+            self.exp_src,
+            self.nar_src,
+            self.efd_src,
+        ]
+
+        dstat = list()  # [dict(endpoint, rec_count, url), ...]
+        for src in sources:
+            for endpoint, ed in src.status.items():
+                dstat.append(
+                    dict(
+                        Endpoint=f"{src.service}/{endpoint}",
+                        Records=ed["number_of_records"],
+                        URL=ed["endpoint_url"],
+                    )
+                )
+        return dstat
+
     def get_time_lost(self, rollup="day"):
         """RETURN dict[dayobs] => day_time_lost (hours)"""
         # Units of hours determined my inspection and comparison of:

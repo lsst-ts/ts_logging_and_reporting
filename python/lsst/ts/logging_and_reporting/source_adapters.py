@@ -357,6 +357,7 @@ class NightReportAdapter(SourceAdapter):
                 table.append(f"*Authors: {crew_str}*")
         return table
 
+    # Night Report
     def get_records(
         self,
         site_ids=None,
@@ -365,6 +366,9 @@ class NightReportAdapter(SourceAdapter):
         is_valid="true",
     ):
         endpoint = f"{self.server}/{self.service}/reports"
+        if self.verbose:
+            print(f"DBG get_records {endpoint=}")
+
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
@@ -382,22 +386,35 @@ class NightReportAdapter(SourceAdapter):
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
 
         error = None
+        response = None
+        url = None
         recs = []
         try:
             while len(recs) <= maximum_record_limit:
+                if self.verbose:
+                    print(f"DBG get_records qstr: {urlencode(qparams)}")
                 url = f"{endpoint}?{urlencode(qparams)}"
                 response = requests.get(url, timeout=self.timeout)
                 validate_response(response, url)
                 page = response.json()
+                if self.verbose:
+                    print(f"DBG get_records {len(page)=} {len(recs)=}")
                 recs += page
                 if len(page) < self.limit:
                     break  # we defintely got all we asked for
                 qparams["offset"] += len(page)
         except Exception as err:
+            if self.verbose:
+                print(f"DBG NightLog.get_records error: {err!r}")
+
             recs = []
-            error = f"{response.text=} Exception={err}"
+            # error = f"{response.text=} Exception={err}"
+            error = f"{self.__class__.__name__} {url=} Exception={err}"
 
         self.keep_fields(recs, self.outfields)
+
+        if self.verbose:
+            print(f"DBG get_records-2 {len(page)=} {len(recs)=}")
         self.records = recs
         status = dict(
             endpoint_url=url,
@@ -631,7 +648,7 @@ class ExposurelogAdapter(SourceAdapter):
         "user_agent",
         "user_id",
     }
-    default_record_limit = 2000  # Adapter specific default
+    default_record_limit = 2500  # Adapter specific default
     service = "exposurelog"
     endpoints = [
         "instruments",

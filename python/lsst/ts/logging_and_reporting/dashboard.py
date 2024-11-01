@@ -53,7 +53,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                     samples[url] = None
         return dict(samples)
 
-    def report(self, timeout=None):
+    def report(self, timeout=None, verbose=True):
         """Check our ability to connect to every Source on every Environment.
         Report a summary.
 
@@ -68,6 +68,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
             server_all_good = True
             for adapter in self.adapters:
                 service = adapter(server_url=server)
+                service.verbose = verbose
                 stats, aag = service.check_endpoints(timeout=timeout)
                 url_status.update(stats)
             server_all_good &= aag  # adapter all good
