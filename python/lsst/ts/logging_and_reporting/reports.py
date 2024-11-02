@@ -52,6 +52,22 @@ htmlbad = (
 )
 
 
+def html_beta(text):
+    msg = (
+        f'<font style="background-color:green; '
+        f'color:white; font-size:20px">BETA</font> {text}'
+    )
+    return msg
+
+
+def html_draft(text):
+    msg = (
+        f'<font style="background-color:yellow; '
+        f'color:black; font-size:20px">DRAFT</font> {text}'
+    )
+    return msg
+
+
 def mdpathlink(url, remove="/browse/"):
     return f"[{urlparse(url).path.replace(remove, '')}]({url})"
 
@@ -136,7 +152,6 @@ class Report(ABC):
                 url = adapter.get_status().get("endpoint_url")
                 md(f"No {service} records found.", color="lightblue")
                 md(f"Used [API Data]({url})")
-        md("-------------")
 
 
 class AlmanacReport(Report):
