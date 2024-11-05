@@ -46,7 +46,10 @@ class AllSources:
         min_dayobs=None,  # INCLUSIVE: default=(max_dayobs - one_day)
         limit=None,
         verbose=False,
+        exclude_instruments=None,
     ):
+        self.exclude_instruments = exclude_instruments or []
+
         # Load data for all needed sources for the selected dayobs range.
         self.nig_src = sad.NightReportAdapter(
             server_url=server_url,
@@ -110,10 +113,22 @@ class AllSources:
     # Use almanac begin of night values for day_obs.
     # Use almanac end of night values for day_obs + 1.
     async def night_tally_observation_gaps(self, verbose=False):
+        total_observable_hrs = self.alm_src.night_hours
+        if all(
+            [
+                len(recs) == 0
+                for instrum, recs in self.exp_src.exposures.items()
+                if instrum not in self.exclude_instruments
+            ]
+        ):
+            return {
+                "": {
+                    "Total night": hhmmss(total_observable_hrs),
+                    "Idle time": hhmmss(total_observable_hrs),
+                }
+            }
 
         instrument_tally = dict()  # d[instrument] = tally_dict
-        almanac = self.alm_src
-        total_observable_hrs = almanac.night_hours
 
         # lost[day][lost_type] = totalTimeLost
         lost = self.get_time_lost()
@@ -125,6 +140,8 @@ class AllSources:
             for type, hours in types.items()
         }
 
+        # slewTime (and probably others) are EXPECTED times, not ACTUAL.
+        # To get actual, need to use TMAEvent or something similar.
         targets = await self.efd_src.get_targets()  # a DataFrame
         if verbose:
             print(
@@ -132,11 +149,20 @@ class AllSources:
                 f"using date range {self.min_date} to {self.max_date}. "
             )
 
-        if targets.empty:
-            return None
+        num_slews = 0
+        total_slew_seconds = 0
+        mean_slew = 0
 
-        num_slews = targets[["slewTime"]].astype(bool).sum(axis=0).squeeze()
-        total_slew_seconds = targets[["slewTime"]].sum().squeeze()
+        # ## TODO remove
+        # if targets.empty:
+        #     num_slews = 0
+        #     total_slew_seconds = 0
+        #     mean_slew = 0
+        # else:
+        #     num_slews = targets[["slewTime"]
+        #         ].astype(bool).sum(axis=0).squeeze()
+        #     total_slew_seconds = targets[["slewTime"]].sum().squeeze()
+        #     mean_slew = slew_hrs / num_slews
 
         # per Merlin: There is no practical way to get actual detector read
         # time.  He has done some experiments and inferred that it is
@@ -145,9 +171,9 @@ class AllSources:
 
         # Scot says care only about: ComCam, LSSTCam and  Latiss
         for instrument, records in self.exp_src.exposures.items():
-            num_exposures = len(records)
-            if num_exposures == 0:
+            if instrument in self.exclude_instruments:
                 continue
+            num_exposures = len(records)
 
             exposure_seconds = 0
             for rec in records:
@@ -166,20 +192,21 @@ class AllSources:
             )
 
             instrument_tally[instrument] = {
-                "Total Night (HH:MM:SS)": hhmmss(total_observable_hrs),  # (a)
-                "Total Exposure (HH:MM:SS)": hhmmss(exposure_hrs),  # (b)
+                "Total Night": hhmmss(total_observable_hrs),  # (a)
+                "Total Exposure": hhmmss(exposure_hrs),  # (b)
+                "Slew time(1)": hhmmss(slew_hrs),  # (g)
+                "Readout time(2)": hhmmss(detector_hrs),  # (e)
+                "Time loss to fault": "NA",
+                "Time loss to weather": "NA",
+                "Idle time": hhmmss(idle_hrs),  # (i=a-b-e-g)
                 "Number of exposures": num_exposures,  # (c)
-                "Number of slews": num_slews,  # (d)
-                "Total Detector Read (HH:MM:SS)": hhmmss(detector_hrs),  # (e)
-                # Next: (f=e/c)
-                "Mean Detector Read (HH:MM:SS)": hhmmss(mean_detector_hrs),
-                "Total Slew (HH:MM:SS)": hhmmss(slew_hrs),  # (g)
-                "Mean Slew (HH:MM:SS)": hhmmss(slew_hrs / num_slews),  # (g/d)
-                "Total Idle (HH:MM:SS)": hhmmss(idle_hrs),  # (i=a-b-e-g)
+                "Mean readout time": mean_detector_hrs,  # (f=e/c)
+                "Number of slews(1)": num_slews,  # (d)
+                "Mean Slew time(1)": hhmmss(mean_slew),  # (g/d)
             }
             # total_type[type] = total_hrs
             for lost_type, hrs in total_type.items():
-                lt_key = f"Total {lost_type} loss (HH:MM:SS)"
+                lt_key = f"Total {lost_type} loss"
                 instrument_tally[instrument][lt_key] = hhmmss(hrs)
 
         # Composition to combine Exposure and Efd (blackboard)
@@ -226,7 +253,7 @@ class AllSources:
         return dstat
 
     def get_time_lost(self, rollup="day"):
-        """RETURN dict[dayobs] => day_time_lost (hours)"""
+        """RETURN dict[dayobs]['fault', 'weather'] => day_time_lost (hours)"""
         # Units of hours determined my inspection and comparison of:
         #   time_lost, date_begin, date_end
 
@@ -243,8 +270,15 @@ class AllSources:
         recs = sorted(recs, key=lost_type)
         recs = sorted(recs, key=date_begin)
         for day, day_grp in itertools.groupby(recs, key=date_begin):
-            for type, type_grp in itertools.groupby(day_grp, key=lost_type):
-                day_tl[day][type] = sum([r["time_lost"] for r in type_grp])
+            day_tl[day]["fault"] = sum(
+                [r["time_lost"] for r in day_grp if "fault" == r["time_lost_type"]]
+            )
+            day_tl[day]["weather"] = sum(
+                [r["time_lost"] for r in day_grp if "weather" == r["time_lost_type"]]
+            )
+            # TODO remove
+            # for type, type_grp in itertools.groupby(day_grp, key=lost_type):
+            #     day_tl[day][type] = sum([r["time_lost"] for r in type_grp])
         return day_tl
 
     def get_observation_gaps(self):
