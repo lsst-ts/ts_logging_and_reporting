@@ -114,31 +114,29 @@ class AllSources:
     # Use almanac end of night values for day_obs + 1.
     async def night_tally_observation_gaps(self, verbose=False):
         total_observable_hrs = self.alm_src.night_hours
-        if all(
-            [
-                len(recs) == 0
-                for instrum, recs in self.exp_src.exposures.items()
-                if instrum not in self.exclude_instruments
-            ]
-        ):
+        used_instruments = set()
+        for instrum, recs in self.exp_src.exposures.items():
+            if instrum in self.exclude_instruments:
+                continue
+            if len(recs) > 0:
+                used_instruments.add(instrum)
+        if len(used_instruments) == 0:
             return {
                 "": {
                     "Total night": hhmmss(total_observable_hrs),
                     "Idle time": hhmmss(total_observable_hrs),
                 }
             }
+        if verbose:
+            print(
+                f"DEBUG night_tally_observation_gaps: "
+                f"{used_instruments=} {self.exclude_instruments=}"
+            )
 
         instrument_tally = dict()  # d[instrument] = tally_dict
 
         # lost[day][lost_type] = totalTimeLost
-        lost = self.get_time_lost()
-
-        # total_type[type] = total_hrs
-        total_type = {
-            type: sum([lost[d].get(type, 0) for d in lost.keys()])
-            for d, types in lost.items()
-            for type, hours in types.items()
-        }
+        # lost = self.get_time_lost()
 
         # slewTime (and probably others) are EXPECTED times, not ACTUAL.
         # To get actual, need to use TMAEvent or something similar.
@@ -170,9 +168,8 @@ class AllSources:
         mean_detector_hrs = 2.3 / (60 * 60.0)
 
         # Scot says care only about: ComCam, LSSTCam and  Latiss
-        for instrument, records in self.exp_src.exposures.items():
-            if instrument in self.exclude_instruments:
-                continue
+        for instrument in used_instruments:
+            records = self.exp_src.exposures[instrument]
             num_exposures = len(records)
 
             exposure_seconds = 0
@@ -204,10 +201,6 @@ class AllSources:
                 "Number of slews(1)": num_slews,  # (d)
                 "Mean Slew time(1)": hhmmss(mean_slew),  # (g/d)
             }
-            # total_type[type] = total_hrs
-            for lost_type, hrs in total_type.items():
-                lt_key = f"Total {lost_type} loss"
-                instrument_tally[instrument][lt_key] = hhmmss(hrs)
 
         # Composition to combine Exposure and Efd (blackboard)
         # ts_xml/.../sal_interfaces/Scheduler/Scheduler_Events.xml
