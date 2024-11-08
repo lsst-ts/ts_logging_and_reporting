@@ -48,6 +48,7 @@ class AllSources:
         verbose=False,
         exclude_instruments=None,
     ):
+        self.verbose = verbose
         self.exclude_instruments = exclude_instruments or []
 
         # Load data for all needed sources for the selected dayobs range.
@@ -140,12 +141,12 @@ class AllSources:
 
         # slewTime (and probably others) are EXPECTED times, not ACTUAL.
         # To get actual, need to use TMAEvent or something similar.
-        targets = await self.efd_src.get_targets()  # a DataFrame
-        if verbose:
-            print(
-                f"AllSources().get_targets() got {len(targets)} targets "
-                f"using date range {self.min_date} to {self.max_date}. "
-            )
+        # targets = await self.efd_src.get_targets()  # a DataFrame
+        # if verbose:
+        #     print(
+        #         f"AllSources().get_targets() got {len(targets)} targets "
+        #         f"using date range {self.min_date} to {self.max_date}. "
+        #     )
 
         num_slews = 0
         total_slew_seconds = 0
@@ -359,29 +360,47 @@ class AllSources:
         records = self.exp_src.exposures[instrument]
         if len(records) == 0:
             return None
+        eflag_fields = ["good", "questionable", "junk", "unknown"]
         use_fields = [
             "observation_reason",
             "observation_type",
             "science_program",
         ]
+        if self.verbose:
+            print(f"DEBUG uniform_exposure {eflag_fields=} {use_fields=}")
         facets, ignored = get_facets(records, fieldnames=use_fields)
-        # Explicitly remove tables that we expect to be useless.
-        # facets.pop("day_obs", None)
-        # facets.pop("instrument", None)
-        # facets.pop("target_name", None)
-        # facets.pop("group_name", None)
-        # facets.pop("seq_num", None)
-        # facets.pop("exposure_time", None)
-        counts = {k: dict(Counter([r[k] for r in records])) for k in facets.keys()}
-        link_to_detail = {
-            fname: {
-                fvalue: gen_link(fname, fvalue, num) for fvalue, num in tally.items()
-            }
-            for fname, tally in counts.items()
-        }
-        return link_to_detail
-        # #!totals = {k: sum(v.values()) for k,v in counts.items()}
-        # #! return counts,totals
+        # counts[exp_fname] -> dict[fval, ...] = num_matches
+        # #!  counts = {k: dict(Counter([r[k] for r in records]))
+        # #!            for k in facets.keys()}
+        exposure_field_names = [
+            "observation_type",
+            "observation_reason",
+            "science_program",
+        ]
+        # counts[fname] = [{fval1: num1, fval2: num2, ...}, ...]
+        counts = defaultdict(list)
+        for fname in exposure_field_names:
+            # e.g. fname = science_program, fvalue=E2016
+            count_fvals = Counter([r[fname] for r in records])
+            counts[fname].append(dict(count_fvals))
+            for fval in count_fvals.keys():
+                count_fval_flag = Counter(
+                    [r["exposure_flag"] for r in records if r[fname] == fval]
+                )
+                counts[fname].append(dict(count_fval_flag))
+
+            # TODO remove
+            # fvalue_counts.update([f"flag=['exposure_flag'" for r in records])
+
+        link_to_detail = None
+        # #!link_to_detail = {
+        # #!    fname: {
+        # #!        fvalue: gen_link(fname, fvalue, num)
+        # #!        for fvalue, num in tally.items()
+        # #!    }
+        # #!    for fname, tally in counts.items()
+        # #!}
+        return link_to_detail, counts, facets
 
 
 # display(all.get_facets(allsrc.exp_src.exposures['LATISS']))

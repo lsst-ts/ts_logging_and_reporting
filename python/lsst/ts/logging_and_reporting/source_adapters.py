@@ -66,12 +66,21 @@ def all_endpoints(server):
     return list(endpoints)
 
 
-def validate_response(response, endpoint_url):
-    if response.status_code == 200:
+def validate_response(response, endpoint_url, verbose=True):
+    if verbose:
+        print(f"DEBUG validate_response {endpoint_url=}")
+    if response.ok:
         return True
     else:
-        msg = f"Error: {response.json()} {endpoint_url=} {response.reason}"
-        raise ex.BadStatus(msg)
+        msg = f"{endpoint_url=} {response.status_code=} {response.reason}"
+        try:
+            msg += f" {response.json()}"
+        except Exception as err:
+            msg += f" {response.text}; {str(err)}"
+        if verbose:
+            print(f"DEBUG validate_response ERROR {msg=}")
+
+        raise ex.StatusError(msg)
 
 
 class SourceAdapter(ABC):
@@ -128,6 +137,22 @@ class SourceAdapter(ABC):
             self.min_date = self.max_date - dt.timedelta(days=1)
         assert self.min_date < self.max_date
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
+
+    def hack_reconnect_after_idle(self):
+        """Do a dummy query to a serivce to force a DB reconnect.
+
+        When a connection has been idle for some time, it disconnects
+        such that the following API call returns zero records. This
+        HACK gets around this problem.
+
+        TODO After DM-43835 is fixed, remove this hack.
+        """
+        endpoint = f"{self.server}/{self.service}/{self.primary_endpoint}"
+        qparams = dict(limit=2)  # API requires > 1 !
+        url = f"{endpoint}?{urlencode(qparams)}"
+        response = requests.get(url, timeout=self.timeout)
+        validate_response(response, url)
+        return response.status_code
 
     def get_status(self, endpoint=None):
         return self.status.get(endpoint or self.primary_endpoint)
@@ -297,6 +322,7 @@ class NightReportAdapter(SourceAdapter):
 
         # Load the data (records) we need from relevant endpoints
         if self.min_date:
+            self.hack_reconnect_after_idle()
             self.status[self.primary_endpoint] = self.get_records()
 
     @property
@@ -365,7 +391,7 @@ class NightReportAdapter(SourceAdapter):
         is_human="either",
         is_valid="true",
     ):
-        endpoint = f"{self.server}/{self.service}/reports"
+        endpoint = f"{self.server}/{self.service}/{self.primary_endpoint}"
         if self.verbose:
             print(f"DBG get_records {endpoint=}")
 
@@ -389,38 +415,38 @@ class NightReportAdapter(SourceAdapter):
         response = None
         url = None
         recs = []
-        try:
-            while len(recs) <= maximum_record_limit:
-                if self.verbose:
-                    print(f"DBG get_records qstr: {urlencode(qparams)}")
+        # try:
+        while len(recs) <= maximum_record_limit:
+            if self.verbose:
+                print(f"DBG get_records qstr: {urlencode(qparams)}")
                 url = f"{endpoint}?{urlencode(qparams)}"
                 response = requests.get(url, timeout=self.timeout)
                 validate_response(response, url)
                 page = response.json()
-                if self.verbose:
-                    print(f"DBG get_records {len(page)=} {len(recs)=}")
-                recs += page
-                if len(page) < self.limit:
-                    break  # we defintely got all we asked for
-                qparams["offset"] += len(page)
-        except Exception as err:
             if self.verbose:
-                print(f"DBG NightLog.get_records error: {err!r}")
-
-            recs = []
-            # error = f"{response.text=} Exception={err}"
-            error = f"{self.__class__.__name__} {url=} Exception={err}"
+                print(f"DBG get_records {len(page)=} {len(recs)=}")
+                recs += page
+            if len(page) < self.limit:
+                break  # we defintely got all we asked for
+            qparams["offset"] += len(page)
+            # except Exception as err:
+            #     if self.verbose:
+            #         print(f"DBG NightLog.get_records error: {err!r}")
+            #
+            #     recs = []
+            #     # error = f"{response.text=} Exception={err}"
+            #     error = f"{self.__class__.__name__} {url=} Exception={err}"
 
         self.keep_fields(recs, self.outfields)
 
-        if self.verbose:
+        if recs and self.verbose:
             print(f"DBG get_records-2 {len(page)=} {len(recs)=}")
-        self.records = recs
-        status = dict(
-            endpoint_url=url,
-            number_of_records=len(recs),
-            error=error,
-        )
+            self.records = recs
+            status = dict(
+                endpoint_url=url,
+                number_of_records=len(recs),
+                error=error,
+            )
         return status
 
     def nightly_tickets(self):
@@ -493,6 +519,7 @@ class NarrativelogAdapter(SourceAdapter):
 
         # Load the data (records) we need from relevant endpoints
         if self.min_date:
+            self.hack_reconnect_after_idle()
             self.status[self.primary_endpoint] = self.get_records()
 
     @property
@@ -551,8 +578,8 @@ class NarrativelogAdapter(SourceAdapter):
                     msg = new
                 else:
                     msg = rep.htmlcode(rec["message_text"].strip())
-                mdstr = ""
-                mdstr += f"- {attrstr}"
+                    mdstr = ""
+                    mdstr += f"- {attrstr}"
                 for fname in show_fields:
                     mdstr += f"\n    - {fname}: {rec.get(fname)}"
 
@@ -571,7 +598,7 @@ class NarrativelogAdapter(SourceAdapter):
         is_human="either",
         is_valid="true",
     ):
-        endpoint = f"{self.server}/{self.service}/messages"
+        endpoint = f"{self.server}/{self.service}/{self.primary_endpoint}"
         if self.verbose:
             print(f"Using {endpoint=}")
 
@@ -597,21 +624,21 @@ class NarrativelogAdapter(SourceAdapter):
 
         error = None
         recs = []
-        try:
-            while len(recs) <= maximum_record_limit:
-                url = f"{endpoint}?{urlencode(qparams)}"
-                if self.verbose:
-                    print(f"Using {url=}")
+        # try:
+        while len(recs) <= maximum_record_limit:
+            url = f"{endpoint}?{urlencode(qparams)}"
+            if self.verbose:
+                print(f"Using {url=}")
                 response = requests.get(url, timeout=self.timeout)
                 validate_response(response, url)
                 page = response.json()
                 recs += page
-                if len(page) < self.limit:
-                    break  # we defintely got all we asked for
-                qparams["offset"] += len(page)
-        except Exception as err:
-            recs = []
-            error = str(err)
+            if len(page) < self.limit:
+                break  # we defintely got all we asked for
+            qparams["offset"] += len(page)
+            # except Exception as err:
+            #     recs = []
+            #     error = str(err)
 
         self.keep_fields(recs, self.outfields)
         pam.markup_errors(recs)
@@ -682,12 +709,29 @@ class ExposurelogAdapter(SourceAdapter):
 
         # Load the data (records) we need from relevant endpoints
         # in dependency order.
+        self.hack_reconnect_after_idle()
         self.status["instruments"] = self.get_instruments()
         for instrument in self.instruments.keys():
             endpoint = f"exposures.{instrument}"
             self.status[endpoint] = self.get_exposures(instrument)
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
+            self.add_exposure_flag_to_exposures()
+
+    # SIDE-EFFECT: Modifies self.exp_src.exposures in place.
+    def add_exposure_flag_to_exposures(self):
+        count = 0
+        for instrument in self.exposures.keys():
+            for rec in self.exposures[instrument]:
+                mrec = self.messages_lut.get(rec["obs_id"])
+                if mrec is None:
+                    rec["exposure_flag"] = "unknown"
+                else:
+                    count += 1
+                    rec["exposure_flag"] = mrec["exposure_flag"]
+                    if self.verbose:
+                        print(f"add_exposure_flag_to_exposures {rec=}")
+        return count
 
     @property
     def urls(self):
@@ -740,12 +784,13 @@ class ExposurelogAdapter(SourceAdapter):
                             flag = rep.htmlbad
                         case "questionable":
                             flag = rep.htmlquestion
-                        case _:
+                        case _:  # "none", the literal string in API!
+                            # value changed to "good" in adapter after read
                             flag = rep.htmlgood
-                    msg = rec["message_text"].strip()
-                    plinks = [rep.mdpathlink(url) for url in rec.get("urls")]
-                    links = ", ".join(plinks)
-                    linkstr = "" if links == "" else f"\n    - Links: {links}"
+                            msg = rec["message_text"].strip()
+                            plinks = [rep.mdpathlink(url) for url in rec.get("urls")]
+                            links = ", ".join(plinks)
+                            linkstr = "" if links == "" else f"\n    - Links: {links}"
 
                     # BLACK workaround
                     str = ""
@@ -808,7 +853,7 @@ class ExposurelogAdapter(SourceAdapter):
             msg = "Try connect to each endpoint of "
             msg += f"{self.server}/{self.service} "
             print(msg)
-        url_http_status_code = dict()
+            url_http_status_code = dict()
 
         for ep in self.endpoints:
             qstr = "?instrument=na" if ep == "exposures" else ""
@@ -820,25 +865,25 @@ class ExposurelogAdapter(SourceAdapter):
                 url_http_status_code[url] = "GET error"
             else:
                 url_http_status_code[url] = r.status_code
-        allgood_p = all([v == 200 for v in url_http_status_code.values()])
+                allgood_p = all([v == 200 for v in url_http_status_code.values()])
         return url_http_status_code, allgood_p
 
     def get_instruments(self):
         url = f"{self.server}/{self.service}/instruments"
         recs = dict(dummy=[])
         error = None
-        try:
-            r = requests.get(url, timeout=self.timeout)
-            validate_response(r, url)
-            recs = r.json()
-        except Exception as err:
-            error = str(err)
-        else:
-            self.instruments = {
-                instrum: int(reg.replace("butler_instruments_", ""))
-                for reg, inst_list in recs.items()
-                for instrum in inst_list
-            }
+        # try:
+        r = requests.get(url, timeout=self.timeout)
+        validate_response(r, url)
+        recs = r.json()
+        # except Exception as err:
+        #     error = str(err)
+        # else:
+        self.instruments = {
+            instrum: int(reg.replace("butler_instruments_", ""))
+            for reg, inst_list in recs.items()
+            for instrum in inst_list
+        }
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),
@@ -869,34 +914,38 @@ class ExposurelogAdapter(SourceAdapter):
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         recs = []
         error = None
-        try:
-            while len(recs) <= maximum_record_limit:
-                if self.verbose:
-                    print(f"DBG get_exposures qstr: {urlencode(qparams)}")
-                url = f"{endpoint}?{urlencode(qparams)}"
-                page = requests.get(url, timeout=self.timeout).json()
-                recs += page
-                if self.verbose:
-                    print(f"DBG get_exposures {len(page)=} {len(recs)=}")
-                if len(page) < self.limit:
-                    break  # we defintely got all we asked for
-                qparams["offset"] += len(page)
-        except Exception as err:
-            error = str(err)
+        # try:
+        while len(recs) <= maximum_record_limit:
+            if self.verbose:
+                print(f"DBG get_exposures qstr: {urlencode(qparams)}")
+            url = f"{endpoint}?{urlencode(qparams)}"
+            response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
+            page = response.json()
+            recs += page
+            if self.verbose:
+                print(f"DBG get_exposures {len(page)=} {len(recs)=}")
+            if len(page) < self.limit:
+                break  # we defintely got all we asked for
+            qparams["offset"] += len(page)
+        # except Exception as err:
+        #     error = str(err)
 
         # #! sprogram  = rec.get("science_program")
         # #! progstr = sprogram if sprogram else ' '
 
-        self.exposures[instrument] = recs
         for r in recs:
-            exp_secs = (
-                dt.datetime.fromisoformat(r["timespan_end"])
-                - dt.datetime.fromisoformat(r["timespan_end"])
-            ).total_seconds()
-            r["exposure_time"] = exp_secs
+            r["exposure_flag"] = None
 
-        # exposure_lut[instrument] => dict[obsid] => rec
-        self.exposure_lut = {instrument: {r["obs_id"]: r} for r in recs}
+        self.exposures[instrument] = recs
+        self.exposures_lut = dict()
+        for rec in recs:
+            exp_secs = (
+                dt.datetime.fromisoformat(rec["timespan_end"])
+                - dt.datetime.fromisoformat(rec["timespan_end"])
+            ).total_seconds()
+            rec["exposure_time"] = exp_secs
+            self.exposures_lut[rec["obs_id"]] = rec
 
         status = dict(
             endpoint_url=url,
@@ -943,25 +992,33 @@ class ExposurelogAdapter(SourceAdapter):
         url = f"{endpoint}?{qstr}"
         recs = []
         error = None
-        try:
-            while len(recs) <= maximum_record_limit:
-                if self.verbose:
-                    print(f"DBG get_records qstr: {urlencode(qparams)}")
-                url = f"{endpoint}?{urlencode(qparams)}"
-                response = requests.get(url, timeout=self.timeout)
-                validate_response(response, url)
-                page = response.json()
-                recs += page
-                if len(page) < self.limit:
-                    break  # we defintely got all we asked for
-                qparams["offset"] += len(page)
-        except Exception as err:
-            error = str(err)
+        # try:
+        while len(recs) <= maximum_record_limit:
+            if self.verbose:
+                print(f"DBG get_records qstr: {urlencode(qparams)}")
+            url = f"{endpoint}?{urlencode(qparams)}"
+            response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
+            page = response.json()
+            recs += page
+            if len(page) < self.limit:
+                break  # we defintely got all we asked for
+            qparams["offset"] += len(page)
+        # except Exception as err:
+        #     error = str(err)
 
         self.keep_fields(recs, self.outfields)
+
+        # Change exposure_flag to avoid confusion with python None type
+        for rec in recs:
+            if rec.get("exposure_flag") == "none":
+                rec["exposure_flag"] = "good"
+
         self.records = recs
         # messages[instrument] => [rec, ...]
         self.messages = dict()
+        # messages_lut[obs_id] => rec
+        self.messages_lut = {r["obs_id"]: r for r in recs}
         for instrum in set([r["instrument"] for r in recs]):
             self.messages[instrum] = [r for r in recs if instrum == r["instrument"]]
 

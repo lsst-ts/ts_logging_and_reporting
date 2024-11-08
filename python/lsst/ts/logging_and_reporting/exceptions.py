@@ -20,7 +20,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # error_code values should be no bigger than 8 characters 12345678
-import traceback
 
 
 class BaseLogrepError(Exception):
@@ -44,10 +43,14 @@ class BaseLogrepError(Exception):
         if status_code is not None:
             self.status_code = status_code or self.status_code
 
-        self.saved_tb = traceback.format_exc()
+        # self.saved_tb = traceback.format_exc()
+        self.saved_tb = None
 
     def __str__(self):
-        return f"[{self.error_code}] {self.error_message}" f" {self.saved_tb=}"
+        msg = f"[{self.error_code}] {self.error_message}"
+        if self.saved_tb:
+            msg += f" {self.saved_tb=}"
+        return msg
 
     def to_dict(self):
         dd = dict(
@@ -89,4 +92,4 @@ class StatusError(BaseLogrepError):
     a bad format.  It may also be that the Service is broken.
     """
 
-    error_code = "BADQSTR"
+    error_code = "BADSTAT"
