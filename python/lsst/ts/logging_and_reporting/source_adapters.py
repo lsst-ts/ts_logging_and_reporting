@@ -35,6 +35,7 @@
 # One word most of the time, two_words when its a field such as
 # in a Database or API query string.
 
+import copy
 import datetime as dt
 import itertools
 from abc import ABC
@@ -66,7 +67,7 @@ def all_endpoints(server):
     return list(endpoints)
 
 
-def validate_response(response, endpoint_url, verbose=True):
+def validate_response(response, endpoint_url, verbose=False):
     if verbose:
         print(f"DEBUG validate_response {endpoint_url=}")
     if response.ok:
@@ -419,10 +420,10 @@ class NightReportAdapter(SourceAdapter):
         while len(recs) <= maximum_record_limit:
             if self.verbose:
                 print(f"DBG get_records qstr: {urlencode(qparams)}")
-                url = f"{endpoint}?{urlencode(qparams)}"
-                response = requests.get(url, timeout=self.timeout)
-                validate_response(response, url)
-                page = response.json()
+            url = f"{endpoint}?{urlencode(qparams)}"
+            response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
+            page = response.json()
             if self.verbose:
                 print(f"DBG get_records {len(page)=} {len(recs)=}")
                 recs += page
@@ -441,12 +442,12 @@ class NightReportAdapter(SourceAdapter):
 
         if recs and self.verbose:
             print(f"DBG get_records-2 {len(page)=} {len(recs)=}")
-            self.records = recs
-            status = dict(
-                endpoint_url=url,
-                number_of_records=len(recs),
-                error=error,
-            )
+        self.records = recs
+        status = dict(
+            endpoint_url=url,
+            number_of_records=len(recs),
+            error=error,
+        )
         return status
 
     def nightly_tickets(self):
@@ -629,10 +630,10 @@ class NarrativelogAdapter(SourceAdapter):
             url = f"{endpoint}?{urlencode(qparams)}"
             if self.verbose:
                 print(f"Using {url=}")
-                response = requests.get(url, timeout=self.timeout)
-                validate_response(response, url)
-                page = response.json()
-                recs += page
+            response = requests.get(url, timeout=self.timeout)
+            validate_response(response, url)
+            page = response.json()
+            recs += page
             if len(page) < self.limit:
                 break  # we defintely got all we asked for
             qparams["offset"] += len(page)
@@ -716,21 +717,30 @@ class ExposurelogAdapter(SourceAdapter):
             self.status[endpoint] = self.get_exposures(instrument)
         if self.min_date:
             self.status[self.primary_endpoint] = self.get_records()
-            self.add_exposure_flag_to_exposures()
+        # Copy exposure_flag from messages to exposures (some to many).
+        self.add_exposure_flag_to_exposures()
 
-    # SIDE-EFFECT: Modifies self.exp_src.exposures in place.
+    # SIDE-EFFECT: Modifies self.exp_src.exposures in place.429
     def add_exposure_flag_to_exposures(self):
         count = 0
         for instrument in self.exposures.keys():
+            new_recs = list()
             for rec in self.exposures[instrument]:
+                new_rec = copy.copy(rec)
                 mrec = self.messages_lut.get(rec["obs_id"])
                 if mrec is None:
-                    rec["exposure_flag"] = "unknown"
+                    new_rec["exposure_flag"] = "unknown"
                 else:
                     count += 1
-                    rec["exposure_flag"] = mrec["exposure_flag"]
+                    new_rec["exposure_flag"] = mrec["exposure_flag"]
                     if self.verbose:
                         print(f"add_exposure_flag_to_exposures {rec=}")
+                new_recs.append(new_rec)
+            self.exposures[instrument] = new_recs
+            print(
+                f"DEBUG add_exposure_flag {instrument=} "
+                f'{set([r["exposure_flag"] for r in new_recs])}'
+            )
         return count
 
     @property

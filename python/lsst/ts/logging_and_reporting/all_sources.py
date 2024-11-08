@@ -25,12 +25,10 @@ import copy
 import datetime as dt
 import itertools
 from collections import Counter, defaultdict
-from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.efd as efd
 import lsst.ts.logging_and_reporting.source_adapters as sad
-import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 from lsst.ts.logging_and_reporting.utils import hhmmss
 
@@ -326,81 +324,61 @@ class AllSources:
 
         pass
 
-    def tally_exposure_flags(self, instrument):
-        # ... make sure we have counts for all three
-        tally = Counter(good=0, questionable=0, junk=0)
-        tally.update([r["exposure_flag"] for r in self.exp_src.messages[instrument]])
-        df = pd.DataFrame.from_dict(tally, orient="index").T
-        return df  # .style.hide(axis="index")
+    # TODO remove
+    # def tally_exposure_flags(self, instrument):
+    #     # ... make sure we have counts for all three
+    #     tally = Counter(good=0, questionable=0, junk=0)
+    #     tally.update([r["exposure_flag"]
+    #         for r in self.exp_src.messages[instrument]])
+    #     df = pd.DataFrame.from_dict(tally, orient="index").T
+    #     return df  # .style.hide(axis="index")
 
     @property
     def urls(self):
         return self.nar_src.urls | self.exp_src.urls
 
-    # (This is not the "count of football jerseys" in play!)
-    def uniform_exposure_field_counts(self, instrument):
-        """Count number of records of each value in a Uniform Field.
-        A Uniform Field is one that only has a small number of values.
-        RETURN: dict[fieldname] -> dict[value] -> count
-        """
-
-        def gen_link(fname, fvalue, num):
-            oneday = dt.timedelta(days=1)
-            qparams = {
-                "day_obs": ut.datetime_to_dayobs(self.max_date - oneday),
-                "number_of_days": (self.max_date - self.min_date).days,
-                "instrument": instrument,
-                fname: fvalue,
-            }
-            url = f"{self.server_url}/times-square/github/"
-            url += "lsst-ts/ts_logging_and_reporting/ExposureDetail"
-            url += f"?{urlencode(qparams)}"
-            return f"<a href={url}>{num}</a>"
-
+    # TODO remove print DEBUG
+    def flag_count_exposures(self, instrument, fieldname):
         records = self.exp_src.exposures[instrument]
-        if len(records) == 0:
-            return None
-        eflag_fields = ["good", "questionable", "junk", "unknown"]
-        use_fields = [
-            "observation_reason",
-            "observation_type",
-            "science_program",
-        ]
-        if self.verbose:
-            print(f"DEBUG uniform_exposure {eflag_fields=} {use_fields=}")
-        facets, ignored = get_facets(records, fieldnames=use_fields)
-        # counts[exp_fname] -> dict[fval, ...] = num_matches
-        # #!  counts = {k: dict(Counter([r[k] for r in records]))
-        # #!            for k in facets.keys()}
+
+        # fieldname: observation_type, observation_reason, science_program
+        field_values = {r[fieldname] for r in records}
+        # Values of rec["exposure_flag"]
+        eflag_values = ["good", "questionable", "junk", "unknown"]
+        # print(f'DEBUG flag_count_exposures {fieldname=}')
+        # print(f'DEBUG flag_count_exposures {field_values=}')
+        # print(f'DEBUG flag_count_exposures {eflag_values=}')
+        table_recs = dict()
+        for field in field_values:
+            for eflag in eflag_values:
+                # print(f'DEBUG  flag_count {field=} {eflag=}')
+                # Initialize to zeros
+                counter = Counter({f: 0 for f in eflag_values})
+                counter.update(
+                    [r["exposure_flag"] for r in records if r[fieldname] == field]
+                )
+            counter.update(dict(total=counter.total()))
+            table_recs[field] = counter
+
+        if table_recs:
+            df = pd.DataFrame.from_records(
+                list(table_recs.values()), index=list(table_recs.keys())
+            )
+        else:
+            df = pd.DataFrame()
+
+        return df.T  # ,table_recs
+
+    def fields_count_exposure(self, instrument):
         exposure_field_names = [
             "observation_type",
             "observation_reason",
             "science_program",
         ]
-        # counts[fname] = [{fval1: num1, fval2: num2, ...}, ...]
-        counts = defaultdict(list)
+        df_dict = dict()
         for fname in exposure_field_names:
-            # e.g. fname = science_program, fvalue=E2016
-            count_fvals = Counter([r[fname] for r in records])
-            counts[fname].append(dict(count_fvals))
-            for fval in count_fvals.keys():
-                count_fval_flag = Counter(
-                    [r["exposure_flag"] for r in records if r[fname] == fval]
-                )
-                counts[fname].append(dict(count_fval_flag))
-
-            # TODO remove
-            # fvalue_counts.update([f"flag=['exposure_flag'" for r in records])
-
-        link_to_detail = None
-        # #!link_to_detail = {
-        # #!    fname: {
-        # #!        fvalue: gen_link(fname, fvalue, num)
-        # #!        for fvalue, num in tally.items()
-        # #!    }
-        # #!    for fname, tally in counts.items()
-        # #!}
-        return link_to_detail, counts, facets
+            df_dict[fname] = self.flag_count_exposures(instrument, fname)
+        return df_dict
 
 
 # display(all.get_facets(allsrc.exp_src.exposures['LATISS']))
