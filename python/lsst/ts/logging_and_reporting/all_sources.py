@@ -353,10 +353,11 @@ class AllSources:
             df = pd.DataFrame.from_records(
                 list(table_recs.values()), index=list(table_recs.keys())
             )
+            df.sort_index(inplace=True)
         else:
             df = pd.DataFrame()
 
-        return df.T  # ,table_recs
+        return df
 
     def fields_count_exposure(self, instrument):
         exposure_field_names = [
