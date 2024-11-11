@@ -33,14 +33,8 @@ parameters:
     default: 1
     minimum: 1
     maximum: 9
-  exp_parsing:
+  verbose:
     type: boolean
     description: >
-      Enable experimental parsing of error messages pasted into logs.
-    default: true
-  exp_tally:
-    type: boolean
-    description: >
-      Enable experimental tally of exposures with specific values of
-      selected fields.
-    default: true
+      Enable verbose output. (Generally for development use.)
+    default: false

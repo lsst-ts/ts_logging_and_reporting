@@ -49,7 +49,7 @@ import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 import requests
 
-MAX_CONNECT_TIMEOUT = 5.1  # seconds
+MAX_CONNECT_TIMEOUT = 7.05  # seconds
 MAX_READ_TIMEOUT = 180  # seconds
 summit = "https://summit-lsp.lsst.codes"
 usdf = "https://usdf-rsp-dev.slac.stanford.edu"
@@ -88,7 +88,8 @@ def invalid_response(response, endpoint_url, timeout=None, verbose=False):
         # other sources may not.
         # raise ex.StatusError(msg)
         rep.display_error(msg)
-        msg2 = "".join(traceback.format_stack(limit=4))
+        msg2 = "TRACEBACK (4 levels)\n"
+        msg2 += "".join(traceback.format_stack(limit=4))
         rep.display_error(msg2)
         return msg
 
@@ -107,8 +108,8 @@ class SourceAdapter(ABC):
         min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
         offset=0,
         limit=None,  # max records to read in one API call
-        connect_timeout=1.05,  # seconds
-        read_timeout=2,  # seconds
+        connect_timeout=5.05,  # seconds
+        read_timeout=20,  # seconds
         verbose=False,
     ):
         """Load the relevant data for the Source.
@@ -442,24 +443,19 @@ class NightReportAdapter(SourceAdapter):
             if len(page) < self.limit:
                 break  # we defintely got all we asked for
             qparams["offset"] += len(page)
-            # except Exception as err:
-            #     if self.verbose:
-            #         print(f"DBG NightLog.get_records error: {err!r}")
-            #
-            #     recs = []
-            #     # error = f"{response.text=} Exception={err}"
-            #     error = f"{self.__class__.__name__} {url=} Exception={err}"
 
         self.keep_fields(recs, self.outfields)
 
-        if recs and self.verbose:
-            print(f"DBG get_records-2 {len(page)=} {len(recs)=}")
         self.records = recs
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),
             error=error,
         )
+        if recs and self.verbose:
+            print(f"DBG get_records-2 {len(page)=} {len(recs)=}")
+            print(f"DBG get_records-2 {len(self.records)=} {status=}")
+
         return status
 
     def nightly_tickets(self):

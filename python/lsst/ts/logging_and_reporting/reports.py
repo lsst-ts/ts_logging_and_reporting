@@ -32,7 +32,6 @@ def md(markdown_str, color=None, background=None):
         fg = f"color:{color};" if color else ""
         bg = f"background-color:{background};"
         newtxt = f'<font style="{fg}{bg}">{markdown_str}</font>'
-        print(f"{newtxt=}")
         display(Markdown(newtxt))
     else:
         display(Markdown(markdown_str))
@@ -149,7 +148,7 @@ class Report(ABC):
         print(md(f'- Endpoint: {status["endpoint_url"]}'))
         print(f"- {result} {more}")
 
-    def time_log_as_markdown(self, zero_message=False):
+    def time_log_as_markdown(self, zero_message=True):
         """Emit markdown for a date-time log."""
         adapter = self.source_adapter
         records = adapter.records
@@ -160,7 +159,12 @@ class Report(ABC):
             if zero_message:
                 service = adapter.service
                 url = adapter.get_status().get("endpoint_url")
-                md(f"No {service} records found.", color="lightblue")
+                msg = (
+                    f"No {service} records found "
+                    f"{adapter.min_dayobs} to {adapter.max_dayobs}. "
+                    # f"status={adapter.status}"
+                )
+                md(msg, color="lightblue")
                 md(f"Used [API Data]({url})")
 
 
