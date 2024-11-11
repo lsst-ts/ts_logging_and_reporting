@@ -10,7 +10,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
     we need for any of our sources.
     """
 
-    timeout = (1.05, 2)  # connect, read (seconds)
+    timeout = (5.05, 2)  # connect, read (seconds)
 
     envs = dict(  # key, server
         summit="https://summit-lsp.lsst.codes",

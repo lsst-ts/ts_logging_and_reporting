@@ -38,18 +38,18 @@
 import copy
 import datetime as dt
 import itertools
+import traceback
 from abc import ABC
 from collections import defaultdict
 from urllib.parse import urlencode
 
-import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.parse_message as pam
 import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 import requests
 
-MAX_CONNECT_TIMEOUT = 3.1  # seconds
+MAX_CONNECT_TIMEOUT = 5.1  # seconds
 MAX_READ_TIMEOUT = 180  # seconds
 summit = "https://summit-lsp.lsst.codes"
 usdf = "https://usdf-rsp-dev.slac.stanford.edu"
@@ -67,21 +67,30 @@ def all_endpoints(server):
     return list(endpoints)
 
 
-def validate_response(response, endpoint_url, verbose=False):
+def invalid_response(response, endpoint_url, timeout=None, verbose=False):
+    """Return error string if invalid, else return None"""
     if verbose:
-        print(f"DEBUG validate_response {endpoint_url=}")
+        print(f"DEBUG invalid_response {endpoint_url=}")
     if response.ok:
-        return True
+        return None
     else:
-        msg = f"{endpoint_url=} {response.status_code=} {response.reason}"
+        msg = f"{endpoint_url=} {timeout=} "
+        msg += f"{response.status_code=} {response.reason}"
         try:
             msg += f" {response.json()}"
         except Exception as err:
             msg += f" {response.text}; {str(err)}"
-        if verbose:
-            print(f"DEBUG validate_response ERROR {msg=}")
 
-        raise ex.StatusError(msg)
+        if verbose:
+            print(f"DEBUG invalid_response ERROR {msg=}")
+
+        # We want to continue when one source gets errors because
+        # other sources may not.
+        # raise ex.StatusError(msg)
+        rep.display_error(msg)
+        msg2 = "".join(traceback.format_stack(limit=4))
+        rep.display_error(msg2)
+        return msg
 
 
 class SourceAdapter(ABC):
@@ -152,7 +161,7 @@ class SourceAdapter(ABC):
         qparams = dict(limit=2)  # API requires > 1 !
         url = f"{endpoint}?{urlencode(qparams)}"
         response = requests.get(url, timeout=self.timeout)
-        validate_response(response, url)
+        invalid_response(response, url, timeout=self.timeout)
         return response.status_code
 
     def get_status(self, endpoint=None):
@@ -235,12 +244,14 @@ class SourceAdapter(ABC):
         for ep in self.endpoints:
             url = f"{self.server}/{self.service}/{ep}"
             try:
-                r = requests.get(url, timeout=(timeout or self.timeout))
-                validate_response(r, url)
+                to = timeout or self.timeout
+                response = requests.get(url, timeout=to)
+                if invalid_response(response, url, timeout=to):
+                    url_http_status_code[url] = "GET error"
             except Exception:
                 url_http_status_code[url] = "GET error"
             else:
-                url_http_status_code[url] = r.status_code
+                url_http_status_code[url] = response.status_code
         return url_http_status_code, all(
             [v == 200 for v in url_http_status_code.values()]
         )
@@ -422,7 +433,8 @@ class NightReportAdapter(SourceAdapter):
                 print(f"DBG get_records qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
             response = requests.get(url, timeout=self.timeout)
-            validate_response(response, url)
+            if invalid_response(response, url, timeout=self.timeout):
+                break
             page = response.json()
             if self.verbose:
                 print(f"DBG get_records {len(page)=} {len(recs)=}")
@@ -631,7 +643,8 @@ class NarrativelogAdapter(SourceAdapter):
             if self.verbose:
                 print(f"Using {url=}")
             response = requests.get(url, timeout=self.timeout)
-            validate_response(response, url)
+            if invalid_response(response, url, timeout=self.timeout):
+                break
             page = response.json()
             recs += page
             if len(page) < self.limit:
@@ -737,10 +750,6 @@ class ExposurelogAdapter(SourceAdapter):
                         print(f"add_exposure_flag_to_exposures {rec=}")
                 new_recs.append(new_rec)
             self.exposures[instrument] = new_recs
-            print(
-                f"DEBUG add_exposure_flag {instrument=} "
-                f'{set([r["exposure_flag"] for r in new_recs])}'
-            )
         return count
 
     @property
@@ -869,12 +878,14 @@ class ExposurelogAdapter(SourceAdapter):
             qstr = "?instrument=na" if ep == "exposures" else ""
             url = f"{self.server}/{self.service}/{ep}{qstr}"
             try:
-                r = requests.get(url, timeout=to)
-                validate_response(r, url)
+                response = requests.get(url, timeout=to)
+                err = invalid_response(response, url, timeout=to)
+                if err:
+                    url_http_status_code[url] = err
             except Exception:
                 url_http_status_code[url] = "GET error"
             else:
-                url_http_status_code[url] = r.status_code
+                url_http_status_code[url] = response.status_code
                 allgood_p = all([v == 200 for v in url_http_status_code.values()])
         return url_http_status_code, allgood_p
 
@@ -883,9 +894,17 @@ class ExposurelogAdapter(SourceAdapter):
         recs = dict(dummy=[])
         error = None
         # try:
-        r = requests.get(url, timeout=self.timeout)
-        validate_response(r, url)
-        recs = r.json()
+        response = requests.get(url, timeout=self.timeout)
+        err = invalid_response(response, url, timeout=self.timeout)
+        if err:
+            status = dict(
+                endpoint_url=url,
+                number_of_records=len(recs),
+                error=err,
+            )
+            return status
+
+        recs = response.json()
         # except Exception as err:
         #     error = str(err)
         # else:
@@ -930,7 +949,8 @@ class ExposurelogAdapter(SourceAdapter):
                 print(f"DBG get_exposures qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
             response = requests.get(url, timeout=self.timeout)
-            validate_response(response, url)
+            if invalid_response(response, url, timeout=self.timeout):
+                break
             page = response.json()
             recs += page
             if self.verbose:
@@ -1008,7 +1028,8 @@ class ExposurelogAdapter(SourceAdapter):
                 print(f"DBG get_records qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
             response = requests.get(url, timeout=self.timeout)
-            validate_response(response, url)
+            if invalid_response(response, url, timeout=self.timeout):
+                break
             page = response.json()
             recs += page
             if len(page) < self.limit:

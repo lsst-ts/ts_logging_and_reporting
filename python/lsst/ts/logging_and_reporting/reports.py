@@ -23,7 +23,7 @@ from abc import ABC
 from urllib.parse import urlparse
 
 import pandas as pd
-from IPython.display import Markdown, display
+from IPython.display import HTML, Markdown, display
 
 
 def md(markdown_str, color=None, background=None):
@@ -74,6 +74,16 @@ def mdpathlink(url, remove="/browse/"):
 
 def mdfragmentlink(url, remove="!/"):
     return f"[{urlparse(url).fragment.replace(remove, '')}]({url})"
+
+
+def display_error(text, fgcolor="black", bgcolor="red", size="1em"):
+    style = ""
+    style += f"color: {fgcolor}; "
+    style += f"background-color: {bgcolor}; "
+    style += f"font-size: {size}; "
+
+    elem = "pre"
+    return display(HTML(f"<{elem} {style=}>{text}</{elem}>"))
 
 
 def htmlcode(text, fgcolor="black", bgcolor="white", size="1em", left=0):

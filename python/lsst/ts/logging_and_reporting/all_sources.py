@@ -25,12 +25,13 @@ import copy
 import datetime as dt
 import itertools
 from collections import Counter, defaultdict
+from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.efd as efd
 import lsst.ts.logging_and_reporting.source_adapters as sad
+import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
-from lsst.ts.logging_and_reporting.utils import hhmmss
 
 
 class AllSources:
@@ -48,7 +49,7 @@ class AllSources:
     ):
         self.verbose = verbose
         self.exclude_instruments = exclude_instruments or []
-
+        ut.tic()
         # Load data for all needed sources for the selected dayobs range.
         self.nig_src = sad.NightReportAdapter(
             server_url=server_url,
@@ -87,6 +88,8 @@ class AllSources:
         self.min_date = self.nig_src.min_date
         self.max_dayobs = self.nig_src.max_dayobs
         self.min_dayobs = self.nig_src.min_dayobs
+        if verbose:
+            print(f"Loaded data from sources in {ut.toc():0.1f} seconds")
 
     # END init
 
@@ -122,8 +125,8 @@ class AllSources:
         if len(used_instruments) == 0:
             return {
                 "": {
-                    "Total night": hhmmss(total_observable_hrs),
-                    "Idle time": hhmmss(total_observable_hrs),
+                    "Total night": ut.hhmmss(total_observable_hrs),
+                    "Idle time": ut.hhmmss(total_observable_hrs),
                 }
             }
         if verbose:
@@ -146,20 +149,10 @@ class AllSources:
         #         f"using date range {self.min_date} to {self.max_date}. "
         #     )
 
+        # Merlin might add this to consdb or efd .... eventually
         num_slews = 0
         total_slew_seconds = 0
         mean_slew = 0
-
-        # ## TODO remove
-        # if targets.empty:
-        #     num_slews = 0
-        #     total_slew_seconds = 0
-        #     mean_slew = 0
-        # else:
-        #     num_slews = targets[["slewTime"]
-        #         ].astype(bool).sum(axis=0).squeeze()
-        #     total_slew_seconds = targets[["slewTime"]].sum().squeeze()
-        #     mean_slew = slew_hrs / num_slews
 
         # per Merlin: There is no practical way to get actual detector read
         # time.  He has done some experiments and inferred that it is
@@ -188,17 +181,17 @@ class AllSources:
             )
 
             instrument_tally[instrument] = {
-                "Total Night": hhmmss(total_observable_hrs),  # (a)
-                "Total Exposure": hhmmss(exposure_hrs),  # (b)
-                "Slew time(1)": hhmmss(slew_hrs),  # (g)
-                "Readout time(2)": hhmmss(detector_hrs),  # (e)
+                "Total Night": ut.hhmmss(total_observable_hrs),  # (a)
+                "Total Exposure": ut.hhmmss(exposure_hrs),  # (b)
+                "Slew time(1)": ut.hhmmss(slew_hrs),  # (g)
+                "Readout time(2)": ut.hhmmss(detector_hrs),  # (e)
                 "Time loss to fault": "NA",
                 "Time loss to weather": "NA",
-                "Idle time": hhmmss(idle_hrs),  # (i=a-b-e-g)
+                "Idle time": ut.hhmmss(idle_hrs),  # (i=a-b-e-g)
                 "Number of exposures": num_exposures,  # (c)
                 "Mean readout time": mean_detector_hrs,  # (f=e/c)
                 "Number of slews(1)": num_slews,  # (d)
-                "Mean Slew time(1)": hhmmss(mean_slew),  # (g/d)
+                "Mean Slew time(1)": ut.hhmmss(mean_slew),  # (g/d)
             }
 
         # Composition to combine Exposure and Efd (blackboard)
@@ -268,9 +261,6 @@ class AllSources:
             day_tl[day]["weather"] = sum(
                 [r["time_lost"] for r in day_grp if "weather" == r["time_lost_type"]]
             )
-            # TODO remove
-            # for type, type_grp in itertools.groupby(day_grp, key=lost_type):
-            #     day_tl[day][type] = sum([r["time_lost"] for r in type_grp])
         return day_tl
 
     def get_observation_gaps(self):
@@ -324,38 +314,37 @@ class AllSources:
 
         pass
 
-    # TODO remove
-    # def tally_exposure_flags(self, instrument):
-    #     # ... make sure we have counts for all three
-    #     tally = Counter(good=0, questionable=0, junk=0)
-    #     tally.update([r["exposure_flag"]
-    #         for r in self.exp_src.messages[instrument]])
-    #     df = pd.DataFrame.from_dict(tally, orient="index").T
-    #     return df  # .style.hide(axis="index")
-
     @property
     def urls(self):
         return self.nar_src.urls | self.exp_src.urls
 
-    # TODO remove print DEBUG
-    def flag_count_exposures(self, instrument, fieldname):
+    def flag_count_exposures(self, instrument, field_name):
+        def gen_link(field_value, text):
+            oneday = dt.timedelta(days=1)
+            qparams = {
+                "day_obs": ut.datetime_to_dayobs(self.max_date - oneday),
+                "number_of_days": (self.max_date - self.min_date).days,
+                "instrument": instrument,
+                field_name: field_value,
+            }
+            url = f"{self.server_url}/times-square/github/"
+            url += "lsst-ts/ts_logging_and_reporting/ExposureDetail"
+            url += f"?{urlencode(qparams)}"
+            return f"<a href={url}>{field_name}</a>"
+
         records = self.exp_src.exposures[instrument]
 
-        # fieldname: observation_type, observation_reason, science_program
-        field_values = {r[fieldname] for r in records}
+        # field_name: observation_type, observation_reason, science_program
+        field_values = {r[field_name] for r in records}
         # Values of rec["exposure_flag"]
         eflag_values = ["good", "questionable", "junk", "unknown"]
-        # print(f'DEBUG flag_count_exposures {fieldname=}')
-        # print(f'DEBUG flag_count_exposures {field_values=}')
-        # print(f'DEBUG flag_count_exposures {eflag_values=}')
         table_recs = dict()
         for field in field_values:
             for eflag in eflag_values:
-                # print(f'DEBUG  flag_count {field=} {eflag=}')
                 # Initialize to zeros
                 counter = Counter({f: 0 for f in eflag_values})
                 counter.update(
-                    [r["exposure_flag"] for r in records if r[fieldname] == field]
+                    [r["exposure_flag"] for r in records if r[field_name] == field]
                 )
             counter.update(dict(total=counter.total()))
             table_recs[field] = counter
