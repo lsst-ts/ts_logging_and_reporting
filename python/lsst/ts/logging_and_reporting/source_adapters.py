@@ -67,7 +67,7 @@ def all_endpoints(server):
     return list(endpoints)
 
 
-def invalid_response(response, endpoint_url, timeout=None, verbose=False):
+def OBSOLETE_invalid_response(response, endpoint_url, timeout=None, verbose=False):
     """Return error string if invalid, else return None"""
     if verbose:
         print(f"DEBUG invalid_response {endpoint_url=}")
@@ -149,8 +149,46 @@ class SourceAdapter(ABC):
         assert self.min_date < self.max_date
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
 
+    def protected_get(self, url, timeout=None):
+        """Do a GET against an API url.
+        Do NOT stop processing when we have a problem with a URL. There
+        have been cases where the problem has been with
+        connectivity or API functioning. We want to process as many of our
+        sources as possible even if one or more fail.  But we want to
+        KNOW that we had a problem so we can report it to someone.
+
+        RETURN: If the GET works well: ok=True, result=json
+        RETURN: If the GET is bad: ok=False, result=error_msg_string
+        """
+        ok = True
+        code = 200
+        timeout = timeout or self.timeout
+        if self.verbose:
+            print(f"DEBUG protected_get({url=},{timeout=})")
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as err:
+            # Invalid URL?, etc.
+            ok = False
+            code = err.response.status_code
+            result = f"Error getting data from API at {url}. "
+            result += str(err)
+        except requests.exceptions.ConnectionError as err:
+            # No VPN? Broken API?
+            ok = False
+            code = None
+            result = f"Error connecting to {url} (with timeout={timeout}). "
+            result += str(err)
+        else:  # No exception. Could something else be wrong?
+            result = response.json()
+
+        if self.verbose and not ok:
+            print(f"DEBUG protected_get: FAIL: {result=}")
+        return ok, result, code
+
     def hack_reconnect_after_idle(self):
-        """Do a dummy query to a serivce to force a DB reconnect.
+        """Do a dummy query to a service to force a DB reconnect.
 
         When a connection has been idle for some time, it disconnects
         such that the following API call returns zero records. This
@@ -161,9 +199,10 @@ class SourceAdapter(ABC):
         endpoint = f"{self.server}/{self.service}/{self.primary_endpoint}"
         qparams = dict(limit=2)  # API requires > 1 !
         url = f"{endpoint}?{urlencode(qparams)}"
-        response = requests.get(url, timeout=self.timeout)
-        invalid_response(response, url, timeout=self.timeout)
-        return response.status_code
+        try:
+            requests.get(url, timeout=self.timeout)
+        except Exception:
+            pass  # this is a hack to force reconnect. Response irrelevent.
 
     def get_status(self, endpoint=None):
         return self.status.get(endpoint or self.primary_endpoint)
@@ -235,24 +274,19 @@ class SourceAdapter(ABC):
             used.append(f"{self.server}/{self.service}/{ep}")
         return used
 
-    def check_endpoints(self, timeout=None, verbose=True):
+    def check_endpoints(self, verbose=True):
+        self.hack_reconnect_after_idle()
         if verbose:
-            msg = "Try connect to each endpoint of "
+            msg = f"Try to connect ({self.timeout=}) to each endpoint of "
             msg += f"{self.server}/{self.service} "
             print(msg)
 
         url_http_status_code = dict()
         for ep in self.endpoints:
             url = f"{self.server}/{self.service}/{ep}"
-            try:
-                to = timeout or self.timeout
-                response = requests.get(url, timeout=to)
-                if invalid_response(response, url, timeout=to):
-                    url_http_status_code[url] = "GET error"
-            except Exception:
-                url_http_status_code[url] = "GET error"
-            else:
-                url_http_status_code[url] = response.status_code
+            ok, result, status_code = self.protected_get(url)
+            url_http_status_code[url] = status_code if ok else "GET error"
+
         return url_http_status_code, all(
             [v == 200 for v in url_http_status_code.values()]
         )
@@ -424,34 +458,29 @@ class NightReportAdapter(SourceAdapter):
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
 
-        error = None
-        response = None
         url = None
         recs = []
-        # try:
         while len(recs) <= maximum_record_limit:
             if self.verbose:
                 print(f"DBG get_records qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
-            response = requests.get(url, timeout=self.timeout)
-            if invalid_response(response, url, timeout=self.timeout):
+            ok, result, code = self.protected_get(url)
+            if not ok:  # failure
+                status = dict(
+                    endpoint_url=url,
+                    number_of_records=None,
+                    error=result,
+                )
                 break
-            page = response.json()
-            if self.verbose:
-                print(f"DBG get_records {len(page)=} {len(recs)=}")
-                recs += page
+            page = result
+            recs += page
+            status = dict(endpoint_url=url, number_of_records=len(recs), error=None)
             if len(page) < self.limit:
                 break  # we defintely got all we asked for
             qparams["offset"] += len(page)
-
-        self.keep_fields(recs, self.outfields)
+        # END: while
 
         self.records = recs
-        status = dict(
-            endpoint_url=url,
-            number_of_records=len(recs),
-            error=error,
-        )
         if recs and self.verbose:
             print(f"DBG get_records-2 {len(page)=} {len(recs)=}")
             print(f"DBG get_records-2 {len(self.records)=} {status=}")
@@ -633,31 +662,33 @@ class NarrativelogAdapter(SourceAdapter):
 
         error = None
         recs = []
-        # try:
         while len(recs) <= maximum_record_limit:
             url = f"{endpoint}?{urlencode(qparams)}"
             if self.verbose:
-                print(f"Using {url=}")
-            response = requests.get(url, timeout=self.timeout)
-            if invalid_response(response, url, timeout=self.timeout):
+                print(f"DBG get_records qstr: {urlencode(qparams)}")
+            ok, result, code = self.protected_get(url)
+            if not ok:  # failure
+                status = dict(
+                    endpoint_url=url,
+                    number_of_records=None,
+                    error=result,
+                )
                 break
-            page = response.json()
+            page = result
             recs += page
+            status = dict(
+                endpoint_url=url,
+                number_of_records=len(recs),
+                error=error,
+            )
+
             if len(page) < self.limit:
                 break  # we defintely got all we asked for
             qparams["offset"] += len(page)
-            # except Exception as err:
-            #     recs = []
-            #     error = str(err)
+        # END: while
 
-        self.keep_fields(recs, self.outfields)
-        pam.markup_errors(recs)
         self.records = recs
-        status = dict(
-            endpoint_url=url,
-            number_of_records=len(recs),
-            error=error,
-        )
+        pam.markup_errors(recs)
         return status
 
     # END: class NarrativelogAdapter
@@ -862,48 +893,37 @@ class ExposurelogAdapter(SourceAdapter):
         else:
             return pd.DataFrame()
 
-    def check_endpoints(self, timeout=None, verbose=True):
-        to = timeout or self.timeout
+    def check_endpoints(self, verbose=True):
+        self.hack_reconnect_after_idle()
         if verbose:
-            msg = "Try connect to each endpoint of "
+            msg = "Try to connect ({self.timeout=}) to each endpoint of "
             msg += f"{self.server}/{self.service} "
             print(msg)
-            url_http_status_code = dict()
 
+        url_http_status_code = dict()
         for ep in self.endpoints:
             qstr = "?instrument=na" if ep == "exposures" else ""
             url = f"{self.server}/{self.service}/{ep}{qstr}"
-            try:
-                response = requests.get(url, timeout=to)
-                err = invalid_response(response, url, timeout=to)
-                if err:
-                    url_http_status_code[url] = err
-            except Exception:
-                url_http_status_code[url] = "GET error"
-            else:
-                url_http_status_code[url] = response.status_code
-                allgood_p = all([v == 200 for v in url_http_status_code.values()])
-        return url_http_status_code, allgood_p
+            ok, result, status_code = self.protected_get(url)
+            url_http_status_code[url] = status_code if ok else "GET error"
+
+        return url_http_status_code, all(
+            [v == 200 for v in url_http_status_code.values()]
+        )
 
     def get_instruments(self):
         url = f"{self.server}/{self.service}/instruments"
         recs = dict(dummy=[])
-        error = None
-        # try:
-        response = requests.get(url, timeout=self.timeout)
-        err = invalid_response(response, url, timeout=self.timeout)
-        if err:
+        ok, result, code = self.protected_get(url)
+        if not ok:
             status = dict(
                 endpoint_url=url,
-                number_of_records=len(recs),
-                error=err,
+                number_of_records=None,
+                error=result,
             )
             return status
 
-        recs = response.json()
-        # except Exception as err:
-        #     error = str(err)
-        # else:
+        recs = result
         self.instruments = {
             instrum: int(reg.replace("butler_instruments_", ""))
             for reg, inst_list in recs.items()
@@ -912,7 +932,7 @@ class ExposurelogAdapter(SourceAdapter):
         status = dict(
             endpoint_url=url,
             number_of_records=len(recs),
-            error=error,
+            error=None,
         )
         return status
 
@@ -938,27 +958,29 @@ class ExposurelogAdapter(SourceAdapter):
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         recs = []
-        error = None
-        # try:
         while len(recs) <= maximum_record_limit:
             if self.verbose:
                 print(f"DBG get_exposures qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
-            response = requests.get(url, timeout=self.timeout)
-            if invalid_response(response, url, timeout=self.timeout):
+            ok, result, code = self.protected_get(url)
+            if not ok:  # failure
+                status = dict(
+                    endpoint_url=url,
+                    number_of_records=None,
+                    error=result,
+                )
                 break
-            page = response.json()
+            page = result
             recs += page
-            if self.verbose:
-                print(f"DBG get_exposures {len(page)=} {len(recs)=}")
+            status = dict(
+                endpoint_url=url,
+                number_of_records=len(recs),
+                error=None,
+            )
             if len(page) < self.limit:
                 break  # we defintely got all we asked for
             qparams["offset"] += len(page)
-        # except Exception as err:
-        #     error = str(err)
-
-        # #! sprogram  = rec.get("science_program")
-        # #! progstr = sprogram if sprogram else ' '
+        # END: while
 
         for r in recs:
             r["exposure_flag"] = None
@@ -972,12 +994,6 @@ class ExposurelogAdapter(SourceAdapter):
             ).total_seconds()
             rec["exposure_time"] = exp_secs
             self.exposures_lut[rec["obs_id"]] = rec
-
-        status = dict(
-            endpoint_url=url,
-            number_of_records=len(recs),
-            error=error,
-        )
         return status
 
     def get_records(
@@ -1023,18 +1039,20 @@ class ExposurelogAdapter(SourceAdapter):
             if self.verbose:
                 print(f"DBG get_records qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
-            response = requests.get(url, timeout=self.timeout)
-            if invalid_response(response, url, timeout=self.timeout):
+            ok, result, code = self.protected_get(url)
+            if not ok:  # failure
+                status = dict(
+                    endpoint_url=url,
+                    number_of_records=None,
+                    error=result,
+                )
                 break
-            page = response.json()
+            page = result
             recs += page
+            status = dict(endpoint_url=url, number_of_records=len(recs), error=None)
             if len(page) < self.limit:
                 break  # we defintely got all we asked for
             qparams["offset"] += len(page)
-        # except Exception as err:
-        #     error = str(err)
-
-        self.keep_fields(recs, self.outfields)
 
         # Change exposure_flag to avoid confusion with python None type
         for rec in recs:

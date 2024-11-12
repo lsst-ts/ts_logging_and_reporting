@@ -69,7 +69,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
             for adapter in self.adapters:
                 service = adapter(server_url=server)
                 service.verbose = verbose
-                stats, aag = service.check_endpoints(timeout=timeout)
+                stats, aag = service.check_endpoints()
                 url_status.update(stats)
             server_all_good &= aag  # adapter all good
             if server_all_good:
