@@ -838,7 +838,7 @@ class ExposurelogAdapter(SourceAdapter):
                             links = ", ".join(plinks)
                             linkstr = "" if links == "" else f"\n    - Links: {links}"
 
-                    # BLACK workaround
+                    # (BLACK workaround)
                     str = ""
                     str += f"* {attrstr}"
                     str += f"\n    - {flag}`{msg}`" f"{linkstr}"
