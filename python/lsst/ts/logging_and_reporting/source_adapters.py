@@ -583,11 +583,11 @@ class NarrativelogAdapter(SourceAdapter):
                 attrstr += f" Time Lost: {rec.get('time_lost')};"
                 attrstr += f" Time Lost Type: {rec.get('time_lost_type')};"
                 new = rec.get("error_message")
+                mdstr = ""
                 if new:
                     msg = new
                 else:
                     msg = rep.htmlcode(rec["message_text"].strip())
-                    mdstr = ""
                     mdstr += f"- {attrstr}"
                 for fname in show_fields:
                     mdstr += f"\n    - {fname}: {rec.get(fname)}"
