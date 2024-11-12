@@ -318,19 +318,30 @@ class AllSources:
     def urls(self):
         return self.nar_src.urls | self.exp_src.urls
 
+    # WARNING: This combines CONTENT and PRESENTATION.
     def flag_count_exposures(self, instrument, field_name):
-        def gen_link(field_value, text):
+        def gen_url(field_value):
             oneday = dt.timedelta(days=1)
             qparams = {
                 "day_obs": ut.datetime_to_dayobs(self.max_date - oneday),
                 "number_of_days": (self.max_date - self.min_date).days,
                 "instrument": instrument,
-                field_name: field_value,
+                field_name: field_value,  # e.g. science_program: BLOCK-T215
             }
             url = f"{self.server_url}/times-square/github/"
             url += "lsst-ts/ts_logging_and_reporting/ExposureDetail"
             url += f"?{urlencode(qparams)}"
-            return f"<a href={url}>{field_name}</a>"
+            return url
+
+        def gen_link(field_value):
+            return f"<a href={gen_url(field_value)}>{field_value}</a>"
+
+        def gen_link_row(row):
+            field_value = row["Field Value"]
+            return f"<a href={gen_url(field_value)}>{field_value}</a>"
+
+        def mapper(field_value):
+            return gen_url(field_value)
 
         records = self.exp_src.exposures[instrument]
 
@@ -338,7 +349,7 @@ class AllSources:
         field_values = {r[field_name] for r in records}
         # Values of rec["exposure_flag"]
         eflag_values = ["good", "questionable", "junk", "unknown"]
-        table_recs = dict()
+        table_recs = defaultdict(dict)
         for field in field_values:
             for eflag in eflag_values:
                 # Initialize to zeros
@@ -346,12 +357,13 @@ class AllSources:
                 counter.update(
                     [r["exposure_flag"] for r in records if r[field_name] == field]
                 )
-            counter.update(dict(total=counter.total()))
-            table_recs[field] = counter
-
+            table_recs[field]["Detail"] = gen_link(field)
+            table_recs[field].update(dict(counter))
+            # User want this?: counter.update(dict(total=counter.total()))
         if table_recs:
             df = pd.DataFrame.from_records(
-                list(table_recs.values()), index=list(table_recs.keys())
+                list(table_recs.values()),
+                index=list(table_recs.keys()),
             )
             df.sort_index(inplace=True)
         else:
