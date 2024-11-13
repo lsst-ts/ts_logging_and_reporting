@@ -180,8 +180,9 @@ class AlmanacReport(Report):
         display(df.style.hide(axis="columns", subset=None))
 
     def almanac_as_dataframe(self):
-        # This display superfluous header: "0, 1"
-        return pd.DataFrame(self.source_adapter.as_dict).T
+        return pd.DataFrame.from_records(
+            self.source_adapter.as_dict, index=["UTC", "Comment"]
+        ).T.sort_values("UTC")
 
 
 class NightlyLogReport(Report):

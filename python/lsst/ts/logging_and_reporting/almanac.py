@@ -26,7 +26,7 @@ class Almanac(SourceAdapter):
     ):
         super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
 
-        dayobs = self.min_dayobs
+        dayobs = self.max_dayobs  # min_dayobs
         # Allow formats: int, YYYY-MM-DD, YYYYMMDD
         dobs = str(dayobs).replace("-", "")
         astro_day = dt.datetime.strptime(dobs, "%Y%m%d").date()
@@ -99,33 +99,45 @@ class Almanac(SourceAdapter):
 
     @property
     def as_dict(self):
+        moon_rise_time = Time(self.moon_rise_time, precision=0).iso
+        moon_set_time = Time(self.moon_set_time, precision=0).iso
+        ast_twilight_morning = Time(self.ast_twilight_morning, precision=0).iso
+        ast_twilight_evening = Time(self.ast_twilight_evening, precision=0).iso
+        astro_midnight = Time(self.astro_midnight, precision=0).iso
+        nau_twilight_morning = Time(self.nau_twilight_morning, precision=0).iso
+        nau_twilight_evening = Time(self.nau_twilight_evening, precision=0).iso
+        civ_twilight_morning = Time(self.civ_twilight_morning, precision=0).iso
+        civ_twilight_evening = Time(self.civ_twilight_evening, precision=0).iso
+        sun_rise_time = Time(self.sun_rise_time, precision=0).iso
+        sun_set_time = Time(self.sun_set_time, precision=0).iso
+
         data_dict = {
-            "": "(times in UTC)",
-            "Moon Rise": self.moon_rise_time.iso,
-            "Moon Set": self.moon_set_time.iso,
+            "": " (times in UTC)",
+            "Moon Rise": moon_rise_time,
+            "Moon Set": moon_set_time,
             "Moon Illumination": f"{self.moon_illum:.0%}",
-            "Astronomical Twilight (morning)": self.ast_twilight_morning.iso,
-            "Astronomical Twilight (evening)": self.ast_twilight_evening.iso,
-            "Solar Midnight": self.astro_midnight.iso,
-            "Nautical Twilight (morning)": self.nau_twilight_morning.iso,
-            "Nautical Twilight (evening)": self.nau_twilight_evening.iso,
-            "Civil Twilight (morning)": self.civ_twilight_morning.iso,
-            "Civil Twilight (evening)": self.civ_twilight_evening.iso,
-            "Sun Rise": self.sun_rise_time.iso,
-            "Sun Set": self.sun_set_time.iso,
+            "Morning Astronomical Twilight": ast_twilight_morning,
+            "Evening Astronomical Twilight": ast_twilight_evening,
+            "Solar Midnight": astro_midnight,
+            "Morning Nautical Twilight": nau_twilight_morning,
+            "Evening Nautical Twilight": nau_twilight_evening,
+            "Morning Civil Twilight": civ_twilight_morning,
+            "Evening Civil Twilight": civ_twilight_evening,
+            "Sun Rise": sun_rise_time,
+            "Sun Set": sun_set_time,
         }
         help_dict = {
             "": "",
             "Moon Set": "",
             "Moon Rise": "",
             "Moon Illumination": "(% illuminated)",
-            "Astronomical Twilight (evening)": "(-18 degrees)",
-            "Astronomical Twilight (morning)": "(-18 degrees)",
+            "Morning Astronomical Twilight": "(-18 degrees)",
+            "Evening Astronomical Twilight": "(-18 degrees)",
             "Solar Midnight": "",
-            "Nautical Twilight (evening)": "(-12 degrees)",
-            "Nautical Twilight (morning)": "(-12 degrees)",
-            "Civil Twilight (evening)": "(-6 degrees)",
-            "Civil Twilight (morning)": "(-6 degrees)",
+            "Morning Nautical Twilight": "(-12 degrees)",
+            "Evening Nautical Twilight": "(-12 degrees)",
+            "Morning Civil Twilight": "(-6 degrees)",
+            "Evening Civil Twilight": "(-6 degrees)",
             "Sun Set": "",
             "Sun Rise": "",
         }
