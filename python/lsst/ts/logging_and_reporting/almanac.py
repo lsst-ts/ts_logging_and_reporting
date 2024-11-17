@@ -2,6 +2,7 @@ import datetime as dt
 import warnings
 
 import astropy.coordinates
+import pytz
 from astroplan import Observer
 from astropy.time import Time
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
@@ -99,6 +100,14 @@ class Almanac(SourceAdapter):
 
     @property
     def as_dict(self):
+        def local(astropytime):
+            tz = pytz.timezone("Chile/Continental")
+            return (
+                astropytime.to_datetime(timezone=tz)
+                .replace(microsecond=0, tzinfo=None)
+                .isoformat(sep=" ")
+            )
+
         moon_rise_time = Time(self.moon_rise_time, precision=0).iso
         moon_set_time = Time(self.moon_set_time, precision=0).iso
         ast_twilight_morning = Time(self.ast_twilight_morning, precision=0).iso
@@ -112,7 +121,7 @@ class Almanac(SourceAdapter):
         sun_set_time = Time(self.sun_set_time, precision=0).iso
 
         data_dict = {
-            "": " (times in UTC)",
+            "": "(UTC time)",
             "Moon Rise": moon_rise_time,
             "Moon Set": moon_set_time,
             "Moon Illumination": f"{self.moon_illum:.0%}",
@@ -125,6 +134,21 @@ class Almanac(SourceAdapter):
             "Evening Civil Twilight": civ_twilight_evening,
             "Sun Rise": sun_rise_time,
             "Sun Set": sun_set_time,
+        }
+        local_dict = {
+            "": "(local time)",
+            "Moon Rise": local(moon_rise_time),
+            "Moon Set": local(moon_set_time),
+            "Moon Illumination": local(f"{self.moon_illum:.0%}"),
+            "Morning Astronomical Twilight": local(ast_twilight_morning),
+            "Evening Astronomical Twilight": local(ast_twilight_evening),
+            "Solar Midnight": local(astro_midnight),
+            "Morning Nautical Twilight": local(nau_twilight_morning),
+            "Evening Nautical Twilight": local(nau_twilight_evening),
+            "Morning Civil Twilight": local(civ_twilight_morning),
+            "Evening Civil Twilight": local(civ_twilight_evening),
+            "Sun Rise": local(sun_rise_time),
+            "Sun Set": local(sun_set_time),
         }
         help_dict = {
             "": "",
@@ -141,4 +165,4 @@ class Almanac(SourceAdapter):
             "Sun Set": "",
             "Sun Rise": "",
         }
-        return data_dict, help_dict
+        return data_dict, help_dict, local_dict
