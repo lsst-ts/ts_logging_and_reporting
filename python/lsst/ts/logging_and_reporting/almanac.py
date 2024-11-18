@@ -111,8 +111,14 @@ class Almanac(SourceAdapter):
         sun_rise_time = Time(self.sun_rise_time, precision=0).iso
         sun_set_time = Time(self.sun_set_time, precision=0).iso
 
+        # Maybe it we should add a column of times for the Dome.
+        # It would make it easier to do some kinds of sanity checks.
+        # Then again, it might confuse the issues.
+        # It depends on who will be looking this the most.
+        # Observers in the Dome? People elsewhere?
+
         data_dict = {
-            "": " (times in UTC)",
+            "": "UTC",
             "Moon Rise": moon_rise_time,
             "Moon Set": moon_set_time,
             "Moon Illumination": f"{self.moon_illum:.0%}",
