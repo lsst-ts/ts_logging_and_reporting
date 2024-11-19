@@ -157,7 +157,7 @@ class AllSources:
         # per Merlin: There is no practical way to get actual detector read
         # time.  He has done some experiments and inferred that it is
         # 2.3 seconds.  He recommends hardcoding the value.
-        mean_detector_hrs = 2.3 / (60 * 60.0)
+        mean_readout_hrs = 2.3 / (60 * 60.0)
 
         # Scot says care only about: ComCam, LSSTCam and  Latiss
         for instrument in used_instruments:
@@ -169,27 +169,27 @@ class AllSources:
                 begin = dt.datetime.fromisoformat(rec["timespan_begin"])
                 end = dt.datetime.fromisoformat(rec["timespan_end"])
                 exposure_seconds += (end - begin).total_seconds()
-            detector_hrs = len(records) * mean_detector_hrs
+            detector_hrs = len(records) * mean_readout_hrs
 
             exposure_hrs = exposure_seconds / (60 * 60.0)
             slew_hrs = total_slew_seconds / (60 * 60.0)
-            idle_hrs = (
-                total_observable_hrs
-                - exposure_hrs
-                # - detector_read_hrs
-                - slew_hrs
-            )
+            idle_hrs = total_observable_hrs - exposure_hrs - detector_hrs - slew_hrs
+
+            # These need join between exposures and messages.
+            # But they aren't reliable numbers anyhow.
+            loss_fault = 0  # hours
+            loss_weather = 0  # hours
 
             instrument_tally[instrument] = {
                 "Total Night": ut.hhmmss(total_observable_hrs),  # (a)
                 "Total Exposure": ut.hhmmss(exposure_hrs),  # (b)
                 "Slew time(1)": ut.hhmmss(slew_hrs),  # (g)
                 "Readout time(2)": ut.hhmmss(detector_hrs),  # (e)
-                "Time loss to fault": "NA",
-                "Time loss to weather": "NA",
+                "Time loss to fault": loss_fault,
+                "Time loss to weather": loss_weather,
                 "Idle time": ut.hhmmss(idle_hrs),  # (i=a-b-e-g)
                 "Number of exposures": num_exposures,  # (c)
-                "Mean readout time": mean_detector_hrs,  # (f=e/c)
+                "Mean readout time": ut.hhmmss(mean_readout_hrs),  # (f=e/c)
                 "Number of slews(1)": num_slews,  # (d)
                 "Mean Slew time(1)": ut.hhmmss(mean_slew),  # (g/d)
             }
