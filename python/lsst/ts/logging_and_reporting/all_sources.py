@@ -157,7 +157,9 @@ class AllSources:
         # per Merlin: There is no practical way to get actual detector read
         # time.  He has done some experiments and inferred that it is
         # 2.3 seconds.  He recommends hardcoding the value.
-        mean_readout_hrs = 2.3 / (60 * 60.0)
+        # Scot says use 2.41 per slack message in consolidated DB
+        readout_seconds = 2.41
+        mean_readout_hrs = readout_seconds / (60 * 60.0)
 
         # Scot says care only about: ComCam, LSSTCam and  Latiss
         for instrument in used_instruments:

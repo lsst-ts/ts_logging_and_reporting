@@ -16,13 +16,6 @@ parameters:
       TODAY, YESTERDAY) You probably want YESTERDAY. A value of TODAY
       means the last night shown will be the one that starts tonight.`
     default: "YESTERDAY"
-  number_of_days:
-    type: integer
-    description: >
-      Number of days (nights) to show in the report.
-    default: 1
-    minimum: 1
-    maximum: 9
   instrument:
     type: string
     description: >

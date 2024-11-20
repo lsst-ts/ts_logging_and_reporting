@@ -1,4 +1,5 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
+from urllib.parse import urlencode
 from warnings import warn
 
 import lsst.ts.logging_and_reporting.source_adapters as sad
@@ -28,6 +29,53 @@ class Dashboard:  # TODO Move to its own file (utils.py).
         sad.NarrativelogAdapter,
         sad.ExposurelogAdapter,
     ]
+
+    def keep_fields(self, recs, outfields):
+        """Keep only keys in OUTFIELDS list of RECS (list of dicts)
+        SIDE EFFECT: Removes extraneous keys from all dicts in RECS.
+        """
+        if (recs is None) or (len(recs) < 1):
+            return None
+        if not outfields:
+            return None
+
+        nukefields = set(recs[0].keys()) - set(outfields)
+        for rec in recs:
+            nukefields = set(rec.keys()) - set(outfields)
+            for f in nukefields:
+                del rec[f]
+
+    def get_big_sample(self, endpoint, samples, fields):
+        timeout = (5.05, 120)  # connection, read timeouts (secs)
+        qparams = dict(
+            limit=samples,
+        )
+        url = f"{endpoint}?{urlencode(qparams)}"
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        records = response.json()
+        self.keep_fields(records, fields)
+        return records
+
+    def nr_values(self, samples):
+        cset = set()
+        sset = set()
+        hset = set()
+        histo = Counter()
+
+        for idx, r in enumerate(samples):
+            if r.get("components"):
+                cset.update(r.get("components", []))
+            if r.get("primary_software_components"):
+                sset.update(r.get("primary_software_components", []))
+            if r.get("primary_hardware_components"):
+                hset.update(r.get("primary_hardware_components", []))
+
+            histo.update(r.get("components", []))
+            histo.update(r.get("primary_software_components", []))
+            histo.update(r.get("primary_hardware_components", []))
+
+        return (cset | sset | hset), histo
 
     def get_sample_data(self, server):
 

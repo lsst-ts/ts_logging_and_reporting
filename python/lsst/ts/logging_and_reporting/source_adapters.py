@@ -595,22 +595,21 @@ class NarrativelogAdapter(SourceAdapter):
 
         table = list()
 
-        show_fields = [
-            "components",
-            "primary_software_components",
-            "primary_hardware_components",
-        ]
-
         # Sort by OBS_NIGHT
         recs = sorted(recs, key=obs_night)
         # time_lost_type=weather is RARE
         for tele, g0 in itertools.groupby(recs, key=obs_night):
             for rec in g0:
-                rec_dt = dt.datetime.fromisoformat(rec[datetime_field])
+                rec_dt = str(dt.datetime.fromisoformat(rec[datetime_field]))[:16]
+
                 attrstr = ""
                 attrstr += f"**{rec_dt}**"
-                attrstr += f" Time Lost: {rec.get('time_lost')};"
-                attrstr += f" Time Lost Type: {rec.get('time_lost_type')};"
+                if rec.get("components"):
+                    attrstr += "   **" + ", ".join(rec.get("components", [])) + "** "
+
+                if rec.get("time_lost", 0) > 0:
+                    attrstr += f" Time Lost: {rec.get('time_lost')};"
+                    attrstr += f" Time Lost Type: {rec.get('time_lost_type')};"
                 new = rec.get("error_message")
                 mdstr = ""
                 if new:
@@ -618,8 +617,6 @@ class NarrativelogAdapter(SourceAdapter):
                 else:
                     msg = rep.htmlcode(rec["message_text"].strip())
                     mdstr += f"- {attrstr}"
-                for fname in show_fields:
-                    mdstr += f"\n    - {fname}: {rec.get(fname)}"
 
                 mdstr += "\n\n" + msg + "\n"
                 table.append(mdstr)
@@ -825,18 +822,18 @@ class ExposurelogAdapter(SourceAdapter):
 
                 attrstr = f"{obsid} : {rec[datetime_field]}"
                 for rec in obs_list:
-                    match rec.get("exposure_flag"):
-                        case "junk":
-                            flag = rep.htmlbad
-                        case "questionable":
-                            flag = rep.htmlquestion
-                        case _:  # "none", the literal string in API!
-                            # value changed to "good" in adapter after read
-                            flag = rep.htmlgood
-                            msg = rec["message_text"].strip()
-                            plinks = [rep.mdpathlink(url) for url in rec.get("urls")]
-                            links = ", ".join(plinks)
-                            linkstr = "" if links == "" else f"\n    - Links: {links}"
+                    eflag = rec.get("exposure_flag")
+                    if eflag == "junk":
+                        flag = rep.htmlbad
+                    elif eflag == "questionable":
+                        flag = rep.htmlquestion
+                    else:  # "none", the literal string in API!
+                        # value changed to "good" in adapter after read
+                        flag = rep.htmlgood
+                    msg = rec["message_text"].strip()
+                    plinks = [rep.mdpathlink(url) for url in rec.get("urls")]
+                    links = ", ".join(plinks)
+                    linkstr = "" if links == "" else f"\n    - Links: {links}"
 
                     # (BLACK workaround)
                     str = ""
@@ -854,6 +851,7 @@ class ExposurelogAdapter(SourceAdapter):
         observation_reason=None,
     ):
         fields = [
+            "exposure_flag",  # joined from exposures.messages
             "obs_id",
             "timespan_begin",  # 'time',
             "seq_num",
