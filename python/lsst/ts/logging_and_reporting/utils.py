@@ -33,6 +33,43 @@ import time
 # in a Database or API query string.
 
 
+def fallback_parameters(day_obs, number_of_days, verbose):
+    """Given parameters from Times Square, return usable versions of
+    all parameters.  If the provide parameters are not usable, return
+    default usable ones.
+    """
+    day_obs_fb = "YESTERDAY"  # Fall Back value
+    days_fb = 1
+    message = ""
+
+    try:
+        # dayobs(str): YYYY-MM-DD, YYYYMMDD, TODAY, YESTERDAY
+        get_datetime_from_dayobs_str(day_obs)  # ignore result
+    except Exception as err:
+        message += f"""\nInvalid day_obs given: {day_obs!r}
+        Available values are: YYYY-MM-DD, YYYYMMDD, TODAY, YESTERDAY.
+        Using: {day_obs_fb!r}\n{str(err)!r}
+        """
+        day_obs = day_obs_fb
+
+    try:
+        days = int(number_of_days)
+    except Exception as err:
+        days = days_fb
+        message += f"""\nInvalid number_of_days given: {number_of_days!r}
+        Must be an integer.
+        Using: {days}\n{str(err)!r}
+        """
+
+    to_use = dict(
+        day_obs=day_obs,
+        number_of_days=days,
+        verbose=(verbose == "true"),
+    )
+
+    return to_use, message
+
+
 class DatetimeIter:
     def __init__(self, start_datetime, stop_datetime, increment=None):
         """increment:: datetime.timedelta"""
