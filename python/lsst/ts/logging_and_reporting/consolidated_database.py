@@ -20,6 +20,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+import os
+
 import matplotlib.pyplot as plt
 
 try:
@@ -40,6 +42,8 @@ class ConsDbConnection:
         self.day_obs = day_obs
         self.day_obs_int = int(day_obs.replace("-", ""))
         self.client = ConsDbClient(url) if have_consdb else None
+        os.environ["no_proxy"] += ",.consdb"
+        # Something about token from consdb usage page needs to happen
 
     def query_visit(self, instrument: str, type: str = "visit1"):
         """Query visit1 and visit1_quicklook tables and join the data on
