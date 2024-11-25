@@ -141,12 +141,11 @@ class Report(ABC):
         status = adapter.get_status()
         count = status["number_of_records"]
         error = status["error"]
-        more = "(There may be more.)" if count >= adapter.limit else ""
         result = error if error else f"Got {count} records. "
 
         print(md(f"### Overview for Service: `{adapter.service}` [{count}]"))
         print(md(f'- Endpoint: {status["endpoint_url"]}'))
-        print(f"- {result} {more}")
+        print(f"- {result}")
 
     def time_log_as_markdown(self, zero_message=True):
         """Emit markdown for a date-time log."""
