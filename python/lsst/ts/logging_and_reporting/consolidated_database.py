@@ -25,7 +25,7 @@ import os
 import matplotlib.pyplot as plt
 
 try:
-    from lsst.summit.utils import ConsDbClient
+    from lsst.summit.utils import ConsDbClient as CDBc
 
     have_consdb = True
 except Exception as error:
@@ -33,7 +33,7 @@ except Exception as error:
     print(f"{error = }")
 
 
-class ConsDbConnection:
+class ConsDbAdapter:
     """Create and manage the connection to the Consolidated Database
     including knowledge of the schemas and instruments"""
 
@@ -41,7 +41,7 @@ class ConsDbConnection:
         self.url = url
         self.day_obs = day_obs
         self.day_obs_int = int(day_obs.replace("-", ""))
-        self.client = ConsDbClient(url) if have_consdb else None
+        self.client = CDBc(url) if have_consdb else None
         os.environ["no_proxy"] += ",.consdb"
         # Something about token from consdb usage page needs to happen
 
@@ -50,7 +50,8 @@ class ConsDbConnection:
         visit_id, type can also be ccdvisit1"""
         visit1 = f"""SELECT * FROM cdb_{instrument}.{type}
              where day_obs = {self.day_obs_int}"""
-        ccdvisit1_quicklook = f"SELECT * FROM cdb_{instrument}.{type}_quicklook"
+        ccdvisit1_quicklook = f"""SELECT * FROM
+                                cdb_{instrument}.{type}_quicklook"""
 
         try:
             visits = self.client.query(visit1)
@@ -96,7 +97,7 @@ def make_plots(day_obs, instruments=["latiss, lsstcomcamsim, lsstcomcam"]):
     URL = "http://consdb-pq.consdb:8080/consdb"
 
     for instrument in instruments:
-        db_client = ConsDbConnection(URL, day_obs)
+        db_client = ConsDbAdapter(URL, day_obs)
         visits = db_client.query_visit(instrument=instrument)
         exposures = db_client.query_exposure(instrument=instrument)
         if visits:
