@@ -149,7 +149,51 @@ class SourceAdapter(ABC):
         assert self.min_date < self.max_date
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
 
-    def protected_get(self, url, timeout=None):
+    def protected_post(self, url, jsondata, token=None, timeout=None):
+        """Do a POST against an API url.
+        Do NOT stop processing when we have a problem with a URL. There
+        have been cases where the problem has been with
+        connectivity or API functioning. We want to process as many of our
+        sources as possible even if one or more fail.  But we want to
+        KNOW that we had a problem so we can report it to someone.
+
+        RETURN: If the POST works well: ok=True, result=json
+        RETURN: If the POST is bad: ok=False, result=error_msg_string
+        """
+        ok = True
+        code = 200
+        timeout = timeout or self.timeout
+        if self.verbose:
+            print(f"DEBUG protected_post({url=},{timeout=})")
+        try:
+            auth = ("user", token)
+            response = requests.post(url, json=jsondata, auth=auth, timeout=timeout)
+            if self.verbose:
+                print(
+                    f"DEBUG protected_post({url=},{auth=},{timeout=}) => "
+                    f"{response.status_code=} {response.reason}"
+                )
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as err:
+            # Invalid URL?, etc.
+            ok = False
+            code = err.response.status_code
+            result = f"Error getting data from API at {url}. "
+            result += str(err)
+        except requests.exceptions.ConnectionError as err:
+            # No VPN? Broken API?
+            ok = False
+            code = None
+            result = f"Error connecting to {url} (with timeout={timeout}). "
+            result += str(err)
+        else:  # No exception. Could something else be wrong?
+            result = response.json()
+
+        if self.verbose and not ok:
+            print(f"DEBUG protected_post: FAIL: {result=}")
+        return ok, result, code
+
+    def protected_get(self, url, token=None, timeout=None):
         """Do a GET against an API url.
         Do NOT stop processing when we have a problem with a URL. There
         have been cases where the problem has been with
@@ -163,10 +207,16 @@ class SourceAdapter(ABC):
         ok = True
         code = 200
         timeout = timeout or self.timeout
+        auth = ("user", token)
         if self.verbose:
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
-            response = requests.get(url, timeout=timeout)
+            response = requests.get(url, auth=auth, timeout=timeout)
+            if self.verbose:
+                print(
+                    f"DEBUG protected_get({url=},{auth=},{timeout=}) => "
+                    f"{response.status_code=} {response.reason}"
+                )
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
             # Invalid URL?, etc.
