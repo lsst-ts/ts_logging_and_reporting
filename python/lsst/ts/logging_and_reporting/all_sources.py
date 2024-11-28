@@ -28,6 +28,7 @@ from collections import Counter, defaultdict
 from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.almanac as alm
+import lsst.ts.logging_and_reporting.consdb as cdb
 import lsst.ts.logging_and_reporting.efd as efd
 import lsst.ts.logging_and_reporting.source_adapters as sad
 import lsst.ts.logging_and_reporting.utils as ut
@@ -78,7 +79,11 @@ class AllSources:
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
         )
-        # This space for rent by ConsDB
+        self.cdb_src = cdb.ConsdbAdapter(
+            server_url=server_url,
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+        )
 
         self.server_url = server_url
 

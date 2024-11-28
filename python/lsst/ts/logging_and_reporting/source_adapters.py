@@ -179,13 +179,15 @@ class SourceAdapter(ABC):
             ok = False
             code = err.response.status_code
             result = f"Error getting data from API at {url}. "
-            result += str(err)
+            result += f"{jsondata=} {timeout=} "
+            result += f"; {str(err)}."
         except requests.exceptions.ConnectionError as err:
             # No VPN? Broken API?
             ok = False
             code = None
-            result = f"Error connecting to {url} (with timeout={timeout}). "
-            result += str(err)
+            result = f"Error connecting to {url}. "
+            result += f"{jsondata=} {timeout=} "
+            result += f"; {str(err)}."
         else:  # No exception. Could something else be wrong?
             result = response.json()
 

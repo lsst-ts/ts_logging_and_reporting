@@ -3,6 +3,7 @@
 import os
 from collections import defaultdict
 
+import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 
@@ -53,7 +54,8 @@ class ConsdbAdapter(SourceAdapter):
 
         self.instruments = list()
         self.tables = defaultdict(list)  # tables[instrument]=>[tab1, ...]
-        self.schemas = defaultdict(dict)  # schemas[instrum][fname]=[type,dflt]
+        # schemas[instrum][table][fname] => [type,dflt]
+        self.schemas = defaultdict(dict)
         self.load_schemas()
 
     # get schemas to facilitate generation of SQL
@@ -98,7 +100,7 @@ class ConsdbAdapter(SourceAdapter):
             if self.verbose:
                 print(f"Loaded {self.tables[instrument]=}")
 
-        # get schemas[instrument][fname] => [type,default]
+        # get schemas[instrum][table][fname] => [type,dflt]
         if self.verbose:
             print("Loading schema: fields [instrument][table]")
         for instrument in self.instruments:
@@ -125,7 +127,7 @@ class ConsdbAdapter(SourceAdapter):
     def query(self, sql):
         url = f"{self.server}/{self.service}/query"
         if self.verbose:
-            print(f"DEBUG query: {url=}")
+            print(f"DEBUG query: {url=} {sql=}")
         qdict = dict(query=sql)
         ok, result, code = self.protected_post(url, qdict, token=self.token)
         if not ok:  # failure
@@ -139,6 +141,16 @@ class ConsdbAdapter(SourceAdapter):
         records = result
         return pd.DataFrame.from_records(records["data"], columns=records["columns"])
 
+    @property
+    def all_available_fields(self):
+        # schemas[instrum][table][fname]=[type,dflt]
+        return [  # instrument/tablename/fieldname
+            "/".join([instrum, tname, fname])
+            for instrum, tables in self.schemas.items()
+            for tname, fields in tables.items()
+            for fname in fields.keys()
+        ]
+
     def get_sample_of_each(self, day_obs):
         instrument = self.instruments[0]
         exposure_sql = (
@@ -147,11 +159,45 @@ class ConsdbAdapter(SourceAdapter):
         s1 = self.query(exposure_sql)
         return s1
 
-    def get_exposures(self, day_obs, instrument="lsstcomcam"):
-        outfields = "exposure_id,day_obs," "seq_num,exp_time,shut_time,dark_time"
+    def get_exposures(self, instrument="lsstcomcam"):
+        # DM-47573
+        outfields = [
+            "air_temp",
+            # 'ccd_temp',   # Does not exist (yet?)
+            "airmass",
+            #
+            # Coordinates
+            "altitude",  # also *_start, *_end
+            "azimuth",  # also *_start, *_end
+            "sky_rotation",
+            "s_ra",
+            "s_dec",
+            # 'camera_rotation_angle',  # Does not exist (yet?)
+            #
+            "band",
+            "dimm_seeing",
+            "exposure_id",
+            "exposure_name",
+            #
+            # These are in ccdvisit1_quicklook, not exposure
+            #   'sky_bg_median',   # not in exposure
+            #   'seeing_zenith_500nm_median',  # also *_min,*_max
+            #   'psf_trace_radius_delta_median',  # not in LATISS
+            #   'high_snr_source_count_median',
+            #   'zero_point_median',
+            #
+            # Extras
+            "day_obs",
+            "seq_num",
+            "exp_time",
+            "shut_time",
+            "dark_time",
+        ]
+        columns = ", ".join(outfields)
         sql = (
-            f"SELECT  {outfields}  "
+            f"SELECT  {columns}  "
             f"FROM cdb_{instrument}.exposure "
-            f"WHERE day_obs = {day_obs}"
+            f"WHERE {ut.dayobs_int(self.min_dayobs)} <= day_obs "
+            f"AND day_obs < {ut.dayobs_int(self.max_dayobs)}"
         )
         return self.query(sql)
