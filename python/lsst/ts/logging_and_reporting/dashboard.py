@@ -77,11 +77,10 @@ class Dashboard:  # TODO Move to its own file (utils.py).
 
         return (cset | sset | hset), histo
 
-    def get_sample_data(self, server):
-
+    def get_sample_data(self, server, count=1):
         samples = defaultdict(dict)  # samples[endpoint_url] -> one_record_dict
         for adapter in self.adapters:
-            sa = adapter(server_url=server, limit=1)
+            sa = adapter(server_url=server, limit=count)
             for ep in sa.endpoints:
                 qstr = "?instrument=LSSTComCamSim" if ep == "exposures" else ""
                 url = f"{server}/{sa.service}/{ep}{qstr}"
@@ -91,7 +90,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                     if isinstance(recs, dict):
                         samples[url] = recs
                     else:
-                        samples[url] = recs[0]
+                        samples[url] = recs[0:count]
                 except Exception as err:
                     # Made following more complicated to get around
                     # comboniation of BLACK re-write and FLAKE8

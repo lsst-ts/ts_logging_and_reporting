@@ -647,7 +647,8 @@ class NarrativelogAdapter(SourceAdapter):
 
         table = list()
 
-        # Sort by OBS_NIGHT
+        # Sort by OBS_NIGHT within that by date_added (datetime)
+        recs = sorted(recs, key=obs_date)
         recs = sorted(recs, key=obs_night)
         # time_lost_type=weather is RARE
         for tele, g0 in itertools.groupby(recs, key=obs_night):
@@ -657,7 +658,8 @@ class NarrativelogAdapter(SourceAdapter):
                 attrstr = ""
                 attrstr += f"**{rec_dt}**"
                 if rec.get("components"):
-                    attrstr += "   **" + ", ".join(rec.get("components", [])) + "** "
+                    complist = ", ".join(rec.get("components", []))
+                    attrstr += f"   **{complist}**"
 
                 if rec.get("time_lost", 0) > 0:
                     attrstr += f" Time Lost: {rec.get('time_lost')};"
