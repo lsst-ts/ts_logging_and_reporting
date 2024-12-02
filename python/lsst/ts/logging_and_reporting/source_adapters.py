@@ -397,7 +397,8 @@ class NightReportAdapter(SourceAdapter):
     default_record_limit = 100  # Adapter specific default
     service = "nightreport"
     endpoints = ["reports"]
-    primary_endpoint = "reports"
+    primary_endpoint = "reports"  # for time-log
+    log_dt_field = "date_added"
 
     def __init__(
         self,
@@ -581,6 +582,7 @@ class NarrativelogAdapter(SourceAdapter):
         "messages",
     ]
     primary_endpoint = "messages"
+    log_dt_field = "date_added"
 
     def __init__(
         self,
@@ -647,7 +649,7 @@ class NarrativelogAdapter(SourceAdapter):
 
         table = list()
 
-        # Sort by OBS_NIGHT within that by date_added (datetime)
+        # Sort by OBS_NIGHT within that by OBS_DATE (datetime)
         recs = sorted(recs, key=obs_date)
         recs = sorted(recs, key=obs_night)
         # time_lost_type=weather is RARE
@@ -775,6 +777,7 @@ class ExposurelogAdapter(SourceAdapter):
         "messages",
     ]
     primary_endpoint = "messages"
+    log_dt_field = "date_added"
 
     def __init__(
         self,

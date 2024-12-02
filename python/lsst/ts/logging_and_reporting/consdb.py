@@ -26,6 +26,9 @@ class ConsdbAdapter(SourceAdapter):
         "query",  # POST dict(query)=sql_string
     ]
     primary_endpoint = "NA"
+    # join cdb_lsstcomcam.exposure/exposure_name
+    #   to exposurelog/exposures.obs_id
+    log_dt_field = "day_obs"
 
     def __init__(
         self,

@@ -15,10 +15,15 @@ import datetime as dt
 import os
 
 import lsst.ts.logging_and_reporting.utils as ut
+import nest_asyncio
 import pandas as pd
 from astropy.time import Time, TimeDelta
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 from lsst_efd_client import EfdClient
+
+nest_asyncio.apply()
+
+# from lsst.summit.utils.efdUtils import getEfdData, getTopics, makeEfdClient
 
 
 class EfdAdapter(SourceAdapter):
@@ -45,8 +50,10 @@ class EfdAdapter(SourceAdapter):
         match self.server_url:
             case ut.Server.summit:
                 self.client = EfdClient("summit_efd")
+                # #!self.client = makeEfdClient()
             case ut.Server.usdf:
                 self.client = EfdClient("usdf_efd")
+                # #!self.client = makeEfdClient()
                 os.environ["RUBIN_SIM_DATA_DIR"] = (
                     "/sdf/data/rubin/shared/rubin_sim_data"
                 )

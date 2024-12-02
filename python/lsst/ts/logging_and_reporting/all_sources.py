@@ -70,16 +70,18 @@ class AllSources:
             max_dayobs=max_dayobs,
             verbose=verbose,
         )
-        self.alm_src = alm.Almanac(
-            min_dayobs=min_dayobs,
-            max_dayobs=max_dayobs,
-        )
-        self.efd_src = efd.EfdAdapter(
+        self.cdb_src = cdb.ConsdbAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
         )
-        self.cdb_src = cdb.ConsdbAdapter(
+
+        self.alm_src = alm.Almanac(
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+        )
+        # EfdClient is async so using it means its async to the top!
+        self.efd_src = efd.EfdAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
@@ -97,6 +99,33 @@ class AllSources:
             print(f"Loaded data from sources in {ut.toc():0.1f} seconds")
 
     # END init
+
+    # see also:
+    #   ~/sandbox/logrep/python/lsst/ts/logging_and_reporting/time_logs.py
+    #   pandas.merge_asof
+    #   pandas.timedelta_range
+    def get_sources_time_logs(self):
+        """A time_log is a list of records (dicts) ordered by datetime."""
+        datefld = self.nig_src.log_dt_field
+        index = [ut.date_hr_min(r[datefld]) for r in self.nig_src.records]
+        nig_df = pd.DataFrame(self.nig_src.records, index=index)
+
+        datefld = self.exp_src.log_dt_field
+        index = [ut.date_hr_min(r[datefld]) for r in self.exp_src.records]
+        exp_df = pd.DataFrame(self.exp_src.records, index=index)
+
+        datefld = self.nar_src.log_dt_field
+        index = [ut.date_hr_min(r[datefld]) for r in self.nar_src.records]
+        nar_df = pd.DataFrame(self.nar_src.records, index=index)
+
+        # self.cdb_src
+        # merge_index = sorted(set(itertools.chain(nig_df.index,
+        #                                          exp_df.index,
+        #                                          nar_df.index,
+        #                                          )))
+        return nig_df, exp_df, nar_df
+
+    # nig_df, exp_df, nar_df = allsrc.get_sources_time_logs()
 
     @property
     def dayobs_range(self):

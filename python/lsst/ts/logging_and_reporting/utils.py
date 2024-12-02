@@ -33,6 +33,10 @@ import time
 # in a Database or API query string.
 
 
+def date_hr_min(iso_dt_str):
+    return str(dt.datetime.fromisoformat(iso_dt_str))[:16]
+
+
 def fallback_parameters(day_obs, number_of_days, verbose):
     """Given parameters from Times Square, return usable versions of
     all parameters.  If the provide parameters are not usable, return
@@ -130,14 +134,17 @@ def dayobs_str(dayobs: int) -> str:
 
 # dayobs str (YYYY-MM-DD) to dayobs int
 def dayobs_int(dayobs: str) -> int:
-    return int(dayobs.replace("-", ""))
+    return int(str(dayobs).replace("-", ""))
 
 
 # dayobs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
 # Allow TODAY, YESTERDAY, TOMORROW
 # was: dos2dt
-def get_datetime_from_dayobs_str(dayobs):
-    match dayobs.lower():
+def get_datetime_from_dayobs_str(dayobs, local_noon=None):
+    if local_noon is None:  # Clock time of Local Noon expressed in UTC
+        local_noon = dt.time(12)
+    sdayobs = str(dayobs)
+    match sdayobs.lower():
         case "today":
             date = dt.datetime.now().date()
         case "yesterday":
@@ -145,9 +152,9 @@ def get_datetime_from_dayobs_str(dayobs):
         case "tomorrow":
             date = dt.datetime.now().date() + dt.timedelta(days=1)
         case _:
-            no_dash = dayobs.replace("-", "")
+            no_dash = sdayobs.replace("-", "")
             date = dt.datetime.strptime(no_dash, "%Y%m%d").date()
-    return dt.datetime.combine(date, dt.time(12))
+    return dt.datetime.combine(date, local_noon)
 
 
 dayobs2dt = get_datetime_from_dayobs_str
