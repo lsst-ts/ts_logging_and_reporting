@@ -4,8 +4,11 @@ import random
 
 import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
+from jinja2 import Template
 
 """\
+Single Unified Time Log (SUTL="subtle").
+
 Isolate management of multiple timelogs.
 
 We define a timelog as a list of records (dicts) that contain a
@@ -119,6 +122,23 @@ def gen_timelog_frame(dayobs, noon="12:00", freq="20min"):
     return df, dr
 
 
+def merge_sources(allsrc):
+    sources = allsrc.get_sources_time_logs()
+    print(
+        f"Loaded sources with record counts: {[len(s) for s in sources]} "
+        "(nig, exp, nar)"
+    )
+    nig_df, exp_df, nar_df = sources
+    df = pd.DataFrame([dict(Time=ut.get_datetime_from_dayobs_str(allsrc.min_dayobs))])
+    if not nig_df.empty:
+        df = merge_to_timelog(df, nig_df, "date_added", suffixes=(None, "_NIG"))
+    if not exp_df.empty:
+        df = merge_to_timelog(df, exp_df, "date_added", suffixes=(None, "_EXP"))
+    if not nar_df.empty:
+        df = merge_to_timelog(df, nar_df, "date_added", suffixes=(None, "_NAR"))
+    return df
+
+
 def merge_to_timelog(left_df, right_df, right_date, suffixes=("_x", "_y")):
     right_df["Time"] = right_df[right_date].apply(dt.datetime.fromisoformat)
     right_df.sort_values(by="Time", inplace=True)
@@ -143,44 +163,145 @@ def merge_all(date="2024-12-01", freq="20min"):
     return df
 
 
+def exposure_quality(v):
+    if v == "good":
+        return "+"
+    elif v == "questionable":
+        return "?"
+    elif v == "junk":
+        return "X"
+    return "NA"
+
+
+def sutl_style(styler):
+    styler.format(exposure_quality)
+    styler.format(precision=1)
+    # styler.format_index(lambda v: v.strftime("%A"))
+    # styler.background_gradient(axis=None, vmin=1, vmax=5, cmap="YlGnBu")
+    return styler
+
+
+# white-space: pre-wrap;
+# vertical-align: text-top;
+#    background-color: coral;
+
+
+# for reduced DF
+def render_reduced_df(df):
+    template_str = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+    th,td {
+        text-align: left;
+        vertical-align: text-top;
+    }
+    </style>
+</head>
+<body>
+    <table>
+        <tr>
+            <th>Period</th>
+            <th>Quality</th>
+            <th>Time Lost</th>
+            <th>Lost Type</th>
+        </tr>
+    </table>
+
+    {% for index, row in df.iterrows() %}
+    <table>
+        <tr>
+            <th>{{ index }}</th>
+            <td>{{ row['exposure_flag'] }}</td>
+            <td>{{ row['time_lost'] }}</td>
+            <td>{{ row['time_lost_type'] }}</td>
+        </tr>
+    </table>
+    <p><b>SUMMARY: </b>{{ row['message_text'] }}</p>
+    <p><b>NARRATIVE: </b>{{ row['message_text_NAR'] }}</p>
+    {% endfor %}
+
+</body>
+</html>
+"""
+    return Template(template_str).render(df=df)  # HTML
+
+
+def remove_list_columns(df):
+    """Removes columns from a DataFrame that contain lists."""
+
+    columns_to_drop = []
+    for col in df.columns:
+        if any(isinstance(x, list) for x in df[col]):
+            columns_to_drop.append(col)
+
+    return df.drop(columns_to_drop, axis=1), columns_to_drop
+
+
 # compact results of merge_all()
-# Lossless
-# 21 => 99 with sources A,B, and C
-def compact(full_df):
+# Started out Lossless.
+#   With allow_data_loss=True, remove useless/problematic columns.
+#   Also, see: remove_list_columns()
+# Cell Values that are lists cause problems in pd.drop_duplicates()
+def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
     df = full_df.copy()
     exclude_cols = [
+        "day_obs",
+        "day_obs_EXP",
         "id",
-        "observers_crew",
+        "id_EXP",
+        "id_NAR",
+        "obs_id",
         "tags",
         "urls",
+        "observers_crew",
+        "instrument",
+        "seq_num",
+        "cscs",
+        "site_id_EXP",
+        "site_id_NAR",
+        "user_id_NAR",
+        "user_agent_NAR",
+        "is_human_NAR",
+        "is_valid_NAR",
+        "parent_id_NAR",
+        "category",
+        "level",
+        "level_NAR",
+        "user_id_EXP",
+        "user_agent_EXP",
+        "is_human",
+        "is_valid_EXP",
     ]
 
     drop_cols = [
         cname
         for cname in df.columns
-        if (
-            cname.startswith("date_")
-            or cname in exclude_cols
-            or cname.startswith("is_")
-            or cname.startswith("id_")
-            or cname.endswith("_id")
-            or cname.startswith("tags_")
-            or cname.startswith("urls_")
-            or cname.startswith("level")
-            or cname.startswith("user_agent_")
-            or cname.endswith("_invalidated")
-            or "components" in cname
-            or "message" in cname
-            or "systems" in cname
-            or "_id_" in cname
-        )
+        if (cname.startswith("date_") or cname in exclude_cols)
     ]
-    print(f"DBG compact: dropping {drop_cols=}\n\n")
-    df.drop(drop_cols, axis=1, inplace=True)
+    if allow_data_loss:
+        if verbose:
+            print(f"DBG compact: {sorted(drop_cols)=}\n\n")
+        df.drop(drop_cols, axis=1, inplace=True)  # DATA LOSS
+        if verbose:
+            print(f"DBG compact: {sorted(df.columns)=}\n\n")
 
-    df["Period"] = df["Time"].apply(lambda x: x.floor("4h").hour)
+        # Remove columns >= 95% NaN
+        val_count = int(0.05 * len(df))
+        df.dropna(thresh=val_count, axis="columns", inplace=True)  # DATA LOSS
+
+    df["Period"] = df["Time"].apply(lambda x: x.floor(delta).hour)
     df.set_index(["Period", "Time"], inplace=True)
-    df.dropna(how="all", inplace=True)
+    df.dropna(how="all", axis="index", inplace=True)
+    df.dropna(how="all", axis="columns", inplace=True)
+    # df = df.fillna('')
+    #   df = ut.wrap_dataframe_columns(df)  # TODO re-enable
+    # Trim whitespace from all columns
+    df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+    df, columns = remove_list_columns(df)  # DATA LOSS
+    if verbose:
+        print(f"WARNING removed {len(columns)} containing list values. {columns=}")
     return (
         df.reset_index()
         .set_index(["Time"])
@@ -196,18 +317,25 @@ def compact(full_df):
 #   is considered to be "don't care".
 
 
-def merge_sources(allsrc):
-    sources = allsrc.get_sources_time_logs()
-    print(
-        f"Loaded sources with record counts: {[len(s) for s in sources]} "
-        "(nig, exp, nar)"
+# Reduce results of compact()
+# + Column specific width (and formatting in general)
+# + ALERT in column 1: function of regular expression in messages
+#   (e.g.: fail, error)
+# + Truncate very log messages. End truncated messages with "(MORE...)"
+# + Replace multiple rows in a period with a single row. And ...
+# + In Period: Replace multi-values in a column with a conctenation
+#   of the unique values.
+def reduce_period(df):
+    def multi_string(group):
+        return "\n\n".join([str(x) for x in set(group) if not pd.isna(x)])
+
+    group_aggregator = dict(
+        message_text=multi_string,
+        exposure_flag=multi_string,
+        message_text_NAR=multi_string,
+        time_lost="sum",  # multi_number,
+        time_lost_type=multi_string,
     )
-    nig_df, exp_df, nar_df = sources
-    df = pd.DataFrame([dict(Time=ut.get_datetime_from_dayobs_str(allsrc.min_dayobs))])
-    if not nig_df.empty:
-        df = merge_to_timelog(df, nig_df, "date_added", suffixes=(None, "_NIG"))
-    if not exp_df.empty:
-        df = merge_to_timelog(df, exp_df, "date_added", suffixes=(None, "_EXP"))
-    if not nar_df.empty:
-        df = merge_to_timelog(df, nar_df, "date_added", suffixes=(None, "_NAR"))
+
+    df = df.groupby(level="Period").agg(group_aggregator)
     return df
