@@ -22,6 +22,8 @@
 import datetime as dt
 import time
 
+import pytz
+
 # NOTE on day_obs vs dayobs:
 # Throughout Rubin, and perhaps Astonomy in general, a single night
 # of observering (both before and after midnight portions) is referred
@@ -34,6 +36,7 @@ import time
 
 
 def date_hr_min(iso_dt_str):
+    # return YYYY-MM-DD HH:MM
     return str(dt.datetime.fromisoformat(iso_dt_str))[:16]
 
 
@@ -140,21 +143,28 @@ def dayobs_int(dayobs: str) -> int:
 # dayobs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
 # Allow TODAY, YESTERDAY, TOMORROW
 # was: dos2dt
-def get_datetime_from_dayobs_str(dayobs, local_noon=None):
-    if local_noon is None:  # Clock time of Local Noon expressed in UTC
-        local_noon = dt.time(12)
+def get_datetime_from_dayobs_str(dayobs):
+    dome_tz = pytz.timezone("Chile/Continental")
+    dome_today_noon = dome_tz.localize(
+        dt.datetime.now().replace(hour=12, minute=0, second=0)
+    )
+
     sdayobs = str(dayobs)
     match sdayobs.lower():
         case "today":
-            date = dt.datetime.now().date()
+            datetime = dome_today_noon
         case "yesterday":
-            date = dt.datetime.now().date() - dt.timedelta(days=1)
+            datetime = dome_today_noon - dt.timedelta(days=1)
         case "tomorrow":
-            date = dt.datetime.now().date() + dt.timedelta(days=1)
+            datetime = dome_today_noon + dt.timedelta(days=1)
         case _:
             no_dash = sdayobs.replace("-", "")
-            date = dt.datetime.strptime(no_dash, "%Y%m%d").date()
-    return dt.datetime.combine(date, local_noon)
+            datetime = dome_tz.localize(
+                dt.datetime.strptime(no_dash, "%Y%m%d").replace(
+                    hour=12, minute=0, second=0
+                )
+            )
+    return datetime.astimezone(pytz.utc)
 
 
 dayobs2dt = get_datetime_from_dayobs_str

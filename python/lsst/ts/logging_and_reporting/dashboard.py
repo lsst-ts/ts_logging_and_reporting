@@ -2,6 +2,7 @@ from collections import Counter, defaultdict
 from urllib.parse import urlencode
 from warnings import warn
 
+import lsst.ts.logging_and_reporting.consdb as cdb
 import lsst.ts.logging_and_reporting.source_adapters as sad
 import requests
 
@@ -28,6 +29,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
         sad.NightReportAdapter,
         sad.NarrativelogAdapter,
         sad.ExposurelogAdapter,
+        cdb.ConsdbAdapter,
     ]
 
     def keep_fields(self, recs, outfields):

@@ -2,6 +2,8 @@ import datetime as dt
 import warnings
 
 import astropy.coordinates
+import pandas as pd
+import pytz
 from astroplan import Observer
 from astropy.time import Time
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
@@ -29,8 +31,15 @@ class Almanac(SourceAdapter):
         dayobs = self.max_dayobs  # min_dayobs
         # Allow formats: int, YYYY-MM-DD, YYYYMMDD
         dobs = str(dayobs).replace("-", "")
+        dome_tz = pytz.timezone("Chile/Continental")
+        self.dome_noon = Time(
+            dome_tz.localize(dt.datetime.strptime(dobs + " 12:00", "%Y%m%d %H:%M"))
+        )
+
         astro_day = dt.datetime.strptime(dobs, "%Y%m%d").date()
         astro_date = dt.datetime.strptime(dobs, "%Y%m%d")
+
+        dome_tz = pytz.timezone("Chile/Continental")
 
         with warnings.catch_warnings(action="ignore"):
             self.loc = astropy.coordinates.EarthLocation.of_site(site)
@@ -97,6 +106,52 @@ class Almanac(SourceAdapter):
         day_delta = self.ast_twilight_morning - self.ast_twilight_evening
         return day_delta.to_value("hr")
 
+    def events(self, localize=False, iso=False):
+        """Sun/Moon datetime in UTC. Use localize=True for Chile time."""
+        events = dict(  # as astropy.Time
+            moon_rise=self.moon_rise_time,
+            moon_set=self.moon_set_time,
+            sunrise_18deg=self.ast_twilight_morning,
+            sunset_18deg=self.ast_twilight_evening,
+            solar_midnight=self.astro_midnight,
+            sunrise_12deg=self.nau_twilight_morning,
+            sunset_12deg=self.nau_twilight_evening,
+            sunrise_6deg=self.civ_twilight_morning,
+            sunset_6deg=self.civ_twilight_evening,
+            sunrise=self.sun_rise_time,
+            sunset=self.sun_set_time,
+            dome_noon=self.dome_noon,
+        )
+
+        if localize:
+            events_dt = {
+                k: self.observer.astropy_time_to_datetime(v) for k, v in events.items()
+            }
+        else:
+            events_dt = {
+                k: v.to_datetime(leap_second_strict="silent") for k, v in events.items()
+            }
+
+        if iso:
+            return {
+                k: v.isoformat(sep=" ", timespec="seconds")
+                for k, v in events_dt.items()
+            }
+        else:
+            return events_dt
+
+    @property
+    def dataframe(self):
+        df = pd.DataFrame(
+            [
+                self.events(localize=True, iso=True),
+                self.events(localize=False, iso=True),
+            ]
+        ).T
+        df.columns = ["UTC", "Chile/Continental"]
+        df.index.name = "event"
+        return df
+
     @property
     def as_dict(self):
         moon_rise_time = Time(self.moon_rise_time, precision=0).iso
@@ -148,3 +203,8 @@ class Almanac(SourceAdapter):
             "Sun Rise": "",
         }
         return data_dict, help_dict
+
+    # A time_log is a DF ordered and indexed with DatetimeIndex.
+    def as_records(self):
+        """Sun/Moon events indexed by UTC (ISO string truncated to seconds)"""
+        return self.dataframe.reset_index().to_dict(orient="records")

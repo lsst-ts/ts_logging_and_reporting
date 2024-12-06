@@ -104,8 +104,8 @@ class SourceAdapter(ABC):
         self,
         *,
         server_url=None,
-        max_dayobs=None,  # EXCLUSIVE: default=TODAY other=YYYY-MM-DD
         min_dayobs=None,  # INCLUSIVE: default=max_dayobs - 1 day
+        max_dayobs=None,  # EXCLUSIVE: default=TODAY other=YYYY-MM-DD
         offset=0,
         limit=None,  # max records to read in one API call
         connect_timeout=5.05,  # seconds

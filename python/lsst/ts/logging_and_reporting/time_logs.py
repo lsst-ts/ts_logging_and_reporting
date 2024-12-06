@@ -122,28 +122,72 @@ def gen_timelog_frame(dayobs, noon="12:00", freq="20min"):
     return df, dr
 
 
+def prefix_columns(df, prefix):
+    return df.rename(columns={cname: prefix + cname for cname in df.columns})
+
+
+# Both DFs must be indexed by DatetimeIndex
+def merge_to_timelog(left_df, right_df, right_dfield, prefix="R_"):
+    right_date = right_dfield
+    # #! right_df["Time"] = right_df.reset_index()[right_date]
+    # #!       .apply(dt.datetime.fromisoformat)
+    # #! right_df.sort_values(by="Time", inplace=True)
+    right_df.sort_index()
+    rdf = prefix_columns(right_df, prefix)
+
+    print(
+        f"""DBG merge_to_timelog-2: {prefix=}
+    {right_date=}
+    {left_df.index=}
+    {left_df.columns=}
+    {rdf.index=}
+    {rdf.columns=}
+    """
+    )
+    # The left_on and right_on columns are expected to contain datetime column
+    # in *_Time
+    df = pd.merge_ordered(
+        left_df, rdf, left_on="UTL_Time", right_on=right_date, how="outer"
+    )
+
+    return df  # left_df for next merge
+
+
+# reduce_period(compact(merge_sources(allsrc)))
 def merge_sources(allsrc):
     sources = allsrc.get_sources_time_logs()
+    alm_df, nig_df, exp_df, nar_df = sources
+    # UTL:: Unified Time Log, prefix for time index across sources
+    datefld = "UTL_Time"
+    utl_records = [
+        {
+            datefld: allsrc.min_dayobs,  # ut.get_datetime_from_dayobs_str(allsrc.min_dayobs),
+            "log": "min",
+        },
+        {
+            datefld: allsrc.max_dayobs,
+            "log": "max",
+        },
+    ]
+    index = pd.DatetimeIndex([r[datefld] for r in utl_records])
+    utl_df = pd.DataFrame(utl_records, index)
     print(
-        f"Loaded sources with record counts: {[len(s) for s in sources]} "
-        "(nig, exp, nar)"
+        f"""DBG merge_sources:
+    {utl_records=}
+    {utl_df.index=}
+    {utl_df=}
+    """
     )
-    nig_df, exp_df, nar_df = sources
-    df = pd.DataFrame([dict(Time=ut.get_datetime_from_dayobs_str(allsrc.min_dayobs))])
+
+    df = utl_df
+    # #!df =     merge_to_timelog(utl_df, alm_df, prefix="ALM_")
     if not nig_df.empty:
-        df = merge_to_timelog(df, nig_df, "date_added", suffixes=(None, "_NIG"))
+        df = merge_to_timelog(df, nig_df, prefix="NIG_")
     if not exp_df.empty:
-        df = merge_to_timelog(df, exp_df, "date_added", suffixes=(None, "_EXP"))
+        df = merge_to_timelog(df, exp_df, prefix="EXP_")
     if not nar_df.empty:
-        df = merge_to_timelog(df, nar_df, "date_added", suffixes=(None, "_NAR"))
-    return df
+        df = merge_to_timelog(df, nar_df, prefix="NAR_")
 
-
-def merge_to_timelog(left_df, right_df, right_date, suffixes=("_x", "_y")):
-    right_df["Time"] = right_df[right_date].apply(dt.datetime.fromisoformat)
-    right_df.sort_values(by="Time", inplace=True)
-
-    df = pd.merge_ordered(left_df, right_df, on="Time", how="outer", suffixes=suffixes)
     return df
 
 
@@ -181,14 +225,7 @@ def sutl_style(styler):
     return styler
 
 
-# white-space: pre-wrap;
-# vertical-align: text-top;
-#    background-color: coral;
-
-
-# for reduced DF
-def render_reduced_df(df):
-    template_str = """
+template_decanted_df = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -203,9 +240,9 @@ def render_reduced_df(df):
     <table>
         <tr>
             <th>Period</th>
-            <th>Quality</th>
-            <th>Time Lost</th>
-            <th>Lost Type</th>
+        {% for col in table_columns %}
+            <th>{{ col }}</th>
+        {% endfor %}
         </tr>
     </table>
 
@@ -213,9 +250,9 @@ def render_reduced_df(df):
     <table>
         <tr>
             <th>{{ index }}</th>
-            <td>{{ row['exposure_flag'] }}</td>
-            <td>{{ row['time_lost'] }}</td>
-            <td>{{ row['time_lost_type'] }}</td>
+            {% for val in row %}
+            <td>{{ val }}</td>
+            {% endfor %}
         </tr>
     </table>
     <p><b>SUMMARY: </b>{{ row['message_text'] }}</p>
@@ -225,17 +262,62 @@ def render_reduced_df(df):
 </body>
 </html>
 """
-    return Template(template_str).render(df=df)  # HTML
+
+# white-space: pre-wrap;
+# vertical-align: text-top;
+#    background-color: coral;
+
+
+def decant_by_column_name(df, nontable_columns):
+    """Partition a DF frame into a dense part and a sparse part.
+    The dense part is stored in a DF.
+    The sparse part is stored in a dict[col] => {elem1, ...}
+    """
+    table_columns = sorted(df.columns)
+    for c in nontable_columns:
+        table_columns.remove(c)
+    dense_df = df[table_columns]
+    sparse_dict = {
+        k: set(v.values()) for k, v in df[nontable_columns].to_dict().items()
+    }
+    return dense_df, sparse_dict
+
+
+def decant_by_density(df, thresh):
+    """Partition a DF frame a dense part and a sparse part.
+    See: decant_by_column_name
+
+    The columns that that are removed from DF are determined
+    by the density THRESH (1- NaN/num_rows).
+    """
+
+    def density():
+        pass  # TODO
+
+    # Remove columns >= 95% NaN
+    val_count = int(0.05 * len(df))
+    df.dropna(thresh=val_count, axis="columns", inplace=True)  # DATA LOSS
+    nontable_columns = []
+    return decant_by_column_name(df, nontable_columns)
+
+
+# for reduced DF
+def render_reduced_df(df, thresh=0.95):
+    dense_df, sparse_dict = decant_by_density(df, thresh)
+    # https://jinja.palletsprojects.com/en/stable/templates/
+    context = dict(
+        df=dense_df,
+        sparse_dict=sparse_dict,
+    )
+    return Template(template_decanted_df).render(**context)
 
 
 def remove_list_columns(df):
     """Removes columns from a DataFrame that contain lists."""
-
     columns_to_drop = []
     for col in df.columns:
         if any(isinstance(x, list) for x in df[col]):
             columns_to_drop.append(col)
-
     return df.drop(columns_to_drop, axis=1), columns_to_drop
 
 
@@ -246,7 +328,7 @@ def remove_list_columns(df):
 # Cell Values that are lists cause problems in pd.drop_duplicates()
 def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
     df = full_df.copy()
-    exclude_cols = [
+    exclude_cols = [  # TODO  REMOVE, calc columns instead of list them
         "day_obs",
         "day_obs_EXP",
         "id",
@@ -291,8 +373,8 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
         val_count = int(0.05 * len(df))
         df.dropna(thresh=val_count, axis="columns", inplace=True)  # DATA LOSS
 
-    df["Period"] = df["Time"].apply(lambda x: x.floor(delta).hour)
-    df.set_index(["Period", "Time"], inplace=True)
+    df["Period"] = df["UTL_Time"].apply(lambda x: x.floor(delta).hour)
+    df.set_index(["Period", "UTL_Time"], inplace=True)
     df.dropna(how="all", axis="index", inplace=True)
     df.dropna(how="all", axis="columns", inplace=True)
     # df = df.fillna('')
@@ -304,10 +386,10 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
         print(f"WARNING removed {len(columns)} containing list values. {columns=}")
     return (
         df.reset_index()
-        .set_index(["Time"])
+        .set_index(["UTL_Time"])
         .drop_duplicates()
         .reset_index()
-        .set_index(["Period", "Time"])
+        .set_index(["Period", "UTL_Time"])
     )
     # return df
 
@@ -336,6 +418,9 @@ def reduce_period(df):
         time_lost="sum",  # multi_number,
         time_lost_type=multi_string,
     )
+    nuke_aggregators = set(list(group_aggregator.keys())) - set(df.columns.to_list())
+    for col in nuke_aggregators:
+        del group_aggregator[col]
 
     df = df.groupby(level="Period").agg(group_aggregator)
     return df

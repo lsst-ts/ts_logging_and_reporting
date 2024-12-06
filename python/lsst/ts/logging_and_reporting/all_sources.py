@@ -100,32 +100,55 @@ class AllSources:
 
     # END init
 
+    def __str__(self):
+        return f"{self.server_url}: {self.min_dayobs}, {self.max_dayobs}"
+
+    def __repr__(self):
+        return (
+            f"AllSources(server_usr={self.server_url!r}, "
+            f"min_dayobs={self.min_dayobs!r}, "
+            f"min_dayobs={self.max_dayobs!r})"
+        )
+
     # see also:
     #   ~/sandbox/logrep/python/lsst/ts/logging_and_reporting/time_logs.py
     #   pandas.merge_asof
     #   pandas.timedelta_range
     def get_sources_time_logs(self):
-        """A time_log is a list of records (dicts) ordered by datetime."""
-        datefld = self.nig_src.log_dt_field
-        index = [ut.date_hr_min(r[datefld]) for r in self.nig_src.records]
-        nig_df = pd.DataFrame(self.nig_src.records, index=index)
+        """A time_log is a DF ordered and indexed with DatetimeIndex."""
 
-        datefld = self.exp_src.log_dt_field
-        index = [ut.date_hr_min(r[datefld]) for r in self.exp_src.records]
-        exp_df = pd.DataFrame(self.exp_src.records, index=index)
+        def recs2df(recs, datefld):
+            # print(f'DBG recs2df: {datefld=} {recs=}')
+            time_idx_name = "Time"
+            # YYYY-MM-DD HH:MM
+            # index = pd.DatetimeIndex([r[datefld][:16] for r in recs])
+            index = [r[datefld][:16] for r in recs]
+            df = pd.DataFrame(recs, index=index)
+            df.index.name = time_idx_name
+            return df
 
-        datefld = self.nar_src.log_dt_field
-        index = [ut.date_hr_min(r[datefld]) for r in self.nar_src.records]
-        nar_df = pd.DataFrame(self.nar_src.records, index=index)
+        # Almanac
+        alm_df = recs2df(self.alm_src.as_records(), "UTC")
 
+        # Night Report
+        nig_df = recs2df(self.nig_src.records, self.nig_src.log_dt_field)
+
+        # ExposureLog
+        exp_df = recs2df(self.exp_src.records, self.exp_src.log_dt_field)
+
+        # NarrativeLog
+        nar_df = recs2df(self.nar_src.records, self.nar_src.log_dt_field)
+
+        # Best time resolution is "day_obs"! Better when available via TAP
         # self.cdb_src
-        # merge_index = sorted(set(itertools.chain(nig_df.index,
-        #                                          exp_df.index,
-        #                                          nar_df.index,
-        #                                          )))
-        return nig_df, exp_df, nar_df
+        return (
+            alm_df,
+            nig_df,
+            exp_df,
+            nar_df,
+        )
 
-    # nig_df, exp_df, nar_df = allsrc.get_sources_time_logs()
+    # alm_df, nig_df, exp_df, nar_df = allsrc.get_sources_time_logs()
 
     @property
     def dayobs_range(self):
@@ -238,6 +261,7 @@ class AllSources:
 
     def records_per_source(self):
         sources = [
+            # self.alm_src,
             self.nig_src,
             self.exp_src,
             self.nar_src,
@@ -272,6 +296,9 @@ class AllSources:
                     )
                 )
         return dstat
+
+    def source_record_counts(self):
+        return {stat["Endpoint"]: stat["Records"] for stat in self.get_data_status()}
 
     def get_time_lost(self, rollup="day"):
         """RETURN dict[dayobs]['fault', 'weather'] => day_time_lost (hours)"""
