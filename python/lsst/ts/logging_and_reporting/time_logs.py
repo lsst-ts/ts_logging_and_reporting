@@ -126,28 +126,24 @@ def prefix_columns(df, prefix):
     return df.rename(columns={cname: prefix + cname for cname in df.columns})
 
 
-# Both DFs must be indexed by DatetimeIndex
-def merge_to_timelog(left_df, right_df, right_dfield, prefix="R_"):
-    right_date = right_dfield
-    # #! right_df["Time"] = right_df.reset_index()[right_date]
-    # #!       .apply(dt.datetime.fromisoformat)
-    # #! right_df.sort_values(by="Time", inplace=True)
+#
+# Both DFs must have DatetimeIndex
+def merge_to_timelog(prefix, tl_df, right_df, right_dfield="Timestamp"):
+    """Merge a source df onto timelog df.
+    prefix:: prepend to all columns of right_df (for provenance)
+    tl_df:: Time Log dataframe
+    """
     right_df.sort_index()
     rdf = prefix_columns(right_df, prefix)
+    print(f"DBG merge_to_timelog: {rdf.index.dtype=}")
 
-    print(
-        f"""DBG merge_to_timelog-2: {prefix=}
-    {right_date=}
-    {left_df.index=}
-    {left_df.columns=}
-    {rdf.index=}
-    {rdf.columns=}
-    """
-    )
     # The left_on and right_on columns are expected to contain datetime column
     # in *_Time
     df = pd.merge_ordered(
-        left_df, rdf, left_on="UTL_Time", right_on=right_date, how="outer"
+        tl_df,
+        rdf,
+        on="Time",
+        how="outer",
     )
 
     return df  # left_df for next merge
@@ -157,36 +153,22 @@ def merge_to_timelog(left_df, right_df, right_dfield, prefix="R_"):
 def merge_sources(allsrc):
     sources = allsrc.get_sources_time_logs()
     alm_df, nig_df, exp_df, nar_df = sources
-    # UTL:: Unified Time Log, prefix for time index across sources
-    datefld = "UTL_Time"
-    utl_records = [
-        {
-            datefld: allsrc.min_dayobs,  # ut.get_datetime_from_dayobs_str(allsrc.min_dayobs),
-            "log": "min",
-        },
-        {
-            datefld: allsrc.max_dayobs,
-            "log": "max",
-        },
-    ]
-    index = pd.DatetimeIndex([r[datefld] for r in utl_records])
-    utl_df = pd.DataFrame(utl_records, index)
-    print(
-        f"""DBG merge_sources:
-    {utl_records=}
-    {utl_df.index=}
-    {utl_df=}
-    """
-    )
 
+    # Frame for Night (Unified Time Log)
+    dates = pd.date_range(allsrc.min_date, allsrc.max_date, freq="4h")
+    utl_df = pd.DataFrame(dates, index=dates, columns=["Time"])
+
+    print(f"DBG merge_sources: {utl_df.index.dtype=} {utl_df=}")
     df = utl_df
     # #!df =     merge_to_timelog(utl_df, alm_df, prefix="ALM_")
     if not nig_df.empty:
-        df = merge_to_timelog(df, nig_df, prefix="NIG_")
+        df = merge_to_timelog("NIG_", df, nig_df)
     if not exp_df.empty:
-        df = merge_to_timelog(df, exp_df, prefix="EXP_")
+        df = merge_to_timelog("EXP_", df, exp_df)
     if not nar_df.empty:
-        df = merge_to_timelog(df, nar_df, prefix="NAR_")
+        df = merge_to_timelog("NAR_", df, nar_df)
+
+    df.set_index(["Time"], inplace=True)
 
     return df
 

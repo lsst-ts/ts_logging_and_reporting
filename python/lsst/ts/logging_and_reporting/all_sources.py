@@ -114,17 +114,23 @@ class AllSources:
     #   ~/sandbox/logrep/python/lsst/ts/logging_and_reporting/time_logs.py
     #   pandas.merge_asof
     #   pandas.timedelta_range
+    #
+    # alm_df, nig_df, exp_df, nar_df = allsrc.get_sources_time_logs()
     def get_sources_time_logs(self):
         """A time_log is a DF ordered and indexed with DatetimeIndex."""
 
+        # Convert datefld column to Timestamp in "Timestamp" column
         def recs2df(recs, datefld):
-            # print(f'DBG recs2df: {datefld=} {recs=}')
+            if len(recs) > 0:
+                print(f"DBG recs2df: {datefld=} {recs[0][datefld]=}")
             time_idx_name = "Time"
             # YYYY-MM-DD HH:MM
-            # index = pd.DatetimeIndex([r[datefld][:16] for r in recs])
-            index = [r[datefld][:16] for r in recs]
+            times = pd.to_datetime([r[datefld] for r in recs], utc=True)
+            index = pd.DatetimeIndex(times)
+
             df = pd.DataFrame(recs, index=index)
             df.index.name = time_idx_name
+            df["Timestamp"] = times
             return df
 
         # Almanac
@@ -147,8 +153,6 @@ class AllSources:
             exp_df,
             nar_df,
         )
-
-    # alm_df, nig_df, exp_df, nar_df = allsrc.get_sources_time_logs()
 
     @property
     def dayobs_range(self):
