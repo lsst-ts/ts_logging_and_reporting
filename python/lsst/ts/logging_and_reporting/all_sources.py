@@ -105,7 +105,7 @@ class AllSources:
 
     def __repr__(self):
         return (
-            f"AllSources(server_usr={self.server_url!r}, "
+            f"AllSources(server_url={self.server_url!r}, "
             f"min_dayobs={self.min_dayobs!r}, "
             f"max_dayobs={self.max_dayobs!r})"
         )
@@ -116,13 +116,11 @@ class AllSources:
     #   pandas.timedelta_range
     #
     # alm_df, nig_df, exp_df, nar_df = allsrc.get_sources_time_logs()
-    def get_sources_time_logs(self):
+    def get_sources_time_logs(self, verbose=False):
         """A time_log is a DF ordered and indexed with DatetimeIndex."""
 
         # Convert datefld column to Timestamp in "Timestamp" column
         def recs2df(recs, datefld):
-            if len(recs) > 0:
-                print(f"DBG recs2df: {datefld=} {recs[0][datefld]=}")
             time_idx_name = "Time"
             # YYYY-MM-DD HH:MM
             times = pd.to_datetime([r[datefld] for r in recs], utc=True)
@@ -135,24 +133,45 @@ class AllSources:
 
         # Almanac
         alm_df = recs2df(self.alm_src.as_records(), "UTC")
+        if verbose:
+            print(f"DBG get_sources_time_logs: {alm_df.shape=}")
 
         # Night Report
         nig_df = recs2df(self.nig_src.records, self.nig_src.log_dt_field)
-
-        # ExposureLog
-        exp_df = recs2df(self.exp_src.records, self.exp_src.log_dt_field)
+        if verbose:
+            print(f"DBG get_sources_time_logs: {nig_df.shape=}")
 
         # NarrativeLog
         nar_df = recs2df(self.nar_src.records, self.nar_src.log_dt_field)
+        if verbose:
+            print(f"DBG get_sources_time_logs: {nar_df.shape=}")
 
-        # Best time resolution is "day_obs"! Better when available via TAP
+        # ExposureLog
+        exp_df = recs2df(self.exp_src.records, self.exp_src.log_dt_field)
+        if verbose:
+            print(f"DBG get_sources_time_logs: {exp_df.shape=}")
+
+        recs = itertools.chain.from_iterable(self.exp_src.exposures.values())
+        exp_detail_df = recs2df(recs, "timespan_begin")
+        if verbose:
+            print(f"DBG get_sources_time_logs: {exp_detail_df.shape=}")
+
         # self.cdb_src
-        return (
-            alm_df,
-            nig_df,
-            exp_df,
-            nar_df,
-        )
+        # The best time resolution is currently "day_obs"! (not good enuf)
+        # This should be better when its available via TAP.
+
+        # Source Records
+        srecs = dict(ALM=alm_df)  # srecs[src_name] = [rec, ...]
+        if not nig_df.empty:
+            srecs["NIG"] = nig_df
+        if not nar_df.empty:
+            srecs["NAR"] = nar_df
+        if not exp_df.empty:
+            srecs["EXP"] = exp_df
+        if not exp_detail_df.empty:
+            # for all instruments that have exposures
+            srecs["EXPDET"] = exp_detail_df
+        return srecs
 
     @property
     def dayobs_range(self):
@@ -263,6 +282,7 @@ class AllSources:
         # edf.get_targets() => "slewTime"                             # (d,g,h)
         return instrument_tally
 
+    # see source_record_counts()
     def records_per_source(self):
         sources = [
             # self.alm_src,

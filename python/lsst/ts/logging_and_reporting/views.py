@@ -60,17 +60,18 @@ def decant_by_maxwidth(df, thresh):
 # But this requires having the HTML file in the filesystem and we
 # expect to be run from a Notebook under Times Square. Times Square
 # edicts that the notebook does not use the filesytem.
-def render_using(template, **context):
+def render_using(template, save=False, **context):
     env = Environment(loader=DictLoader(templates))
     compiled_template = env.get_template(template)
     rendered_html = compiled_template.render(**context)
-    with open("output.html", "w") as f:
-        f.write(rendered_html)
+    if save:
+        with open("output.html", "w") as f:
+            f.write(rendered_html)
     return rendered_html
 
 
 # for reduced DF
-def render_reduced_df(df, thresh=0.95, verbose=True):
+def render_reduced_df(df, thresh=0.95, verbose=False):
     # dense_df, sparse_dict = decant_by_density(df, thresh)
     dense_df, sparse_dict = decant_by_maxwidth(df, 10)
 

@@ -136,7 +136,6 @@ def merge_to_timelog(prefix, tl_df, right_df, right_dfield="Timestamp"):
     """
     right_df.sort_index()
     rdf = prefix_columns(right_df, prefix)
-    print(f"DBG merge_to_timelog: {rdf.index.dtype=}")
 
     # The left_on and right_on columns are expected to contain datetime column
     # in *_Time
@@ -151,33 +150,44 @@ def merge_to_timelog(prefix, tl_df, right_df, right_dfield="Timestamp"):
 
 
 # reduce_period(compact(merge_sources(allsrc)))
-def merge_sources(allsrc, verbose=True):
+def merge_sources(allsrc, verbose=False):
     """Result contains a row for every source record. Only one source per row.
     This means that there will be NaN values for all columns that are
     not native to a row.
     """
-    sources = allsrc.get_sources_time_logs()
-    alm_df, nig_df, exp_df, nar_df = sources
+    srecs = allsrc.get_sources_time_logs()  # Source Records
 
     # Frame for Night (Unified Time Log)
     dates = pd.date_range(allsrc.min_date, allsrc.max_date, freq="4h")
     utl_df = pd.DataFrame(dates, index=dates, columns=["Time"])
-
-    print(f"DBG merge_sources: {utl_df.index.dtype=} {utl_df=}")
     df = utl_df
-    # #!df =     merge_to_timelog(utl_df, alm_df, prefix="ALM_")
-    if not nig_df.empty:
-        df = merge_to_timelog("NIG_", df, nig_df)
-    if not exp_df.empty:
-        df = merge_to_timelog("EXP_", df, exp_df)
-    if not nar_df.empty:
-        df = merge_to_timelog("NAR_", df, nar_df)
+    for srcname, srcdf in srecs.items():
+        if verbose:
+            print(f"DBG merge_sources: {srcname=}")
+        df = merge_to_timelog(f"{srcname}_", df, srcdf)
+        if verbose:
+            print(f"DBG merge_sources: {srcname=} {df.shape=} {df.columns.to_list()=}")
 
     df.set_index(["Time"], inplace=True)
 
     if verbose:
         print(f"DBG merge_sources: Output {df.shape=}")
     return df
+
+
+def sutl(allsrc, delta="2h", allow_data_loss=False, verbose=False):
+    """Extract a single unified time log (SUTL) from records of sources."""
+
+    fdf = merge_sources(allsrc)
+    cdf = compact(fdf, delta=delta, allow_data_loss=allow_data_loss)
+    if verbose:
+        print(f"DBG sutl: {fdf.shape=}")
+        print(f"DBG sutl: {cdf.shape=}")
+    rdf = reduce_period(cdf)
+    if verbose:
+        print(f"DBG sutl: {rdf.shape=}")
+    html = views.render_reduced_df(rdf)
+    return html
 
 
 # Want to be able to specify time-bin size.
@@ -224,7 +234,6 @@ def remove_list_columns(df):
 
 
 def render_df(df):
-    print(f"DBG render_df {df.shape=}")
     return views.render_reduced_df(df)
 
 
@@ -233,7 +242,7 @@ def render_df(df):
 #   With allow_data_loss=True, remove useless/problematic columns.
 #   Also, see: remove_list_columns()
 # Cell Values that are lists cause problems in pd.drop_duplicates()
-def compact(full_df, delta="4h", allow_data_loss=False, verbose=True):
+def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
     df = full_df.copy()
     if verbose:
         print(f"DBG compact: Input {df.shape=}")
@@ -291,7 +300,7 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=True):
     df.dropna(how="all", axis="columns", inplace=True)
 
     # df = df.fillna('')
-    # df = ut.wrap_dataframe_columns(df)  # TODO re-enable
+    # #!df = ut.wrap_dataframe_columns(df)  # TODO re-enable
 
     # Trim whitespace from all columns
     df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
@@ -324,7 +333,7 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=True):
 # + In Period: Replace multi-values in a column with a conctenation
 #   of the unique values.
 # TODO General aggregation using dtypes assigned in allsrc.
-def reduce_period(df, verbose=True):
+def reduce_period(df, verbose=False):
     """Group and aggregate by Period. Drops some columns. Reduces Rows."""
 
     def multi_string(group):
@@ -335,40 +344,6 @@ def reduce_period(df, verbose=True):
 
     if verbose:
         print(f"DBG reduce_period: Input {df.shape=}")
-
-    fields = {
-        "NIG_id",  # ignore
-        "NIG_site_id",
-        "NIG_telescope",
-        "NIG_day_obs",  # ignore
-        "NIG_summary",
-        "NIG_telescope_status",
-        "NIG_confluence_url",
-        "NIG_user_id",  # ignore
-        "NIG_user_agent",
-        "NIG_date_added",
-        "NIG_date_sent",  # ignore
-        "NIG_is_valid",
-        "NIG_parent_id",
-        "NIG_Timestamp",  # ignore
-        "NAR_id",  # ignore
-        "NAR_site_id",
-        "NAR_message_text",
-        "NAR_level",
-        "NAR_time_lost",
-        "NAR_date_begin",
-        "NAR_user_id",  # ignore
-        "NAR_user_agent",
-        "NAR_is_human",
-        "NAR_is_valid",
-        "NAR_date_added",
-        "NAR_parent_id",
-        "NAR_date_end",  # ignore
-        "NAR_category",
-        "NAR_time_lost_type",
-        "NAR_error_message",
-        "NAR_Timestamp",  # ignore
-    }
 
     nuke_columns = {
         "NIG_id",  # ignore
@@ -386,8 +361,7 @@ def reduce_period(df, verbose=True):
         "NAR_date_end",  # ignore
         "NAR_Timestamp",  # ignore
     }
-    used_columns = fields - nuke_columns
-    print(f"DBG reduce_period: ({len(used_columns)}){used_columns=}")
+    used_columns = set(df.columns.to_list()) - nuke_columns
 
     #  #! available = set(df.columns.to_list())
     #  #! available.discard('NIG_day_obs')
@@ -405,9 +379,9 @@ def reduce_period(df, verbose=True):
     #  #!           if 0 < len(df[c].unique()) < 10 }
     #  #!
 
-    dropped_df = df.drop(nuke_columns, axis=1)
+    drop_columns = nuke_columns & used_columns
+    dropped_df = df.drop(drop_columns, axis=1)
     df = dropped_df
-    print(df.info())
 
     # We would rather not have these field names hardcoded!!!
     group_aggregator = dict()
@@ -431,14 +405,22 @@ def reduce_period(df, verbose=True):
         "NAR_time_lost_type",
     ]
     group_aggregator.update({c: multi_label for c in label_fields})
-
     group_aggregator["NAR_time_lost"] = "sum"
 
     if verbose:
         print(f"DBG reduce_period: columns {df.columns.to_list()=}")
-        print(
-            f"DBG reduce_period: " f"aggregated fields {list(group_aggregator.keys())=}"
-        )
+    agg_keys = set(group_aggregator.keys())
+    use_agg = agg_keys & used_columns
+    drop_agg = agg_keys - use_agg
+    for col in drop_agg:
+        del group_aggregator[col]
+
+    if verbose:
+        print(f"DBG {agg_keys=}")
+        print(f"DBG {used_columns=}")
+        print(f"DBG {use_agg=}")
+        print(f"DBG {drop_agg=}")
+        print(f"DBG final agg_keys={set(group_aggregator.keys())}")
     df = df.groupby(level="Period").agg(group_aggregator)
     if verbose:
         print(f"DBG reduce_period: Output {df.shape=}")

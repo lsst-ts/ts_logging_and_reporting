@@ -1,4 +1,22 @@
-junk = """
+templates = dict(
+    decanted_html="""
+    {{ df.to_html() }}
+
+    <ul>
+    {% for key, val in sparse_dict.items() %}
+      <li>
+         <b>{{ key }}:</b>
+         <pre {font-size: 0.5em; color: slateblue;}>
+            {{ val }}
+         </pre>
+      </li>
+    {% endfor %}
+    </ul>
+""",
+)
+
+#  ###########################################################################
+head = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -10,28 +28,9 @@ junk = """
     </style>
 </head>
 <body>
+"""
 
-...
-
-
-
+foot = """
 </body>
 </html>
 """
-
-templates = dict(
-    decanted_html="""
-    <p>
-    table_columns={{ df.columns }}.
-    sparse_dict={{ sparse_dict.keys() }}
-    </p>
-    <p>DF as html</p>
-    {{ df.to_html() }}
-
-    <ul>
-    {% for key, val in sparse_dict.items() %}
-      <li><b>{{ key }}:</b> <pre>{{ val }}</pre></li>
-    {% endfor %}
-    </ul>
-""",
-)
