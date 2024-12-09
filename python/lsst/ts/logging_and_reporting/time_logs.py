@@ -3,8 +3,9 @@ import datetime as dt
 import random
 
 import lsst.ts.logging_and_reporting.utils as ut
+import lsst.ts.logging_and_reporting.views as views
+import numpy as np
 import pandas as pd
-from jinja2 import Template
 
 """\
 Single Unified Time Log (SUTL="subtle").
@@ -150,7 +151,11 @@ def merge_to_timelog(prefix, tl_df, right_df, right_dfield="Timestamp"):
 
 
 # reduce_period(compact(merge_sources(allsrc)))
-def merge_sources(allsrc):
+def merge_sources(allsrc, verbose=True):
+    """Result contains a row for every source record. Only one source per row.
+    This means that there will be NaN values for all columns that are
+    not native to a row.
+    """
     sources = allsrc.get_sources_time_logs()
     alm_df, nig_df, exp_df, nar_df = sources
 
@@ -170,6 +175,8 @@ def merge_sources(allsrc):
 
     df.set_index(["Time"], inplace=True)
 
+    if verbose:
+        print(f"DBG merge_sources: Output {df.shape=}")
     return df
 
 
@@ -207,93 +214,6 @@ def sutl_style(styler):
     return styler
 
 
-template_decanted_df = """
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-    th,td {
-        text-align: left;
-        vertical-align: text-top;
-    }
-    </style>
-</head>
-<body>
-    <table>
-        <tr>
-            <th>Period</th>
-        {% for col in table_columns %}
-            <th>{{ col }}</th>
-        {% endfor %}
-        </tr>
-    </table>
-
-    {% for index, row in df.iterrows() %}
-    <table>
-        <tr>
-            <th>{{ index }}</th>
-            {% for val in row %}
-            <td>{{ val }}</td>
-            {% endfor %}
-        </tr>
-    </table>
-    <p><b>SUMMARY: </b>{{ row['message_text'] }}</p>
-    <p><b>NARRATIVE: </b>{{ row['message_text_NAR'] }}</p>
-    {% endfor %}
-
-</body>
-</html>
-"""
-
-# white-space: pre-wrap;
-# vertical-align: text-top;
-#    background-color: coral;
-
-
-def decant_by_column_name(df, nontable_columns):
-    """Partition a DF frame into a dense part and a sparse part.
-    The dense part is stored in a DF.
-    The sparse part is stored in a dict[col] => {elem1, ...}
-    """
-    table_columns = sorted(df.columns)
-    for c in nontable_columns:
-        table_columns.remove(c)
-    dense_df = df[table_columns]
-    sparse_dict = {
-        k: set(v.values()) for k, v in df[nontable_columns].to_dict().items()
-    }
-    return dense_df, sparse_dict
-
-
-def decant_by_density(df, thresh):
-    """Partition a DF frame a dense part and a sparse part.
-    See: decant_by_column_name
-
-    The columns that that are removed from DF are determined
-    by the density THRESH (1- NaN/num_rows).
-    """
-
-    def density():
-        pass  # TODO
-
-    # Remove columns >= 95% NaN
-    val_count = int(0.05 * len(df))
-    df.dropna(thresh=val_count, axis="columns", inplace=True)  # DATA LOSS
-    nontable_columns = []
-    return decant_by_column_name(df, nontable_columns)
-
-
-# for reduced DF
-def render_reduced_df(df, thresh=0.95):
-    dense_df, sparse_dict = decant_by_density(df, thresh)
-    # https://jinja.palletsprojects.com/en/stable/templates/
-    context = dict(
-        df=dense_df,
-        sparse_dict=sparse_dict,
-    )
-    return Template(template_decanted_df).render(**context)
-
-
 def remove_list_columns(df):
     """Removes columns from a DataFrame that contain lists."""
     columns_to_drop = []
@@ -303,13 +223,21 @@ def remove_list_columns(df):
     return df.drop(columns_to_drop, axis=1), columns_to_drop
 
 
+def render_df(df):
+    print(f"DBG render_df {df.shape=}")
+    return views.render_reduced_df(df)
+
+
 # compact results of merge_all()
 # Started out Lossless.
 #   With allow_data_loss=True, remove useless/problematic columns.
 #   Also, see: remove_list_columns()
 # Cell Values that are lists cause problems in pd.drop_duplicates()
-def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
+def compact(full_df, delta="4h", allow_data_loss=False, verbose=True):
     df = full_df.copy()
+    if verbose:
+        print(f"DBG compact: Input {df.shape=}")
+
     exclude_cols = [  # TODO  REMOVE, calc columns instead of list them
         "day_obs",
         "day_obs_EXP",
@@ -355,23 +283,29 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
         val_count = int(0.05 * len(df))
         df.dropna(thresh=val_count, axis="columns", inplace=True)  # DATA LOSS
 
-    df["Period"] = df["UTL_Time"].apply(lambda x: x.floor(delta).hour)
-    df.set_index(["Period", "UTL_Time"], inplace=True)
+    df.reset_index(inplace=True)
+    df["Period"] = df["Time"].apply(lambda x: x.floor(delta).hour)
+    df.set_index(["Period", "Time"], inplace=True)
+    # Remove Rows and Columnas that are all NaN.
     df.dropna(how="all", axis="index", inplace=True)
     df.dropna(how="all", axis="columns", inplace=True)
+
     # df = df.fillna('')
-    #   df = ut.wrap_dataframe_columns(df)  # TODO re-enable
+    # df = ut.wrap_dataframe_columns(df)  # TODO re-enable
+
     # Trim whitespace from all columns
     df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
     df, columns = remove_list_columns(df)  # DATA LOSS
     if verbose:
         print(f"WARNING removed {len(columns)} containing list values. {columns=}")
+        print(f"DBG compact: Output {df.shape=}")
+
     return (
         df.reset_index()
-        .set_index(["UTL_Time"])
+        .set_index(["Time"])
         .drop_duplicates()
         .reset_index()
-        .set_index(["Period", "UTL_Time"])
+        .set_index(["Period", "Time"])
     )
     # return df
 
@@ -389,20 +323,153 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
 # + Replace multiple rows in a period with a single row. And ...
 # + In Period: Replace multi-values in a column with a conctenation
 #   of the unique values.
-def reduce_period(df):
+# TODO General aggregation using dtypes assigned in allsrc.
+def reduce_period(df, verbose=True):
+    """Group and aggregate by Period. Drops some columns. Reduces Rows."""
+
     def multi_string(group):
         return "\n\n".join([str(x) for x in set(group) if not pd.isna(x)])
 
-    group_aggregator = dict(
-        message_text=multi_string,
-        exposure_flag=multi_string,
-        message_text_NAR=multi_string,
-        time_lost="sum",  # multi_number,
-        time_lost_type=multi_string,
-    )
-    nuke_aggregators = set(list(group_aggregator.keys())) - set(df.columns.to_list())
-    for col in nuke_aggregators:
-        del group_aggregator[col]
+    def multi_label(group):
+        return ", ".join([str(x) for x in set(group) if not pd.isna(x)])
 
+    if verbose:
+        print(f"DBG reduce_period: Input {df.shape=}")
+
+    fields = {
+        "NIG_id",  # ignore
+        "NIG_site_id",
+        "NIG_telescope",
+        "NIG_day_obs",  # ignore
+        "NIG_summary",
+        "NIG_telescope_status",
+        "NIG_confluence_url",
+        "NIG_user_id",  # ignore
+        "NIG_user_agent",
+        "NIG_date_added",
+        "NIG_date_sent",  # ignore
+        "NIG_is_valid",
+        "NIG_parent_id",
+        "NIG_Timestamp",  # ignore
+        "NAR_id",  # ignore
+        "NAR_site_id",
+        "NAR_message_text",
+        "NAR_level",
+        "NAR_time_lost",
+        "NAR_date_begin",
+        "NAR_user_id",  # ignore
+        "NAR_user_agent",
+        "NAR_is_human",
+        "NAR_is_valid",
+        "NAR_date_added",
+        "NAR_parent_id",
+        "NAR_date_end",  # ignore
+        "NAR_category",
+        "NAR_time_lost_type",
+        "NAR_error_message",
+        "NAR_Timestamp",  # ignore
+    }
+
+    nuke_columns = {
+        "NIG_id",  # ignore
+        "NIG_day_obs",  # ignore
+        "NIG_user_id",  # ignore
+        "NIG_date_added",
+        "NIG_date_sent",  # ignore
+        "NIG_parent_id",
+        "NIG_Timestamp",  # ignore
+        "NAR_id",  # ignore
+        "NAR_date_begin",
+        "NAR_user_id",  # ignore
+        "NAR_date_added",
+        "NAR_parent_id",
+        "NAR_date_end",  # ignore
+        "NAR_Timestamp",  # ignore
+    }
+    used_columns = fields - nuke_columns
+    print(f"DBG reduce_period: ({len(used_columns)}){used_columns=}")
+
+    #  #! available = set(df.columns.to_list())
+    #  #! available.discard('NIG_day_obs')
+    #  #! available.discard('NIG_summary')
+    #  #! id_fields = {c for c in df.columns.to_list()  if c.endswith('_id')}
+    #  #! timestamp_fields = {c for c in df.columns.to_list()
+    #  #!                     if c.endswith('_Timestamp')}
+    #  #! date_fields = {c for c in df.columns.to_list() if '_date_' in c}
+    #  #! message_fields = {c for c in df.columns.to_list() if 'message' in c}
+    #  #! message_fields += 'NIG_telescope_status'
+    #  #! message_fields += 'NIG_summary'
+    #  #! available -= (id_fields | timestamp_fields | date_fields )
+    #  #!
+    #  #! facets = {c: set(df[c].unique()) for c in available
+    #  #!           if 0 < len(df[c].unique()) < 10 }
+    #  #!
+
+    dropped_df = df.drop(nuke_columns, axis=1)
+    df = dropped_df
+    print(df.info())
+
+    # We would rather not have these field names hardcoded!!!
+    group_aggregator = dict()
+    message_fields = {c for c in df.columns.to_list() if "message" in c}
+    message_fields |= {"NIG_telescope_status"}
+    message_fields |= {"NIG_summary"}
+    group_aggregator.update({c: multi_string for c in message_fields})
+    label_fields = [
+        "NIG_site_id",
+        "NIG_telescope",
+        "NIG_confluence_url",
+        "NIG_user_agent",
+        "NIG_is_valid",
+        "NAR_site_id",
+        "NAR_level",
+        "NAR_time_lost",
+        "NAR_user_agent",
+        "NAR_is_human",
+        "NAR_is_valid",
+        "NAR_category",
+        "NAR_time_lost_type",
+    ]
+    group_aggregator.update({c: multi_label for c in label_fields})
+
+    group_aggregator["NAR_time_lost"] = "sum"
+
+    if verbose:
+        print(f"DBG reduce_period: columns {df.columns.to_list()=}")
+        print(
+            f"DBG reduce_period: " f"aggregated fields {list(group_aggregator.keys())=}"
+        )
     df = df.groupby(level="Period").agg(group_aggregator)
+    if verbose:
+        print(f"DBG reduce_period: Output {df.shape=}")
     return df
+
+
+def field_distribution(df, available=None):
+    if not available:
+        available = set(df.columns)
+    thresh = 0.10 * len(df)  # max density threshold
+    facets = {
+        c: set(df[c].unique()) - set([np.nan])
+        for c in available
+        if 0 < len(df[c].unique()) < thresh
+    }
+    return facets
+
+
+def foo(df):
+
+    # Create a dictionary to store the aggregated results
+    result = {}
+    dtypes = df.dtypes
+
+    # Loop through unique dtypes and aggregate columns of that type
+    for dtype in dtypes.unique():
+        columns_of_dtype = dtypes[dtypes == dtype].index
+        result[dtype] = df[columns_of_dtype].agg(
+            ["mean", "sum"]
+        )  # Replace with your desired aggregation functions
+
+    # Create a final DataFrame
+    result_df = pd.concat(result, axis=1)
+    print(result_df)

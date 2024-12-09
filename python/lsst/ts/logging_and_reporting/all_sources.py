@@ -107,7 +107,7 @@ class AllSources:
         return (
             f"AllSources(server_usr={self.server_url!r}, "
             f"min_dayobs={self.min_dayobs!r}, "
-            f"min_dayobs={self.max_dayobs!r})"
+            f"max_dayobs={self.max_dayobs!r})"
         )
 
     # see also:

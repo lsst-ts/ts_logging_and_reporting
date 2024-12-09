@@ -35,6 +35,16 @@
 # One word most of the time, two_words when its a field such as
 # in a Database or API query string.
 
+# Its common to get "dirty data" from sources.
+# Examples:
+#   - A source return values of both None (python type) and "None" (string).
+#   - Values of np.nan (numpy.float64) where py None is more approprite.
+#   - return LIST that always has one element (careful about "always")
+#   - string to represent True and False (careful of tri-state)
+#   - No type for a field when a strict one (pd.astype) would help.
+# TODO: clean up dirty data
+# TODO: Add dtypes to DFs returned by allsrc.get_sources_time_logs()
+
 import copy
 import datetime as dt
 import itertools
