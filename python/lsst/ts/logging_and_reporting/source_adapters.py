@@ -159,6 +159,20 @@ class SourceAdapter(ABC):
         assert self.min_date < self.max_date
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
 
+    def __str__(self):
+        return (
+            f"{self.server}: {self.min_dayobs}, {self.max_dayobs}; "
+            f"{self.service} endpoints={self.endpoints}"
+        )
+
+    def __repr__(self):
+        cname = self.__class__.__name__
+        return (
+            f"{cname}(server_url={self.server!r}, "
+            f"min_dayobs={self.min_dayobs!r}, "
+            f"max_dayobs={self.max_dayobs!r})"
+        )
+
     def protected_post(self, url, jsondata, token=None, timeout=None):
         """Do a POST against an API url.
         Do NOT stop processing when we have a problem with a URL. There
@@ -203,6 +217,8 @@ class SourceAdapter(ABC):
 
         if self.verbose and not ok:
             print(f"DEBUG protected_post: FAIL: {result=}")
+
+        # when ok=True, result is records (else error message)
         return ok, result, code
 
     def protected_get(self, url, token=None, timeout=None):
@@ -372,13 +388,6 @@ class SourceAdapter(ABC):
             fields=flds,
             facet_fields=facflds,
             facets=facets,
-        )
-
-    def __str__(self):
-        return (
-            f"{self.server}: "
-            f"{self.min_dayobs} to {self.max_dayobs} [{self.limit}] "
-            f"{self.service} endpoints={self.endpoints}"
         )
 
 

@@ -127,23 +127,6 @@ class ConsdbAdapter(SourceAdapter):
             print(f"Loaded Consolidated Databased schemas: {self.schemas=}")
         # END load_schemas()
 
-    def query(self, sql):
-        url = f"{self.server}/{self.service}/query"
-        if self.verbose:
-            print(f"DEBUG query: {url=} {sql=}")
-        qdict = dict(query=sql)
-        ok, result, code = self.protected_post(url, qdict, token=self.token)
-        if not ok:  # failure
-            status = dict(
-                endpoint_url=url,
-                number_of_records=None,
-                error=result,
-            )
-            print(f"DEBUG query: {status=}")
-            return status
-        records = result
-        return pd.DataFrame.from_records(records["data"], columns=records["columns"])
-
     @property
     def all_available_fields(self):
         # schemas[instrum][table][fname]=[type,dflt]
@@ -162,13 +145,41 @@ class ConsdbAdapter(SourceAdapter):
         s1 = self.query(exposure_sql)
         return s1
 
-    def get_exposures(self, instrument="lsstcomcam"):
+    def query(self, sql):
+        url = f"{self.server}/{self.service}/query"
+        if self.verbose:
+            print(f"DEBUG query: {url=} {sql=}")
+        qdict = dict(query=sql)
+        ok, result, code = self.protected_post(url, qdict, token=self.token)
+        if not ok:  # failure
+            print(f"ERROR: Failed POST {ok=} {result=} {code=}")
+            return None
+        else:
+            records = [
+                {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
+            ]
+            return records
+
+    # Changes coming, see:
+    # DM-48072 Add a visit1_exposure table to link visits and exposures
+    # In the meantime KT says assume visit_id = exposure_id
+    # In the presence of snaps, exposure_id and visit_id many-to-one.
+    def get_exposures(self, instrument):
         # DM-47573
-        outfields = [
+        detail = [
+            "exposure_flag",  # LOVE
+            "obs_id",  # exposure_flexdata (exposurelog.exposure.id)
+            "seq_num",  # exposure_flexdata
+            "observation_type",  # LOVE
+            "observation_reason",  # LOVE
+            "science_program",  # LOVE
+        ]
+        print(f"DBG not using {detail=}")
+
+        exposure_out = [
             "air_temp",
             # 'ccd_temp',   # Does not exist (yet?)
             "airmass",
-            #
             # Coordinates
             "altitude",  # also *_start, *_end
             "azimuth",  # also *_start, *_end
@@ -176,31 +187,37 @@ class ConsdbAdapter(SourceAdapter):
             "s_ra",
             "s_dec",
             # 'camera_rotation_angle',  # Does not exist (yet?)
-            #
             "band",
             "dimm_seeing",
             "exposure_id",
             "exposure_name",
-            #
-            # These are in ccdvisit1_quicklook, not exposure
-            #   'sky_bg_median',   # not in exposure
-            #   'seeing_zenith_500nm_median',  # also *_min,*_max
-            #   'psf_trace_radius_delta_median',  # not in LATISS
-            #   'high_snr_source_count_median',
-            #   'zero_point_median',
-            #
-            # Extras
-            "day_obs",
-            "seq_num",
-            "exp_time",
-            "shut_time",
-            "dark_time",
+            "exp_time",  # seconds
+            "obs_start",  # TAI
         ]
-        columns = ", ".join(outfields)
-        sql = (
-            f"SELECT  {columns}  "
-            f"FROM cdb_{instrument}.exposure "
-            f"WHERE {ut.dayobs_int(self.min_dayobs)} <= day_obs "
-            f"AND day_obs < {ut.dayobs_int(self.max_dayobs)}"
-        )
-        return self.query(sql)
+        # EXTRAS: "day_obs", "seq_num", "exp_time", "shut_time", "dark_time",
+        quicklook_out = [
+            "sky_bg_median",
+            "seeing_zenith_500nm_median",  # also *_min,*_max
+            "psf_trace_radius_delta_median",  # not in LATISS
+            "high_snr_source_count_median",
+            "zero_point_median",
+            "visit_id",
+        ]
+
+        exposure_columns = ", ".join(["e." + c for c in exposure_out])
+        quicklook_columns = ", ".join(["q." + c for c in quicklook_out])
+        sql = f"""
+        SELECT {exposure_columns}, {quicklook_columns}
+          FROM cdb_{instrument}.exposure e, cdb_{instrument}.visit1_quicklook q
+        WHERE e.exposure_id = q.visit_id
+              AND {ut.dayobs_int(self.min_dayobs)} <= e.day_obs
+              AND e.day_obs < {ut.dayobs_int(self.max_dayobs)}
+        """
+
+        records = self.query(sql)
+        if records:
+            df = pd.DataFrame(records)
+            return ut.wrap_dataframe_columns(df)
+        else:
+            print(f"ERROR: get_exposures: {sql=}")
+            return pd.DataFrame()  # empty
