@@ -43,6 +43,7 @@ class ConsdbAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
         verbose=False,
+        warning=True,
     ):
         super().__init__(
             server_url=server_url,
@@ -50,6 +51,7 @@ class ConsdbAdapter(SourceAdapter):
             min_dayobs=min_dayobs,
             limit=limit,
             verbose=verbose,
+            warning=warning,
         )
         try:
             import lsst.rsp
@@ -104,7 +106,7 @@ class ConsdbAdapter(SourceAdapter):
         if include is None:  # use the default list
             include = include_default
         exclude = available_instruments - include
-        if exclude:
+        if exclude and self.warning:
             elist = ", ".join(sorted(exclude))
             warnings.warn(f"Excluding these instruments from results: {elist}")
 
@@ -200,7 +202,7 @@ class ConsdbAdapter(SourceAdapter):
             records = [
                 {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
             ]
-        if len(records) == 0:
+        if len(records) == 0 and self.warning:
             msg = f"No results returned from {self.abbrev}.query().  "
             msg += f"{sql=!r} {url=}"
             warnings.warn(msg, category=ex.ConsdbQueryWarning, stacklevel=2)
@@ -258,9 +260,9 @@ class ConsdbAdapter(SourceAdapter):
               AND e.day_obs < {ut.dayobs_int(self.max_dayobs)}
         """
         sql = " ".join(ssql.split())  # remove redundant whitespace
-        print(f"DBG cdb.get_exposures {instrument=} {sql=}")
         records = self.query(sql)
         if self.verbose and len(records) > 0:
+            print(f"DBG cdb.get_exposures {instrument=} {sql=}")
             print(f"DBG cdb.get_exposures: {records[0]=}")
 
         self.exposures[instrument] = records
@@ -269,8 +271,9 @@ class ConsdbAdapter(SourceAdapter):
             df = pd.DataFrame(records)
             return ut.wrap_dataframe_columns(df)
         else:
-            msg = f"No records found for ConsDB for {instrument=}."
-            warnings.warn(msg, category=ex.NoRecordsWarning, stacklevel=2)
+            if self.warning:
+                msg = f"No records found for ConsDB for {instrument=}."
+                warnings.warn(msg, category=ex.NoRecordsWarning, stacklevel=2)
             return pd.DataFrame()  # empty
 
     # TODO Remove if this is still here after Feb 2025

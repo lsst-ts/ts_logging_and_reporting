@@ -48,9 +48,11 @@ class AllSources:
         min_dayobs=None,  # INCLUSIVE: default=(max_dayobs - one_day)
         limit=None,
         verbose=False,
+        warning=True,
         exclude_instruments=None,
     ):
         self.verbose = verbose
+        self.warning = warning
         self.exclude_instruments = exclude_instruments or []
         ut.tic()
         # Load data for all needed sources for the selected dayobs range.
@@ -76,8 +78,8 @@ class AllSources:
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
+            warning=warning,
         )
-
         self.alm_src = alm.Almanac(
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
@@ -505,8 +507,10 @@ class AllSources:
             )
 
         if 0 == len(crecs) + len(erecs):
-            msg = f"No records found for ConsDB or ExposureLog for {instrument=}."
-            warnings.warn(msg, category=ex.NoRecordsWarning, stacklevel=2)
+            if self.warning:
+                msg = "No records found for ConsDB or ExposureLog "
+                msg += f"for {instrument=}."
+                warnings.warn(msg, category=ex.NoRecordsWarning, stacklevel=2)
             return pd.DataFrame()  # empty
 
         # Join records by c.exposure_id = e.id (using Pandas)

@@ -108,10 +108,10 @@ class ConsdbQueryError(BaseLogrepError):
 class ConsdbQueryWarning(BaseLogrepError):  # noqa: N818
     """Got no results from 'consdb/query' endpoint. This might be ok, but
     is often an indication of a bad query or of an unimplemented part of
-    consdb.
+    onsdb.
     """
 
-    error_code = "IFYQUERY"
+    error_code = "NULQUERY"
 
 
 class NoRecordsWarning(BaseLogrepError):  # noqa: N818

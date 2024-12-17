@@ -181,8 +181,8 @@ def sutl(allsrc, delta="2h", allow_data_loss=False, verbose=False):
     fdf = merge_sources(allsrc)
     cdf = compact(fdf, delta=delta, allow_data_loss=allow_data_loss)
     if verbose:
-        print(f"DBG sutl: {fdf.shape=}")
-        print(f"DBG sutl: {cdf.shape=}")
+        print(f"DBG sutl: {fdf.shape=} {fdf.columns.to_list()=}")
+        print(f"DBG sutl: {cdf.shape=} {cdf.columns.to_list()=}")
     rdf = reduce_period(cdf)
     if verbose:
         print(f"DBG sutl: {rdf.shape=}")
@@ -333,7 +333,7 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
 # + In Period: Replace multi-values in a column with a conctenation
 #   of the unique values.
 # TODO General aggregation using dtypes assigned in allsrc.
-def reduce_period(df, verbose=False):
+def reduce_period(df, verbose=True):
     """Group and aggregate by Period. Drops some columns. Reduces Rows."""
 
     def multi_string(group):
@@ -421,7 +421,10 @@ def reduce_period(df, verbose=False):
         print(f"DBG {use_agg=}")
         print(f"DBG {drop_agg=}")
         print(f"DBG final agg_keys={set(group_aggregator.keys())}")
-    df = df.groupby(level="Period").agg(group_aggregator)
+    if group_aggregator:
+        df = df.groupby(level="Period").agg(group_aggregator)
+    else:
+        df = df.groupby(level="Period").last()
     if verbose:
         print(f"DBG reduce_period: Output {df.shape=}")
     return df
@@ -439,8 +442,7 @@ def field_distribution(df, available=None):
     return facets
 
 
-def foo(df):
-
+def foo(df):  # TODO remove
     # Create a dictionary to store the aggregated results
     result = {}
     dtypes = df.dtypes

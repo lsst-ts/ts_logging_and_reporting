@@ -124,6 +124,7 @@ class SourceAdapter(ABC):
         connect_timeout=5.05,  # seconds
         read_timeout=20,  # seconds
         verbose=False,
+        warning=True,
     ):
         """Load the relevant data for the Source.
 
@@ -135,6 +136,7 @@ class SourceAdapter(ABC):
         """
         self.server = server_url or default_server
         self.verbose = verbose
+        self.warning = warning
         self.offset = offset
         if limit is None:
             limit = self.__class__.default_record_limit
