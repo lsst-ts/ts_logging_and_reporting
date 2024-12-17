@@ -22,7 +22,7 @@
 # error_code values should be no bigger than 8 characters 12345678
 
 
-class BaseLogrepError(Exception):
+class BaseLogrepError(Warning):
     is_an_error_response = True
     status_code = 400
     error_message = "<NA>"
@@ -93,3 +93,28 @@ class StatusError(BaseLogrepError):
     """
 
     error_code = "BADSTAT"
+
+
+class ConsdbQueryError(BaseLogrepError):
+    """Non-200 HTTP status from 'consdb/query' endpoint. Typically
+    this will occur when SQL in json payload cannot be handled by Postgreql.
+    It may also be that the Service is broken.
+    The ConsDB (always?) returns this as a '500 Internal Server Error'.
+    """
+
+    error_code = "BADQUERY"
+
+
+class ConsdbQueryWarning(BaseLogrepError):  # noqa: N818
+    """Got no results from 'consdb/query' endpoint. This might be ok, but
+    is often an indication of a bad query or of an unimplemented part of
+    consdb.
+    """
+
+    error_code = "IFYQUERY"
+
+
+class NoRecordsWarning(BaseLogrepError):  # noqa: N818
+    """Got no records. This might be ok, or maybe there is a bug."""
+
+    error_code = "ZERORECS"

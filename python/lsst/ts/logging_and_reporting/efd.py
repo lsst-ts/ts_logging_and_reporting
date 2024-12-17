@@ -27,6 +27,7 @@ nest_asyncio.apply()
 
 
 class EfdAdapter(SourceAdapter):
+    abbrev = "EFD"
     salindex = 2
     service = "efd"
     endpoints = [

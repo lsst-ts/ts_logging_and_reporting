@@ -44,6 +44,8 @@
 #   - No type for a field when a strict one (pd.astype) would help.
 # TODO: clean up dirty data
 # TODO: Add dtypes to DFs returned by allsrc.get_sources_time_logs()
+# TODO: Every adapter should raise exception when I cannot get data.
+#       (getting empty set should not be exception)
 
 import copy
 import datetime as dt
@@ -107,6 +109,7 @@ def OBSOLETE_invalid_response(response, endpoint_url, timeout=None, verbose=Fals
 class SourceAdapter(ABC):
     """Abstract Base Class for all source adapters."""
 
+    abbrev = "UNK"  # UNKnown
     default_record_limit = 10  # Adapter specific default
 
     # TODO document class including all class variables.
@@ -173,6 +176,13 @@ class SourceAdapter(ABC):
             f"max_dayobs={self.max_dayobs!r})"
         )
 
+    def records_to_dataframe(self, records, wrap_columns=True):
+        df = pd.DataFrame(records)
+        if wrap_columns:
+            return ut.wrap_dataframe_columns(df)
+        else:
+            return df
+
     def protected_post(self, url, jsondata, token=None, timeout=None):
         """Do a POST against an API url.
         Do NOT stop processing when we have a problem with a URL. There
@@ -202,9 +212,11 @@ class SourceAdapter(ABC):
             # Invalid URL?, etc.
             ok = False
             code = err.response.status_code
-            result = f"Error getting data from API at {url}. "
-            result += f"{jsondata=} {timeout=} "
+            reason = err.response.reason
+            result = f"[{self.abbrev}] Error getting data from API at {url}. "
+            result += f"{jsondata=} {timeout=} {reason=} "
             result += f"; {str(err)}."
+            result += f"; {err.response.json()['message']=}."
         except requests.exceptions.ConnectionError as err:
             # No VPN? Broken API?
             ok = False
@@ -250,7 +262,9 @@ class SourceAdapter(ABC):
             # Invalid URL?, etc.
             ok = False
             code = err.response.status_code
-            result = f"Error getting data from API at {url}. "
+            reason = err.response.reason
+            result = f"[{self.abbrev}] Error getting data from API at {url}. "
+            result += f"{timeout=} {reason=} "
             result += str(err)
         except requests.exceptions.ConnectionError as err:
             # No VPN? Broken API?
@@ -260,6 +274,8 @@ class SourceAdapter(ABC):
             result += str(err)
         else:  # No exception. Could something else be wrong?
             result = response.json()
+            if self.verbose:
+                print(f"DEBUG protected_get: {len(result)=}")
 
         if self.verbose and not ok:
             print(f"DEBUG protected_get: FAIL: {result=}")
@@ -396,6 +412,7 @@ class SourceAdapter(ABC):
 
 # Not available on SLAC (usdf) as of 9/9/2024.
 class NightReportAdapter(SourceAdapter):
+    abbrev = "NIG"
     outfields = {
         "confluence_url",
         "date_added",
@@ -569,6 +586,7 @@ class NightReportAdapter(SourceAdapter):
 
 
 class NarrativelogAdapter(SourceAdapter):
+    abbrev = "NAR"
     outfields = {
         "category",
         "components",
@@ -767,6 +785,7 @@ class NarrativelogAdapter(SourceAdapter):
 
 
 class ExposurelogAdapter(SourceAdapter):
+    abbrev = "EXP"
     ignore_fields = ["id"]
     outfields = {
         "date_added",
@@ -940,7 +959,6 @@ class ExposurelogAdapter(SourceAdapter):
             # 'hasPD',
             # 'metadata',
         ]
-
         program = science_program and science_program.lower()
         otype = observation_type and observation_type.lower()
         reason = observation_reason and observation_reason.lower()

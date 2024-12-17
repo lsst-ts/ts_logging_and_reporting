@@ -24,12 +24,14 @@
 import copy
 import datetime as dt
 import itertools
+import warnings
 from collections import Counter, defaultdict
 from urllib.parse import urlencode
 
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.consdb as cdb
 import lsst.ts.logging_and_reporting.efd as efd
+import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.source_adapters as sad
 import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
@@ -468,6 +470,150 @@ class AllSources:
         for fname in exposure_field_names:
             df_dict[fname] = self.flag_count_exposures(instrument, fname)
         return df_dict
+
+    # Similar to ExposurelogAdapter.exposure_detail but includes consdb
+    def exposure_detail(
+        self,
+        instrument,
+        science_program=None,
+        observation_type=None,
+        observation_reason=None,
+    ):
+        # recs are list of dicts. Dict keys are essentially DB column names
+        crecs = self.cdb_src.exposures[instrument]
+
+        # Filter exposures from exposurelog
+        program = science_program and science_program.lower()
+        otype = observation_type and observation_type.lower()
+        reason = observation_reason and observation_reason.lower()
+        erecs = [
+            r
+            for r in self.exp_src.exposures[instrument]
+            if ((program is None) or (r["science_program"].lower() == program))
+            and ((otype is None) or (r["observation_type"].lower() == otype))
+            and ((reason is None) or (r["observation_reason"].lower() == reason))
+        ]
+        if self.verbose:
+            print(
+                f"allsrc.exposure_detail({instrument}, "
+                f"{science_program=},{observation_type=},{observation_reason=}):"
+            )
+            print(
+                f"{program=} {otype=} {reason=} "
+                f"pre-filter={len(self.exp_src.exposures[instrument])} "
+                f"post-filter={len(erecs)}"
+            )
+
+        if 0 == len(crecs) + len(erecs):
+            msg = f"No records found for ConsDB or ExposureLog for {instrument=}."
+            warnings.warn(msg, category=ex.NoRecordsWarning, stacklevel=2)
+            return pd.DataFrame()  # empty
+
+        # Join records by c.exposure_id = e.id (using Pandas)
+        cdf = pd.DataFrame(crecs)
+        edf = pd.DataFrame(erecs)
+        if self.verbose:
+            print(f"{cdf.shape=} {edf.shape=} ")
+            print(f"{sorted(cdf.columns)=}")
+            print(f"{sorted(edf.columns)=}")
+
+        # ConsDB doesn't have exposures for all instruments
+        if "exposure_id" in cdf:
+            if "id" in edf:
+                df = cdf.set_index("exposure_id", drop=False).join(
+                    edf.set_index("id", drop=False),
+                    how="inner",
+                    lsuffix="_CDB",
+                    rsuffix="_EXP",
+                )
+            else:  # yes CDF, no EDF
+                df = cdf.set_index("exposure_id", drop=False)
+
+        else:  # no CDF
+            if "id" in edf:
+                # no CDF, yes EDF
+                df = edf.set_index("id", drop=False)
+            else:
+                # no CDF, no EDF
+                pass  # empty DF returned above
+
+        fields = [
+            "air_temp",
+            "airmass",
+            "altitude",
+            "azimuth",
+            "band",
+            "dimm_seeing",
+            "exp_time",
+            "exposure_flag",
+            "exposure_id",
+            "exposure_name",
+            "high_snr_source_count_median",
+            "instrument",  # not requested
+            "obs_id",
+            "observation_reason",
+            "observation_type",
+            "psf_trace_radius_delta_median",
+            "s_dec",
+            "s_ra",
+            "science_program",
+            "seeing_zenith_500nm_median",
+            "seq_num",
+            "sky_angle",  # not requested
+            "sky_bg_median",
+            "sky_rotation",
+            "target_name",  # not requested
+            "timespan_begin",
+            "zero_point_median",
+            # ################################### Available but ignored
+            # 'day_obs_CDB',
+            # 'day_obs_EXP',
+            # 'exposure_time',
+            # 'group_name',
+            # 'obs_start',
+            # 'target_name',
+            # 'timespan_end',
+            # 'tracking_dec',
+            # 'tracking_ra',
+            # 'visit_id',
+        ]
+        labels = {
+            "air_temp": "Outside Air Temp",
+            "airmass": "Airmass",
+            "altitude": "Altitude",
+            "azimuth": "Azimuth",
+            "band": "Filter Bandpass",
+            "dimm_seeing": "Dimm Seeing",
+            "exp_time": "Exp Time",
+            "exposure_flag": "Exposure Flag",
+            "exposure_id": "Exposure Id",
+            "exposure_name": "Exposure Name",
+            "high_snr_source_count_median": "Source Counts",
+            "instrument": "Instrument",
+            "obs_id": "Obs Id",
+            "observation_reason": "Observation Reason",
+            "observation_type": "Observation Type",
+            "psf_trace_radius_delta_median": "Psf Trace Radius Delta Median",
+            "s_dec": "Spatial Dec",
+            "s_ra": "Spatial Ra",
+            "science_program": "Science Program",
+            "seeing_zenith_500nm_median": "Seeing Zenith 500Nm Median",
+            "seq_num": "Seq Num",
+            "sky_angle": "Sky Angle",
+            "sky_bg_median": "Sky Background",
+            "sky_rotation": "Sky Rotation",
+            "target_name": "Target Name",
+            "timespan_begin": "Timespan Begin",
+            "zero_point_median": "Photometric Zero Points",
+        }
+
+        used_fields = set(sorted(df.columns.to_list())) & set(fields)
+
+        # #! df = ut.wrap_dataframe_columns(df[fields])
+        # #! df.columns = df.columns.str.title()
+        print(f"DBG allsrc.exposure_detail {used_fields=} {sorted(labels.keys())=}")
+        df = df[list(used_fields)].rename(columns=labels, errors="ignore")
+        return df
 
 
 # display(all.get_facets(allsrc.exp_src.exposures['LATISS']))
