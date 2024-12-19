@@ -510,7 +510,8 @@ class NightReportAdapter(SourceAdapter):
             table.append(f"### Telescope: {tele}")
             for rec in g0:
                 msg = rec["summary"].strip()
-                table.append(f"```\n{msg}\n```")
+
+                table.append(f"\n{msg}\n")
                 crew_list = rec.get("observers_crew", [])
                 crew_str = ", ".join(crew_list)
                 status = rec.get("telescope_status", "Not Available")

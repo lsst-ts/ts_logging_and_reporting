@@ -22,6 +22,7 @@
 import datetime as dt
 import time
 
+import pandas as pd
 import pytz
 
 # NOTE on day_obs vs dayobs:
@@ -171,6 +172,9 @@ dayobs2dt = get_datetime_from_dayobs_str
 
 
 def hhmmss(decimal_hours):
+    if pd.isna(decimal_hours):
+        return "NA"
+
     hours = int(decimal_hours)
     minutes = int((decimal_hours * 60) % 60)
     seconds = int((decimal_hours * 3600) % 60)

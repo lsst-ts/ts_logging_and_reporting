@@ -148,9 +148,9 @@ class Almanac(SourceAdapter):
                 self.events(localize=False, iso=True),
             ]
         ).T
-        df.columns = ["UTC", "Chile/Continental"]
-        df.index.name = "event"
-        return df
+        df.columns = ["Chile/Continental", "UTC"]
+        df.index.name = "Event"
+        return df.sort_values(by="UTC").reset_index().set_index("UTC")
 
     @property
     def as_dict(self):

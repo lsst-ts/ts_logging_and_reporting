@@ -181,25 +181,11 @@ class AllSources:
     def dayobs_range(self):
         return (self.min_dayobs, self.max_dayobs)
 
-    # Our goals are something like this (see DM-46102)
-    #
-    # Ref                                       Hours
-    # -------   ----------------------          ------
-    # a         Total Night Hours               9.67
-    # b         Total Exposure Hours            1.23
-    # d         Number of slews                 16
-    # c         Number of exposures             33
-    # e         Total Detector Read hours	0.234
-    # f=e/c	Mean Detector read hours	0.00709
-    # g         Total Slew hours                0.984
-    # h=g/d	Mean Slew hours                 0.0615
-    # i=a-b-e-g Total Idle Time                 7.222
-    #
-    # day_obs:: YYYMMDD (int or str)
-    # Use almanac begin of night values for day_obs.
-    # Use almanac end of night values for day_obs + 1.
-    async def night_tally_observation_gaps(self, verbose=False):
-        total_observable_hrs = self.alm_src.night_hours
+    # This will have to be async def night_tally_observation_gaps
+    # if efd_src is used.
+    def night_tally_observation_gaps(self, verbose=False):
+        # observable is between 18deg twilights
+        total_observable_hours = self.alm_src.night_hours
         used_instruments = set()
         for instrum, recs in self.exp_src.exposures.items():
             if instrum in self.exclude_instruments:
@@ -209,8 +195,8 @@ class AllSources:
         if len(used_instruments) == 0:
             return {
                 "": {
-                    "Total night": ut.hhmmss(total_observable_hrs),
-                    "Idle time": ut.hhmmss(total_observable_hrs),
+                    "Total night": ut.hhmmss(total_observable_hours),
+                    "Idle time": ut.hhmmss(total_observable_hours),
                 }
             }
         if verbose:
@@ -224,6 +210,14 @@ class AllSources:
         # lost[day][lost_type] = totalTimeLost
         # lost = self.get_time_lost()
 
+        # Use of nest_asyncio.apply will not give time to tasks
+        # scheduled outside the nested run. This can potentially
+        # leading to starvation too much time is spent on code
+        # inside the nested run.
+        # See also: https://sdiehl.github.io/gevent-tutorial/
+        # #! nest_asyncio.apply()
+        # #! loop = asyncio.get_event_loop()
+
         # slewTime (and probably others) are EXPECTED times, not ACTUAL.
         # To get actual, need to use TMAEvent or something similar.
         # targets = await self.efd_src.get_targets()  # a DataFrame
@@ -233,19 +227,14 @@ class AllSources:
         #         f"using date range {self.min_date} to {self.max_date}. "
         #     )
 
-        # Merlin might add this to consdb or efd .... eventually
-        num_slews = 0
-        total_slew_seconds = 0
-        mean_slew = 0
-
         # per Merlin: There is no practical way to get actual detector read
         # time.  He has done some experiments and inferred that it is
         # 2.3 seconds.  He recommends hardcoding the value.
-        # Scot says use 2.41 per slack message in consolidated DB
-        readout_seconds = 2.41
-        mean_readout_hrs = readout_seconds / (60 * 60.0)
+        # Scot says use 2.41 per slack message in #consolidated-database
+        readout_seconds = 2.41  # seconds per exposure
+        readout_hours = readout_seconds / (60 * 60.0)  # hrs per exposure
 
-        # Scot says care only about: ComCam, LSSTCam and  Latiss
+        # Scot says care only about: LSSTComCam, LSSTCam and LATISS
         for instrument in used_instruments:
             records = self.exp_src.exposures[instrument]
             num_exposures = len(records)
@@ -255,29 +244,44 @@ class AllSources:
                 begin = dt.datetime.fromisoformat(rec["timespan_begin"])
                 end = dt.datetime.fromisoformat(rec["timespan_end"])
                 exposure_seconds += (end - begin).total_seconds()
-            detector_hrs = len(records) * mean_readout_hrs
+            exposure_hours = exposure_seconds / (60 * 60.0)
 
-            exposure_hrs = exposure_seconds / (60 * 60.0)
-            slew_hrs = total_slew_seconds / (60 * 60.0)
-            idle_hrs = total_observable_hrs - exposure_hrs - detector_hrs - slew_hrs
+            readout_hours = len(records) * readout_seconds / (60 * 60.0)
+
+            # Merlin might add this to consdb or efd .... eventually
+            # In the meantime, accept that we don't have SLEW times
+            num_slews = pd.NA
+            total_slew_seconds = pd.NA
+            mean_slew = total_slew_seconds / num_slews
+            slew_hours = total_slew_seconds / (60 * 60.0)
 
             # These need join between exposures and messages.
-            # But they aren't reliable numbers anyhow.
-            loss_fault = 0  # hours
-            loss_weather = 0  # hours
+            # But in messages, they aren't reliable numbers anyhow.
+            loss_fault = pd.NA  # hours
+            loss_weather = pd.NA  # hours
+
+            used_hours = exposure_hours + readout_hours
+            if pd.notna(slew_hours):
+                used_hours += slew_hours
+            if pd.notna(loss_fault):
+                used_hours += loss_fault
+            if pd.notna(loss_weather):
+                used_hours += loss_weather
+            idle_hours = total_observable_hours - used_hours
+            accounted_hours = used_hours + idle_hours
 
             instrument_tally[instrument] = {
-                "Total Night": ut.hhmmss(total_observable_hrs),  # (a)
-                "Total Exposure": ut.hhmmss(exposure_hrs),  # (b)
-                "Slew time(1)": ut.hhmmss(slew_hrs),  # (g)
-                "Readout time(2)": ut.hhmmss(detector_hrs),  # (e)
-                "Time loss to fault": loss_fault,
-                "Time loss to weather": loss_weather,
-                "Idle time": ut.hhmmss(idle_hrs),  # (i=a-b-e-g)
+                "Total Night": ut.hhmmss(total_observable_hours),  # (a)
+                "Total Exposure": ut.hhmmss(exposure_hours),  # (b)
+                "Readout time(1)": ut.hhmmss(readout_hours),  # (e)
+                "Slew time": ut.hhmmss(slew_hours),  # (g)
+                "Time loss due to fault": ut.hhmmss(loss_fault),
+                "Time loss due to weather": ut.hhmmss(loss_weather),
+                "Idle time": ut.hhmmss(idle_hours),  # (i=a-b-e-g)
                 "Number of exposures": num_exposures,  # (c)
-                "Mean readout time": ut.hhmmss(mean_readout_hrs),  # (f=e/c)
-                "Number of slews(1)": num_slews,  # (d)
-                "Mean Slew time(1)": ut.hhmmss(mean_slew),  # (g/d)
+                "Number of slews": num_slews if pd.notna(num_slews) else "NA",  # (d)
+                "Mean Slew time": ut.hhmmss(mean_slew),  # (g/d)
+                "Accounted hours": ut.hhmmss(accounted_hours),
             }
 
         # Composition to combine Exposure and Efd (blackboard)
