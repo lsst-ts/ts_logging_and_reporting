@@ -333,7 +333,7 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
 # + In Period: Replace multi-values in a column with a conctenation
 #   of the unique values.
 # TODO General aggregation using dtypes assigned in allsrc.
-def reduce_period(df, verbose=True):
+def reduce_period(df, verbose=False):
     """Group and aggregate by Period. Drops some columns. Reduces Rows."""
 
     def multi_string(group):

@@ -108,7 +108,8 @@ class ConsdbAdapter(SourceAdapter):
         exclude = available_instruments - include
         if exclude and self.warning:
             elist = ", ".join(sorted(exclude))
-            warnings.warn(f"Excluding these instruments from results: {elist}")
+            msg = f"Excluding these instruments from results: {elist}"
+            warnings.warn(msg, category=ex.ExcludeInstWarning, stacklevel=2)
 
         # Some sources are case sensitive and use CamelCase.
         # ConsDB will handle either, but REPORT lower case.
@@ -230,6 +231,8 @@ class ConsdbAdapter(SourceAdapter):
             "dimm_seeing",
             "exposure_id",
             "exposure_name",
+            "target_name",
+            "group_id",
             "exp_time",  # seconds
             "obs_start",  # TAI
             "day_obs",  # int

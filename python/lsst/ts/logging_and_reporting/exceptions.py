@@ -118,3 +118,17 @@ class NoRecordsWarning(BaseLogrepError):  # noqa: N818
     """Got no records. This might be ok, or maybe there is a bug."""
 
     error_code = "ZERORECS"
+
+
+class NotAvailWarning(BaseLogrepError):  # noqa: N818
+    """Some requested fields were not available.
+    This might be ok, or maybe there is a bug.
+    """
+
+    error_code = "NOTAVAIL"
+
+
+class ExcludeInstWarning(BaseLogrepError):  # noqa: N818
+    """Excluding some instruments from results."""
+
+    error_code = "EXINSTRU"

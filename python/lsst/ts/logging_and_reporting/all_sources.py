@@ -257,6 +257,7 @@ class AllSources:
 
             # These need join between exposures and messages.
             # But in messages, they aren't reliable numbers anyhow.
+            # TODO despite unreliability, use messages values.
             loss_fault = pd.NA  # hours
             loss_weather = pd.NA  # hours
 
@@ -271,23 +272,38 @@ class AllSources:
             accounted_hours = used_hours + idle_hours
 
             instrument_tally[instrument] = {
-                "Total Night": ut.hhmmss(total_observable_hours),  # (a)
-                "Total Exposure": ut.hhmmss(exposure_hours),  # (b)
-                "Readout time(1)": ut.hhmmss(readout_hours),  # (e)
-                "Slew time": ut.hhmmss(slew_hours),  # (g)
+                "Total Observable Night": ut.hhmmss(total_observable_hours),
+                "Total Exposure": ut.hhmmss(exposure_hours),
+                "Readout time(1)": ut.hhmmss(readout_hours),
+                "Slew time(2)": ut.hhmmss(slew_hours),
                 "Time loss due to fault": ut.hhmmss(loss_fault),
                 "Time loss due to weather": ut.hhmmss(loss_weather),
-                "Idle time": ut.hhmmss(idle_hours),  # (i=a-b-e-g)
-                "Number of exposures": num_exposures,  # (c)
-                "Number of slews": num_slews if pd.notna(num_slews) else "NA",  # (d)
-                "Mean Slew time": ut.hhmmss(mean_slew),  # (g/d)
-                "Accounted hours": ut.hhmmss(accounted_hours),
+                "Idle time": ut.hhmmss(idle_hours),
+                "Number of exposures": num_exposures,
+                "Number of slews": num_slews if pd.notna(num_slews) else "NA",
+                "Mean Slew time": ut.hhmmss(mean_slew),
+                "Total Accounted time": ut.hhmmss(accounted_hours),
             }
 
         # Composition to combine Exposure and Efd (blackboard)
         # ts_xml/.../sal_interfaces/Scheduler/Scheduler_Events.xml
         # https://ts-xml.lsst.io/sal_interfaces/Scheduler.html#slewtime
         # edf.get_targets() => "slewTime"                             # (d,g,h)
+        tally_remarks = {
+            "Total Observable Night": "time between 18 deg twilights",
+            "Total Exposure": "Sum of exposure times",
+            "Readout time(1)": "Sum of exposure readout times",
+            "Slew time(2)": "Sum of slew times",
+            "Time loss due to fault": "Sum of time lost due to faults (apx)",
+            "Time loss due to weather": ("Sum of time lost due to weather (apx)"),
+            "Idle time": "Sum of time doing 'nothing'",
+            "Number of exposures": "",
+            "Number of slews": "",
+            "Mean Slew time": "",
+            "Total Accounted time": "Total of above sums",
+        }
+
+        instrument_tally["Remarks"] = tally_remarks
         return instrument_tally
 
     # see source_record_counts()
@@ -406,7 +422,6 @@ class AllSources:
         """time when MTMount azimuthInPosition and elevationInPosition events
         have their inPosition items set to False and then again when they
         turn True."""
-
         pass
 
     @property
@@ -445,6 +460,7 @@ class AllSources:
         # Values of rec["exposure_flag"]
         eflag_values = ["good", "questionable", "junk", "unknown"]
         table_recs = defaultdict(dict)
+        field_name_title = field_name.title().replace("_", " ")
         for field in field_values:
             for eflag in eflag_values:
                 # Initialize to zeros
@@ -452,7 +468,7 @@ class AllSources:
                 counter.update(
                     [r["exposure_flag"] for r in records if r[field_name] == field]
                 )
-            table_recs[field]["Detail"] = gen_link(field)
+            table_recs[field][field_name_title] = gen_link(field)
             table_recs[field].update(dict(counter))
             # User want this?: counter.update(dict(total=counter.total()))
         if table_recs:
@@ -461,10 +477,15 @@ class AllSources:
                 index=list(table_recs.keys()),
             )
             df.sort_index(inplace=True)
+            # Add Total row
+            tot_df = pd.DataFrame(
+                [*df.values, ["Total", *df.sum(numeric_only=True).values]],
+                columns=df.columns,
+            )
         else:
-            df = pd.DataFrame()
+            tot_df = pd.DataFrame()
 
-        return df
+        return tot_df
 
     def fields_count_exposure(self, instrument):
         exposure_field_names = [
@@ -545,7 +566,7 @@ class AllSources:
                 # no CDF, no EDF
                 pass  # empty DF returned above
 
-        fields = [
+        fields = {
             "air_temp",
             "airmass",
             "altitude",
@@ -577,14 +598,14 @@ class AllSources:
             # 'day_obs_CDB',
             # 'day_obs_EXP',
             # 'exposure_time',
-            # 'group_name',
+            "group_name",
             # 'obs_start',
-            # 'target_name',
+            "target_name",
             # 'timespan_end',
             # 'tracking_dec',
             # 'tracking_ra',
             # 'visit_id',
-        ]
+        }
         labels = {
             "air_temp": "Outside Air Temp",
             "airmass": "Airmass",
@@ -615,11 +636,19 @@ class AllSources:
             "zero_point_median": "Photometric Zero Points",
         }
 
-        used_fields = set(sorted(df.columns.to_list())) & set(fields)
+        used_fields = set(sorted(df.columns.to_list())) & fields
 
         # #! df = ut.wrap_dataframe_columns(df[fields])
         # #! df.columns = df.columns.str.title()
-        print(f"DBG allsrc.exposure_detail {used_fields=} {sorted(labels.keys())=}")
+        if self.verbose:
+            print(
+                "DBG allsrc.exposure_detail " f"{used_fields=} {sorted(labels.keys())=}"
+            )
+        if self.warning:
+            if used_fields < fields:
+                msg = "Some requested fields are not available. "
+                msg += f"Requested fields not used: {fields - used_fields}"
+                warnings.warn(msg, category=ex.NotAvailWarning, stacklevel=2)
         df = df[list(used_fields)].rename(columns=labels, errors="ignore")
         return df
 

@@ -41,13 +41,14 @@ def date_hr_min(iso_dt_str):
     return str(dt.datetime.fromisoformat(iso_dt_str))[:16]
 
 
-def fallback_parameters(day_obs, number_of_days, verbose):
+def fallback_parameters(day_obs, number_of_days, period, verbose, warning):
     """Given parameters from Times Square, return usable versions of
     all parameters.  If the provide parameters are not usable, return
     default usable ones.
     """
-    day_obs_fb = "YESTERDAY"  # Fall Back value
-    days_fb = 1
+    day_obs_default = "YESTERDAY"  # Fall Back value
+    days_default = 1
+    period_default = "4h"
     message = ""
 
     try:
@@ -56,23 +57,37 @@ def fallback_parameters(day_obs, number_of_days, verbose):
     except Exception as err:
         message += f"""\nInvalid day_obs given: {day_obs!r}
         Available values are: YYYY-MM-DD, YYYYMMDD, TODAY, YESTERDAY.
-        Using: {day_obs_fb!r}\n{str(err)!r}
+        Using: {day_obs_default!r}\n{str(err)!r}
         """
-        day_obs = day_obs_fb
+        day_obs = day_obs_default
 
     try:
         days = int(number_of_days)
     except Exception as err:
-        days = days_fb
+        days = days_default
         message += f"""\nInvalid number_of_days given: {number_of_days!r}
         Must be an integer.
         Using: {days}\n{str(err)!r}
         """
 
+    try:
+        now = dt.datetime.now()
+        freq = pd.Period(now, period).freqstr
+    except Exception as err:
+        freq = period_default
+        message += f"\nInvalid period given: {period!r}\n"
+        message += "Must be an Alias string formed from "
+        message += (
+            "https://pandas.pydata.org/docs/user_guide/timeseries.html#period-aliases"
+        )
+        message += f"Using: {freq}\n{str(err)!r}"
+
     to_use = dict(
         day_obs=day_obs,
         number_of_days=days,
+        period=freq,
         verbose=(verbose == "true"),
+        warning=(warning == "true"),
     )
 
     return to_use, message

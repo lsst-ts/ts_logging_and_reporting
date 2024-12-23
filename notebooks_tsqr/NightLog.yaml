@@ -45,3 +45,9 @@ parameters:
     description: >
       Enable verbose output. (Generally for development use.)
     default: false
+  warning:
+    type: boolean
+    description: >
+      Enable warnings when: zero records retrieved from a source, instruments are
+      excluded, etc.
+    default: false
