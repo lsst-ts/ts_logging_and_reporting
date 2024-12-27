@@ -258,8 +258,20 @@ class AllSources:
             # These need join between exposures and messages.
             # But in messages, they aren't reliable numbers anyhow.
             # TODO despite unreliability, use messages values.
-            loss_fault = pd.NA  # hours
-            loss_weather = pd.NA  # hours
+            ltypes = set([r["time_lost_type"] for r in self.nar_src.records])
+            ltime = defaultdict(int)
+            for t in ltypes:
+                for r in self.nar_src.records:
+                    ltime[t] += r["time_lost"]
+            if "fault" in ltypes:
+                loss_fault = ltime["fault"]  # hours
+            else:
+                loss_fault = pd.NA  # hours
+
+            if "weather" in ltypes:
+                loss_weather = ltime["weather"]  # hours
+            else:
+                loss_weather = pd.NA  # hours
 
             used_hours = exposure_hours + readout_hours
             if pd.notna(slew_hours):
