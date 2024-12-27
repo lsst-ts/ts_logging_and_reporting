@@ -50,6 +50,7 @@
 import copy
 import datetime as dt
 import itertools
+import re
 import traceback
 from abc import ABC
 from collections import defaultdict
@@ -509,7 +510,8 @@ class NightReportAdapter(SourceAdapter):
         for tele, g0 in itertools.groupby(recs, key=telescope):
             table.append(f"### Telescope: {tele}")
             for rec in g0:
-                msg = rec["summary"].strip()
+                # Replace 3 or more newlines with just two.
+                msg = re.sub(r"\n{3,}", "\n\n", rec["summary"].strip())
 
                 table.append(f"\n{msg}\n")
                 crew_list = rec.get("observers_crew", [])
@@ -711,7 +713,11 @@ class NarrativelogAdapter(SourceAdapter):
                 if new:
                     msg = new
                 else:
-                    msg = rep.htmlcode(rec["message_text"].strip())
+
+                    # Replace 3 or more newlines with just two.
+                    msg = rep.htmlcode(
+                        re.sub(r"\n{3,}", "\n\n", rec["message_text"].strip())
+                    )
                     mdstr += f"- {attrstr}"
 
                 mdstr += "\n\n" + msg + "\n"
