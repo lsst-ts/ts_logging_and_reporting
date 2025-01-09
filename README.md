@@ -2,6 +2,20 @@
 
 Project-wide Logging and Reporting
 
+## About this software
+This is a **Prototype** application.  It is intended to help figure
+out what is needed for a *Project-wide Logging and Reporting* system
+for Rubin. It helps with this by presenting content in the
+[NightLog](https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog)
+jupyter notebook under Times Square. The intent is to eventually put
+the content into a solid User Interface environment (such as **LOVE:**
+*LSST Operator's Visualization Environment*). The Times Square
+environment is used because it allows rapid turn-around from code
+change to an easily accessible report on USDF.
+
+While current *rendering* is in the Notebook, most of the rest of the code
+(back-end) is in the python package included in this repository.  The
+intent is for that package to be modified and used with the final UI.
 
 ## Set up
 

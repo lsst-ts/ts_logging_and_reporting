@@ -18,7 +18,6 @@ repository = "https://github.com/lsst-ts/ts_logging_and_reporting"
 
 [project.scripts]
 
-
 [tools.setuptools]
 package-data = {  }
 

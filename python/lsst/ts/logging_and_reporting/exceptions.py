@@ -20,13 +20,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # error_code values should be no bigger than 8 characters 12345678
-import traceback
-from warnings import warn
 
-class BaseLogrepException(Exception):
+
+class BaseLogrepError(Warning):
     is_an_error_response = True
     status_code = 400
-    error_message = '<NA>'
+    error_message = "<NA>"
     saved_tb = None
 
     def get_subclass_name(self):
@@ -44,35 +43,92 @@ class BaseLogrepException(Exception):
         if status_code is not None:
             self.status_code = status_code or self.status_code
 
-        self.saved_tb = traceback.format_exc()
+        # self.saved_tb = traceback.format_exc()
+        self.saved_tb = None
 
     def __str__(self):
-        return (f'[{self.error_code}] {self.error_message}'
-                f' {self.saved_tb=}')
+        msg = f"[{self.error_code}] {self.error_message}"
+        if self.saved_tb:
+            msg += f" {self.saved_tb=}"
+        return msg
 
     def to_dict(self):
-        dd = dict(errorMessage=self.error_message,
-                  errorCode=self.error_code,
-                  #! trace=self.saved_tb,
-                  statusCode=self.status_code)
+        dd = dict(
+            errorMessage=self.error_message,
+            errorCode=self.error_code,
+            # trace=self.saved_tb,
+            statusCode=self.status_code,
+        )
         return dd
 
 
 example_error_from_exposurelog = {
-    'detail': [
-        {'type': 'int_parsing',
-         'loc': ['query', 'min_day_obs'],
-         'msg': 'Input should be a valid integer, unable to parse string as an integer',
-         'input': '2024-08-19'},
-        {'type': 'int_parsing',
-        'loc': ['query', 'max_day_obs'],
-         'msg': 'Input should be a valid integer, unable to parse string as an integer',
-         'input': '2024-09-21'}]}
+    "detail": [
+        {
+            "type": "int_parsing",
+            "loc": ["query", "min_day_obs"],
+            "msg": (
+                "Input should be a valid integer, "
+                "unable to parse string as an integer"
+            ),
+            "input": "2024-08-19",
+        },
+        {
+            "type": "int_parsing",
+            "loc": ["query", "max_day_obs"],
+            "msg": (
+                "Input should be a valid integer, "
+                "unable to parse string as an integer"
+            ),
+            "input": "2024-09-21",
+        },
+    ]
+}
 
 
-class BadStatus(BaseLogrepException):
+class StatusError(BaseLogrepError):
     """Non-200 HTTP status from API endpoint. Typically
     this will occur when a URL query string parameter is passed a value with
     a bad format.  It may also be that the Service is broken.
     """
-    error_code = 'BADQSTR'
+
+    error_code = "BADSTAT"
+
+
+class ConsdbQueryError(BaseLogrepError):
+    """Non-200 HTTP status from 'consdb/query' endpoint. Typically
+    this will occur when SQL in json payload cannot be handled by Postgreql.
+    It may also be that the Service is broken.
+    The ConsDB (always?) returns this as a '500 Internal Server Error'.
+    """
+
+    error_code = "BADQUERY"
+
+
+class ConsdbQueryWarning(BaseLogrepError):  # noqa: N818
+    """Got no results from 'consdb/query' endpoint. This might be ok, but
+    is often an indication of a bad query or of an unimplemented part of
+    onsdb.
+    """
+
+    error_code = "NULQUERY"
+
+
+class NoRecordsWarning(BaseLogrepError):  # noqa: N818
+    """Got no records. This might be ok, or maybe there is a bug."""
+
+    error_code = "ZERORECS"
+
+
+class NotAvailWarning(BaseLogrepError):  # noqa: N818
+    """Some requested fields were not available.
+    This might be ok, or maybe there is a bug.
+    """
+
+    error_code = "NOTAVAIL"
+
+
+class ExcludeInstWarning(BaseLogrepError):  # noqa: N818
+    """Excluding some instruments from results."""
+
+    error_code = "EXINSTRU"
