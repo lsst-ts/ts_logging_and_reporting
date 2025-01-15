@@ -30,7 +30,7 @@ try:
     have_consdb = True
 except Exception as error:
     have_consdb = False
-    print(f"{error = }")
+    print(f"{error=}")
 
 
 class ConsDbAdapter:

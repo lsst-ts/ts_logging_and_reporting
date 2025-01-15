@@ -87,7 +87,7 @@ class ConsdbAdapter(SourceAdapter):
     # Identifiers in Postgresql are case insenstive unless quoted.
     def get_instruments(self, include=None):
         url = f"{self.server}/{self.service}/schema"
-        ok, result, code = self.protected_get(url, token=self.token)
+        ok, result, code = self.protected_get(url)
         if not ok:  # failure
             print(f"ERROR: Failed GET {ok=} {result=} {code=}")
             return None
@@ -303,7 +303,7 @@ class ConsdbAdapter(SourceAdapter):
             print("Loading schema: instruments")
         endpoint = f"{self.server}/{self.service}/schema"
         url = endpoint
-        ok, result, code = self.protected_get(url, token=self.token)
+        ok, result, code = self.protected_get(url)
         if not ok:  # failure
             status = dict(
                 endpoint_url=url,
@@ -322,7 +322,7 @@ class ConsdbAdapter(SourceAdapter):
         for instrument in self.instruments:
             endpoint = f"{self.server}/{self.service}/schema"
             url = f"{endpoint}/{instrument}"
-            ok, result, code = self.protected_get(url, token=self.token)
+            ok, result, code = self.protected_get(url)
             if not ok:  # failure
                 status = dict(
                     endpoint_url=url,
@@ -345,7 +345,7 @@ class ConsdbAdapter(SourceAdapter):
             for table in self.tables[instrument]:
                 endpoint = f"{self.server}/{self.service}/schema"
                 url = f"{endpoint}/{instrument}/{table}"
-                ok, result, code = self.protected_get(url, token=self.token)
+                ok, result, code = self.protected_get(url)
                 if not ok:  # failure
                     status = dict(
                         endpoint_url=url,

@@ -50,6 +50,7 @@
 import copy
 import datetime as dt
 import itertools
+import os
 import re
 import traceback
 from abc import ABC
@@ -135,6 +136,7 @@ class SourceAdapter(ABC):
         range large or you will use lots of memory. Tens of days is probably
         ok.
         """
+
         self.server = server_url or default_server
         self.verbose = verbose
         self.warning = warning
@@ -146,6 +148,15 @@ class SourceAdapter(ABC):
         self.c_timeout = min(MAX_CONNECT_TIMEOUT, cto)  # seconds
         self.r_timeout = min(MAX_READ_TIMEOUT, float(read_timeout))  # seconds
         self.timeout = (self.c_timeout, self.r_timeout)
+
+        try:
+            import lsst.rsp
+
+            self.token = lsst.rsp.get_access_token()
+        except Exception as err:
+            if self.verbose:
+                print(f"Could not get_access_token: {err}")
+            self.token = os.environ.get("ACCESS_TOKEN")
 
         self.records = None  # else: list of dict
 
@@ -186,7 +197,7 @@ class SourceAdapter(ABC):
         else:
             return df
 
-    def protected_post(self, url, jsondata, token=None, timeout=None):
+    def protected_post(self, url, jsondata, timeout=None):
         """Do a POST against an API url.
         Do NOT stop processing when we have a problem with a URL. There
         have been cases where the problem has been with
@@ -203,7 +214,7 @@ class SourceAdapter(ABC):
         if self.verbose:
             print(f"DEBUG protected_post({url=},{timeout=})")
         try:
-            auth = ("user", token)
+            auth = ("user", self.token)
             response = requests.post(url, json=jsondata, auth=auth, timeout=timeout)
             if self.verbose:
                 print(
@@ -236,7 +247,7 @@ class SourceAdapter(ABC):
         # when ok=True, result is records (else error message)
         return ok, result, code
 
-    def protected_get(self, url, token=None, timeout=None):
+    def protected_get(self, url, timeout=None):
         """Do a GET against an API url.
         Do NOT stop processing when we have a problem with a URL. There
         have been cases where the problem has been with
@@ -250,7 +261,7 @@ class SourceAdapter(ABC):
         ok = True
         code = 200
         timeout = timeout or self.timeout
-        auth = ("user", token)
+        auth = ("user", self.token)
         if self.verbose:
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
@@ -276,6 +287,11 @@ class SourceAdapter(ABC):
             result = f"Error connecting to {url} (with timeout={timeout}). "
             result += str(err)
         else:  # No exception. Could something else be wrong?
+            if self.verbose:
+                print(
+                    f"DEBUG protected_get: {response.status_code=} "
+                    f"{response.reason=}"
+                )
             result = response.json()
             if self.verbose:
                 print(f"DEBUG protected_get: {len(result)=}")
