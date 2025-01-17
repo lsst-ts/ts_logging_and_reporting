@@ -260,6 +260,9 @@ class AllSources:
             # TODO despite unreliability, use messages values.
             ltypes = set([r["time_lost_type"] for r in self.nar_src.records])
             ltime = defaultdict(int)
+            print(
+                f"DBG night_tally_observation_gaps: {ltypes=} {len(self.nar_src.records)=}"
+            )
             for t in ltypes:
                 for r in self.nar_src.records:
                     ltime[t] += r["time_lost"]
@@ -307,7 +310,7 @@ class AllSources:
             "Readout time(1)": "Sum of exposure readout times",
             "Slew time(2)": "Sum of slew times",
             "Time loss due to fault": "Sum of time lost due to faults (apx)",
-            "Time loss due to weather": ("Sum of time lost due to weather (apx)"),
+            "Time loss due to weather": "Sum of time lost due to weather (apx)",
             "Idle time": "Sum of time doing 'nothing'",
             "Number of exposures": "",
             "Number of slews": "",
@@ -317,6 +320,148 @@ class AllSources:
 
         instrument_tally["Remarks"] = tally_remarks
         return instrument_tally
+
+    def exposed_instruments(self):
+        """Non-excluded instruments from in exposures from ExposureLog."""
+        used_instruments = set()
+        for instrum, recs in self.exp_src.exposures.items():
+            if instrum in self.exclude_instruments:
+                continue
+            if len(recs) > 0:
+                used_instruments.add(instrum)
+        return used_instruments
+
+    # From night_tally_observation_gaps()
+    # Internal times in decimal hours. Render as HH:MM:SS
+    def time_account(self, verbose=False):
+        # between 18deg twilights
+        total_observable_hours = self.alm_src.night_hours
+        used_instruments = self.exposed_instruments()
+        if len(used_instruments) == 0:
+            return {
+                "": {
+                    "Total night": ut.hhmmss(total_observable_hours),
+                    "Idle time": ut.hhmmss(total_observable_hours),
+                }
+            }
+        # Scot says use 2.41 sec/exposure in slack #consolidated-database
+        exp_readout_hours = 2.41 / (60 * 60.0)  # hrs per exposure
+
+        # Initial. Add Instrument columns.
+        columns = ["Row", "Source", "Name", "Description"]
+        account_records = [  # COLUMNS
+            ("A", "<alm>", "Total Observable Night", "(between 18 deg twilights)"),
+            ("B", "<nar>", "Total Exposure", "Total exposure time"),
+            ("C", "const*<nar>", "Readout time(1)", "Total exposure readout time"),
+            ("D", "(ConsDB later)", "Slew time(2)", "Total slew time"),
+            ("E", "<nar>", "Time loss due to fault(3)", ""),
+            ("F", "<nar>", "Time loss due to weather(3)", ""),
+            ("G", "A-(B+C+D+F)", "Idle time", 'Time doing "nothing"'),
+            ("H", "<nar>", "Number of exposures", ""),
+            ("I", "D", "Number of slews", ""),
+            ("J", "D", "Mean Slew time", ""),
+            ("K", "B+C+D+G", "Total Accounted for time", ""),
+        ]
+        footnotes = {
+            "1": (
+                "There is no practical way to get detector read-out "
+                "time. A value of 2.41 seconds per exposure is used."
+            ),
+            "2": (
+                "There is no simple way to get slew times. We expect SlewTime "
+                "to find its way into the Consolidated Database eventually"
+            ),
+            "3": (
+                "A fault is not associated with a specific Instrument so "
+                "is counted as applying to all instruments."
+            ),
+        }
+
+        df = pd.DataFrame.from_records(account_records, columns=columns).set_index(
+            "Row"
+        )
+        # df.loc['A','LSSTCam'] = 6.9
+
+        # Calc time accounting for each Instrument.
+        # "Total Observable Night" same for all instruments.
+        for instrument in used_instruments:
+            exp_records = self.exp_src.exposures[instrument]
+
+            exposure_seconds = 0
+            for rec in exp_records:
+                begin = dt.datetime.fromisoformat(rec["timespan_begin"])
+                end = dt.datetime.fromisoformat(rec["timespan_end"])
+                exposure_seconds += (end - begin).total_seconds()
+            exposure_hours = exposure_seconds / (60 * 60.0)
+            readout_hours = len(exp_records) * exp_readout_hours
+
+            # Merlin might add this to consdb or efd .... eventually
+            # In the meantime, accept that we don't have SLEW times
+            num_slews = pd.NA
+            total_slew_seconds = pd.NA
+            mean_slew = total_slew_seconds / num_slews
+            slew_hours = total_slew_seconds / (60 * 60.0)
+
+            # Calc observable time lost per instrument from Fault and Weather.
+            # Its possible that both Fault and Weather affect same or
+            # overlapping time. Also, we don't know if Fault is for specific
+            # instrument.
+            # In both cases we may double count!
+            # TODO despite unreliability, use messages values.
+            ltypes = set([r["time_lost_type"] for r in self.nar_src.records])
+            ltime = defaultdict(int)
+            for t in ltypes:
+                for r in self.nar_src.records:
+                    ltime[t] += r["time_lost"]
+            # Loss due to FAULT
+            if "fault" in ltypes:
+                loss_fault = ltime["fault"]  # hours
+            else:
+                loss_fault = 0
+            # Loss due to WEATHER
+            if "weather" in ltypes:
+                loss_weather = ltime["weather"]  # hours
+            else:
+                loss_weather = 0
+
+            act_hours = exposure_hours + readout_hours
+            if pd.notna(slew_hours):
+                act_hours += slew_hours
+            if pd.notna(loss_fault):
+                # Never add this since it might apply to a different instrument
+                # act_hours += loss_fault
+                pass
+            if pd.notna(loss_weather):
+                act_hours += loss_weather
+            idle_hours = total_observable_hours - act_hours
+
+            # Stuff values
+            def rt(hours):  # Render Time
+                return ut.hhmmss(hours)
+                # return f'{hours:.2f}'
+
+            df.loc["A", instrument] = rt(total_observable_hours)
+            df.loc["B", instrument] = rt(exposure_hours)
+            df.loc["C", instrument] = rt(readout_hours)
+            df.loc["D", instrument] = rt(slew_hours)
+            df.loc["E", instrument] = rt(loss_fault)
+            df.loc["F", instrument] = rt(loss_weather)
+            df.loc["G", instrument] = rt(idle_hours)
+            df.loc["H", instrument] = len(exp_records)
+            df.loc["I", instrument] = num_slews
+            df.loc["J", instrument] = rt(mean_slew)
+            df.loc["K", instrument] = rt(
+                exposure_hours
+                + readout_hours
+                + (0 if pd.isna(slew_hours) else slew_hours)
+                + loss_weather
+                + idle_hours
+            )
+        return (
+            df[["Name"] + list(used_instruments) + ["Description", "Source"]],
+            footnotes,
+        )
+        # END time_account()
 
     # see source_record_counts()
     def records_per_source(self):

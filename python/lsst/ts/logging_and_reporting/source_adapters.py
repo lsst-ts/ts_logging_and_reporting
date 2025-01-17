@@ -610,8 +610,6 @@ class NarrativelogAdapter(SourceAdapter):
     abbrev = "NAR"
     outfields = {
         "category",
-        "components",
-        "cscs",
         "date_added",
         "date_begin",
         "date_end",
@@ -622,17 +620,22 @@ class NarrativelogAdapter(SourceAdapter):
         "level",
         "message_text",
         "parent_id",
-        "primary_hardware_components",
-        "primary_software_components",
         "site_id",
-        "subsystems",
-        "systems",
         "tags",
         "time_lost",
         "time_lost_type",
         "urls",
         "user_agent",
         "user_id",
+        # ## The following are deprecated. Removed in v1.0.0.
+        # ## Use 'components_path' (components_json) instead
+        # "subsystems",
+        # "systems",
+        # "cscs",
+        # "components",
+        # "primary_hardware_components",
+        # "primary_software_components",
+        "components_json",
     }
     default_record_limit = 1000  # Adapter specific default
     service = "narrativelog"
@@ -744,6 +747,19 @@ class NarrativelogAdapter(SourceAdapter):
                         table.append(f"- Link: {rep.mdpathlink(url)}")
         return table
 
+    # figure out instrument name from telescope name
+    def add_instrument(self, records):
+        lut = {
+            "AuxTel": "LATISS",
+            "MainTel": "LSSTCam",
+            "telescope-1": "LSSComCam",
+        }
+        found = [r["components"] for r in records if r["components"]]
+        # Above got "MainTel" only for 2024-12-01 with
+        # two instruments: LSSTComCam, LSSTCam
+        # TODO finish -- if it is even possible!!!
+        return lut, found
+
     def get_records(
         self,
         site_ids=None,
@@ -803,6 +819,9 @@ class NarrativelogAdapter(SourceAdapter):
         # END: while
 
         self.records = recs
+        # TODO Calc instrument for record based upon other fields!!!
+        # figure out instrument name from telescope name
+        # #!self.add_instrument(recs);
         pam.markup_errors(recs)
         return status
 

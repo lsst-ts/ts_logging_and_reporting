@@ -188,7 +188,7 @@ dayobs2dt = get_datetime_from_dayobs_str
 
 def hhmmss(decimal_hours):
     if pd.isna(decimal_hours):
-        return "NA"
+        return decimal_hours
 
     hours = int(decimal_hours)
     minutes = int((decimal_hours * 60) % 60)
