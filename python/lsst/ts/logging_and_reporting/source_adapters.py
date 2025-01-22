@@ -749,16 +749,44 @@ class NarrativelogAdapter(SourceAdapter):
 
     # figure out instrument name from telescope name
     def add_instrument(self, records):
-        lut = {
-            "AuxTel": "LATISS",
-            "MainTel": "LSSTCam",
-            "telescope-1": "LSSComCam",
-        }
-        found = [r["components"] for r in records if r["components"]]
-        # Above got "MainTel" only for 2024-12-01 with
-        # two instruments: LSSTComCam, LSSTCam
-        # TODO finish -- if it is even possible!!!
-        return lut, found
+        """Add 'instrument' field to records (SIDE-EFFECT)
+        Narrativelog gives Telescope (field="components") but not Instrument,
+        but we need to report by Instrument since that is what is used for
+        exposures.
+        Therefore, we must map Telescope to the Instrument that is assumed to
+        be on the Telescope.
+        We always assume Telescope=AuxTel means Instrument=LATISS
+        For Telescope=MainTel (aka Simonyi) the Instrument assumed is different
+        depending on the dayobs.
+        Prior to dayobs=2025-01-19 we assume Instrument=LSSTComCam
+          from then on we assume Instrument=LSSTCam.
+        For any Telescope value other than AuxTel or MainTel we ignore the data
+          (but warn about what Telescope we are ignoring).
+        """
+
+        LSST_DAYOBS = 20250120
+        for rec in records:
+            dayobs = int(rec["date_added"][:8].replace("-", ""))
+            if rec["components"] is None:
+                instrument = None
+            elif rec["components"][0] == "AuxTel":
+                instrument = "LATISS"
+            elif rec["components"][0] == "MainTel":
+                instrument = "lsst"
+            elif rec["components"][0] == "Simonyi":
+                instrument = "lsst"
+            else:
+                instrument = None
+
+            if instrument == "lsst":
+                if dayobs >= LSST_DAYOBS:
+                    rec["instrument"] = "LSSTCam"
+                else:  # dayobs < LSST_DAYOBS
+                    rec["instrument"] = "LSSTComCam"
+            else:
+                rec["instrument"] = instrument
+
+        return records
 
     def get_records(
         self,
@@ -818,12 +846,17 @@ class NarrativelogAdapter(SourceAdapter):
             qparams["offset"] += len(page)
         # END: while
 
-        self.records = recs
-        # TODO Calc instrument for record based upon other fields!!!
-        # figure out instrument name from telescope name
-        # #!self.add_instrument(recs);
-        pam.markup_errors(recs)
+        self.records = self.add_instrument(recs)
+        pam.markup_errors(self.records)
         return status
+
+    def verify_records(self):
+        telescope_fault_loss = [
+            (r["date_added"], r["time_lost"], r["time_lost_type"], r["components"])
+            for r in self.records
+            if r["time_lost"] > 0
+        ]
+        return telescope_fault_loss
 
     # END: class NarrativelogAdapter
 

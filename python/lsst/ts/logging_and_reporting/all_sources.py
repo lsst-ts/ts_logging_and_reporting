@@ -183,7 +183,7 @@ class AllSources:
 
     # This will have to be async def night_tally_observation_gaps
     # if efd_src is used.
-    def night_tally_observation_gaps(self, verbose=False):
+    def SAVE_night_tally_observation_gaps(self, verbose=False):
         # observable is between 18deg twilights
         total_observable_hours = self.alm_src.night_hours
         used_instruments = set()
@@ -331,9 +331,12 @@ class AllSources:
                 used_instruments.add(instrum)
         return used_instruments
 
-    # From night_tally_observation_gaps()
+    # modified from night_tally_observation_gaps()
     # Internal times in decimal hours. Render as HH:MM:SS
     def time_account(self, verbose=False):
+        """Report on how instrument time is partitioned over the
+        observing night."""
+
         # between 18deg twilights
         total_observable_hours = self.alm_src.night_hours
         used_instruments = self.exposed_instruments()
@@ -355,7 +358,7 @@ class AllSources:
             ("C", "const*<nar>", "Readout time(1)", "Total exposure readout time"),
             ("D", "(ConsDB later)", "Slew time(2)", "Total slew time"),
             ("E", "<nar>", "Time loss due to fault(3)", ""),
-            ("F", "<nar>", "Time loss due to weather(3)", ""),
+            ("F", "<nar>", "Time loss due to weather(4)", ""),
             ("G", "A-(B+C+D+F)", "Idle time", 'Time doing "nothing"'),
             ("H", "<nar>", "Number of exposures", ""),
             ("I", "D", "Number of slews", ""),
@@ -372,8 +375,14 @@ class AllSources:
                 "to find its way into the Consolidated Database eventually"
             ),
             "3": (
-                "A fault is not associated with a specific Instrument so "
-                "is counted as applying to all instruments."
+                "A fault loss is assumed to be associated with a specific "
+                "Instrument so is counted as applying to just that instrument."
+            ),
+            "4": (
+                "A weather loss is not associated with a specific Instrument so "
+                "is counted as applying to all instruments. "
+                "Different telescopes might have different weather (clouds) "
+                "so this might be wrong occasionaly."
             ),
         }
 
@@ -410,9 +419,10 @@ class AllSources:
             # TODO despite unreliability, use messages values.
             ltypes = set([r["time_lost_type"] for r in self.nar_src.records])
             ltime = defaultdict(int)
-            for t in ltypes:
+            for lt in ltypes:
                 for r in self.nar_src.records:
-                    ltime[t] += r["time_lost"]
+                    if r["instrument"] == instrument:
+                        ltime[lt] += r["time_lost"]
             # Loss due to FAULT
             if "fault" in ltypes:
                 loss_fault = ltime["fault"]  # hours
@@ -428,9 +438,7 @@ class AllSources:
             if pd.notna(slew_hours):
                 act_hours += slew_hours
             if pd.notna(loss_fault):
-                # Never add this since it might apply to a different instrument
-                # act_hours += loss_fault
-                pass
+                act_hours += loss_fault
             if pd.notna(loss_weather):
                 act_hours += loss_weather
             idle_hours = total_observable_hours - act_hours
@@ -454,6 +462,7 @@ class AllSources:
                 exposure_hours
                 + readout_hours
                 + (0 if pd.isna(slew_hours) else slew_hours)
+                + loss_fault
                 + loss_weather
                 + idle_hours
             )

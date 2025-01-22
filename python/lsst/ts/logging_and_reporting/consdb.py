@@ -85,7 +85,7 @@ class ConsdbAdapter(SourceAdapter):
     # where part of the name comes from the instrument. It turns
     # out EITHER lowcase or camel case is ok for table.
     # Identifiers in Postgresql are case insenstive unless quoted.
-    def get_instruments(self, include=None):
+    def get_instruments(self, include=None) -> dict:
         url = f"{self.server}/{self.service}/schema"
         ok, result, code = self.protected_get(url)
         if not ok:  # failure
@@ -213,7 +213,7 @@ class ConsdbAdapter(SourceAdapter):
     # DM-48072 Add a visit1_exposure table to link visits and exposures
     # In the meantime KT says assume visit_id = exposure_id
     # In the presence of snaps, exposure_id and visit_id many-to-one.
-    def get_exposures(self, instrument):
+    def get_exposures(self, instrument) -> pd.DataFrame:
         """SIDE-EFFECT: cache results in self.exposures[instrument]"""
         # DM-47573
         exposure_out = [
