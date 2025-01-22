@@ -485,6 +485,12 @@ class NightReportAdapter(SourceAdapter):
             self.status[self.primary_endpoint] = self.get_records()
 
     @property
+    def sources(self):
+        return {
+            "Nightreport API": f"{self.server}/{self.service}/{self.primary_endpoint}"
+        }
+
+    @property
     def urls(self):
         """RETURN flattened list of all URLs."""
         nig_urls = [
@@ -680,6 +686,12 @@ class NarrativelogAdapter(SourceAdapter):
         if self.min_date:
             self.hack_reconnect_after_idle()
             self.status[self.primary_endpoint] = self.get_records()
+
+    @property
+    def sources(self):
+        return {
+            "Narrative Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"
+        }
 
     @property
     def urls(self):
@@ -948,6 +960,12 @@ class ExposurelogAdapter(SourceAdapter):
             self.status[self.primary_endpoint] = self.get_records()
         # Copy exposure_flag from messages to exposures (some to many).
         self.add_exposure_flag_to_exposures()
+
+    @property
+    def sources(self):
+        return {
+            "Exposure Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"
+        }
 
     # SIDE-EFFECT: Modifies self.exp_src.exposures in place.429
     def add_exposure_flag_to_exposures(self):
