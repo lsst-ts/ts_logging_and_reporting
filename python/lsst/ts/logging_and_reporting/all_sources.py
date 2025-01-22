@@ -61,18 +61,21 @@ class AllSources:
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
             verbose=verbose,
+            warning=warning,
         )
         self.exp_src = sad.ExposurelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
             verbose=verbose,
+            warning=warning,
         )
         self.nar_src = sad.NarrativelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
             verbose=verbose,
+            warning=warning,
         )
         self.cdb_src = cdb.ConsdbAdapter(
             server_url=server_url,
@@ -376,7 +379,11 @@ class AllSources:
             ),
             "3": (
                 "A fault loss is assumed to be associated with a specific "
-                "Instrument so is counted as applying to just that instrument."
+                "Instrument so is counted as applying to just that instrument. "
+                "The Instrument for the fault loss is derived from "
+                "might be the Telescope name. "
+                "The derived Instrument is different for records added "
+                "on or after 2025-01-20. "
             ),
             "4": (
                 "A weather loss is not associated with a specific Instrument so "

@@ -53,10 +53,12 @@ import itertools
 import os
 import re
 import traceback
+import warnings
 from abc import ABC
 from collections import defaultdict
 from urllib.parse import urlencode
 
+import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.parse_message as pam
 import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
@@ -463,6 +465,7 @@ class NightReportAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
         verbose=False,
+        warning=False,
     ):
         super().__init__(
             server_url=server_url,
@@ -470,6 +473,7 @@ class NightReportAdapter(SourceAdapter):
             min_dayobs=min_dayobs,
             limit=limit,
             verbose=verbose,
+            warning=warning,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -653,6 +657,7 @@ class NarrativelogAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
         verbose=False,
+        warning=False,
     ):
         super().__init__(
             server_url=server_url,
@@ -660,6 +665,7 @@ class NarrativelogAdapter(SourceAdapter):
             min_dayobs=min_dayobs,
             limit=limit,
             verbose=verbose,
+            warning=warning,
         )
         if self.verbose:
             print(
@@ -777,6 +783,18 @@ class NarrativelogAdapter(SourceAdapter):
                 instrument = "lsst"
             else:
                 instrument = None
+
+            if self.warning and instrument is None:
+                components = rec["components"]
+                dateadded = rec["date_added"]
+                msg = (
+                    'Unknown Telescope found in "components" field '
+                    "of a record in the Narrative Log "
+                    f"added on {dateadded}. "
+                    "Expected one of {AuxTel, MainTel, Simonyi} "
+                    f"got {components=}. "
+                )
+                warnings.warn(msg, category=ex.UnknownTelescopeWarning, stacklevel=2)
 
             if instrument == "lsst":
                 if dayobs >= LSST_DAYOBS:
@@ -902,6 +920,7 @@ class ExposurelogAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
         verbose=False,
+        warning=False,
     ):
         super().__init__(
             server_url=server_url,
@@ -909,6 +928,7 @@ class ExposurelogAdapter(SourceAdapter):
             min_dayobs=min_dayobs,
             limit=limit,
             verbose=verbose,
+            warning=warning,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
