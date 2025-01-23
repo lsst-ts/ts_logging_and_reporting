@@ -196,6 +196,13 @@ def hhmmss(decimal_hours):
     return f"{hours:d}:{minutes:02d}:{seconds:02d}"
 
 
+def link_new_tab(url, string=None):
+    """Wrap links in html to open all links in new tab, must be used in md()"""
+    string = url if string is None else string
+    html = f'<a href="{url}" target="_blank" rel="noreferrer noopener">{string}</a>'
+    return html
+
+
 def tic():
     """Start timer."""
     tic.start = time.perf_counter()
