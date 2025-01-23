@@ -67,12 +67,21 @@ def html_draft(text):
     return msg
 
 
+def mdlink(url, string=None):
+    """Wrap link in html to open link in new tab, must be used in an md()"""
+    string = url if string is None else string
+    html = f'<a href="{url}" target="_blank" rel="noreferrer noopener">{string}</a>'
+    return html
+
+
 def mdpathlink(url, remove="/browse/"):
-    return f"[{urlparse(url).path.replace(remove, '')}]({url})"
+    string = urlparse(url).path.replace(remove, "")
+    return mdlink(string)
 
 
 def mdfragmentlink(url, remove="!/"):
-    return f"[{urlparse(url).fragment.replace(remove, '')}]({url})"
+    string = urlparse(url).fragment.replace(remove, "")
+    return mdlink(string)
 
 
 def display_error(text, fgcolor="black", bgcolor="red", size="1em"):
