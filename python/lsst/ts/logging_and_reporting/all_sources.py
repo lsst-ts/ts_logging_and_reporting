@@ -381,22 +381,34 @@ class AllSources:
                 "A fault loss is assumed to be associated with a specific "
                 "Instrument so is counted as applying to just that instrument. "
                 "The Instrument for the fault loss is derived from "
-                "might be the Telescope name. "
+                "a 'component' field that MIGHT contain a the Telescope name. "
                 "The derived Instrument is different for records added "
                 "on or after 2025-01-20. "
+                "If a particular fault loss cannot be associated with a "
+                "known telescope, that loss it not counted here at all. "
+                "If the Instrument associated with a fault lost "
+                "is not one that has exposures in the above table, "
+                "it is not counted here. "
+                "The Telescope -> Instrument mapping used is: "
+                "AuxTel->LATISS, "
+                "(MainTel,Simonyi)->LSSTComCam (before 2025-01-20), "
+                "(MainTel,Simonyi)->LSSTCam (on/after 2025-01-20), "
+                "For purposes of counting this loss, it does not matter "
+                "if the associated exposure was on sky or not."
             ),
             "4": (
-                "A weather loss is not associated with a specific Instrument so "
-                "is counted as applying to all instruments. "
-                "Different telescopes might have different weather (clouds) "
-                "so this might be wrong occasionaly."
+                "A weather loss is not associated with a specific Instrument "
+                "so it is counted as applying to all instruments. "
+                "Different telescopes might have different weather "
+                "(e.g. clouds) so this might be wrong occasionaly. "
+                "For purposes of counting this loss, it does not matter "
+                "if the associated exposure was on sky or not."
             ),
         }
 
         df = pd.DataFrame.from_records(account_records, columns=columns).set_index(
             "Row"
         )
-        # df.loc['A','LSSTCam'] = 6.9
 
         # Calc time accounting for each Instrument.
         # "Total Observable Night" same for all instruments.
