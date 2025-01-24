@@ -1,3 +1,6 @@
+This file was last modified:
+Time-stamp: <2025-01-24 09:55:12 pothiers>
+
 * Overview
 In Aug 2024 we began working on what is now called the Nightly Digest.
 It was to develop a /project-wide logging initiative/.  Virtually
@@ -6,15 +9,33 @@ As should be expected: no requirements existed, no framework for the
 work existed, and development was chaotic.  Thankfully, there were
 three log sources with API access already in place.  Three months
 later, we had an MVP (Minimum Viable Product) "release" delivered as
-notebook under Times Square.
+a notebook under Times Square.
 
-It is now (<2025-01-23 Thu>) time to take stalk of what we have
+It is now (<2025-01-23 Thu>) and time to take stock of what we have
 learned, where we want to go, and how we might get there.   This
-document is an attempt to do just that.
+document is an attempt to do that.
 
 # TODO!!!
 # After the following looks good under GitHub, move it to the logrep repo
 # https://github.com/pothiers/notes/blob/master/noirlab/rubin/unified-time-log.org
+
+* About this document
+This was written by Steve Pothier.  All errors and opinions are
+mine. While I've attempted to incorporate ideas from stakeholders
+those ideas are often a moving target and include contradictions. This
+is a snapshot in which I've implicitly removed contradictions.  I'll
+gladly accept feedback.
+
+We expect this document to be modified as we define and implement the
+next major release (Beta-2?) of Nightly Digest.  Since its stored in
+the same repository as the code, there is hope that version you are
+reading reflect the released version of the application (currently
+[[https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog][Nightly Digest]] under Times Square).
+
+This doc was created in a plain text [[https://orgmode.org/][org-mode]] format.  GitHub
+understands the format and renders is fairly well.  But it can also be
+easily exported to other formats such as PDF/LaTeX.  There may be
+differences in rendering -- include what sections are included.
 
 * What We Have Now (Nightly Digest, Beta-1)
 As of <2025-01-23 Thu>, we have the [[https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog][Nightly Digest]] installed in Times
@@ -29,94 +50,172 @@ in Times Square.
 5. Consolidated DB
 6. +EFD+; currently disabled
 
-** The Nightly Digest is divided in to the following sections (sources):
+** The Nightly Digest is divided into the following sections.
+For each section below, the data sources for each (is given in parenthesis).
 - About This Page
-- Table Contents
+- Table of Contents
 - Almanac (Astroplan)
 - Night Report (nightreport)
-- Links to related resources
+- Links to related external resources
 - Time Accounting (Almanac, exposureLog, narrativelog)
 - Jira Tickets (exposureLog, narrativelog)
 - Data Log (exposureLog, narrativelog)
 - Narrative Log (narrativelog)
 
 ** Types of Summaries
+The current Nightly Digest summarizes data using tables and links.
   + Time Accounting: summary of where time is spent (uses 3 data sources)
   + URLs (links, includuing to Confluence and Jira) from any read sources.
   + Data Log: tally of number exposures for various categories of
     exposures.  Drill down into detail exposure info.
 
-
 * Lessons Learned from MVP
 - Times Square with Notebook on "prototype" as default branch allows
   for fast dev cycle.  Local run in notebook, push to github, show in
-  Times Square.
+  Times Square.  It also means that a *push is equivalent to a
+  Release* in the sense that it is immediately available to all users.
 
-- Conditional (only on RSP) ~pip install~ of our backend within notebook
-  strikes good balance.
+- We had a *very fast dev cycle*. In just a few minutes a change could
+  be made locally, verified in a local notebook, pushed (Released) to
+  Times Square.  Generally, I could release changes resulting from our
+  weekly Logging meeting by the end of the next day.
 
-- TSSW Docker container env (for local dev) is different than RSP env.
+- Conditionaly (only on RSP) ~pip install~ our backend within notebook
+  strikes good balance.  Allows changes to show immediately in local
+  notebook before pushing changes, but gets the lasted pushed changes
+  when running under Times Square.
+
+- Using the *TSSW Docker container env for local dev is different* than RSP env.
   Generally RSP has more. I've never had to install more in RSP
-  other than our backend (logrep package)
+  other than our backend (logrep package).
 
-- We get almost no feedback.  What feedback we do get is not from
-  someone that uses it. (They are imagining someone else using it.)
+- We *get almost no feedback*.  What feedback we do get is unlikely to
+  be someone that uses it. (They are imagining someone else using it.)
   Number of real user names identified = ZERO.
 
-- A trick to add some dynamic nature to Nightly Digest is to include
+- A trick to *add some dynamic nature to Nightly Digest* is to include
   parameterized URL links to another Times Square page.  E.G. Links in
   the Data Log section drill down into *detailed and filtered* Exposure
   info.
 
 - Access to individual Sources may fail for reasons beyond our
-  control.  Must keep going and process other sources. Also must be
+  control.  Must *keep going and process other sources*. Also must be
   able to report the failure at a level the is helpful to report on
   slack.
 
-- Must add formatting to text of narrative log messages.
+- Must *add formatting to text of narrative* log messages.
   Tracebacks are cut/pasted into log.  Make them look different.
 
-- There may be many *thousands of exposures*.
+- There may be many *thousands of exposures*. Not something to show on
+  a summary!
 
 - For a single night of narative log text I have *seen over 7,000 characters*.
+  Unfortunately this *is* currently shown in the Digest.  It is the
+  last section but sometimes requires a lot of scolling to get to the end.
 
+* Essentials
+This section contains the 10,000 ft view of the Nightly Digest.
+Detailed aspects of the project are elsewhere.
 
-* Goals (Where we want to go)
+** Goals (Where we want to go)
+These are goals Pothier inferred from meetings, talks, documents, etc.
 
-* Requirements
+- Create a Web Page application for the Digest that includes Nightly
+  and Weekly summaries. (add a Weekly Digest).  Creating a summary for
+  other periods of time (Month) should be relatively straightforward
+  (not necessarily quick).
+
+- The Application should *not use Jupyter Notebooks* because it is very
+  difficult to apply Software Engineering best-practices to
+  them. It follows that the application cannot run under Times Square.
+
+- *High Reliability*: The app requires (nearly) zero manual
+  intervention even in the face of drop outs of data sources.
+
+- *Future Proofing* allows new data sources to be added relatively
+  easily.  Data source access is encapsulated such that a changed in
+  schema for sources requires minimal code changes to this app.
+
+** High Level Requirements
 There have been no requirements imposed upon us from outside. So, we
 created our own.
 
-1. Report must fit into a window as narrow as 2560 pixels (smallest
-   MacBook screen)
+1. Someone previously unfamiliar with the app should be able to get a
+   good high level idea of /what happened last night/ with 15 minutes
+   of accessing the app.
 
-2. When tracebacks are cut/pasted into log, make them visually
-   distinct. Keep most preformat (newlines, indentation, and other
-   whitespace often matters).
-
-3. Regression tests
+2. *Regression tests*
    There *must* be regression tests for all functions or methods
    called by the front-end (a notebook or whatever replaces it).
 
-4. Handle future data
+3. *Handle any possible future data* (for current schema and sources)
    We must be able to handle any data that could be in the sources we
    use as long as their schema remains unchanged.  Its unacceptable
    for us to say "the data is usually like this" if the result of data
    outside the usual is a broken report.
 
+4. Use *drill-down to access details* from a summary.
+
+** Detailed Requirements
+
+1. Report must fit into a window as narrow as 2560 pixels (smallest
+   MacBook screen)
+
+2. For tracebacks that were cut/pasted into log, make them visually
+   distinct. Keep most preformat (newlines, indentation, and other
+   whitespace often matters).
+
+3. Summary means a reduction of the source data.  Don't just show all
+   source data.
 
 
-* Anti Requirements (we explicitly REJECT having to do these)
+*** Anti Requirements (we explicitly REJECT having to do these)
 - Support print of report (print of web page possible but may give
   poor results)
 
 
 
 * Approach (How get get where we want to go)
-** Prove approach outside of Notebooks
-Show as Django App?
+See also: [[file:unified-time-log.org][SUTL]]; *Single Unified Time Log* /(SUTL="subtle")/
 
-** Transition to Operations
+** Prove approach outside of Notebooks
+To prove that we can provide an application that does not use
+Notebooks we have to do it.  There are many possible frameworks that
+could be used. I'm picking Django because I have recent experience
+with it.  I expect that getting things going in django will force us
+to solve issues that need to be solved in other frameworks.  With
+luck, a port to a different framework would be telatively
+straightforward.
+
+The proof does not have to be in a fully TSSW compliant way.  For
+instance, we might not move our backend into the TSSW stack (to avoid
+the changes to fit dev style and approvals that will require). Perhaps
+pass token to app via env variable when app launched.
+
+*** Create MVP Django App
+  + Should the Django app be in the same repo as backend? Probably.
+  + Move data from all_sources into a database. Extend this to hold
+    most recent N days. Automically remove data older than N days.
+  + One view (page) for Nightly Digest
+  + (One view for Weekly Digest)
+
+** Incoroporate SUTL
+- Write an HTML template for each view (Nightly, Weekly)
+- SUTL creates a set increasing reduced (summarized) dataframes. More
+  summarized DF to drill-down into less-summarized (more detailed) DF.
+
+** Transition to Operations (after Commission is done)
+- Formally install the [[https://github.com/lsst-ts/ts_logging_and_reporting][backend end]] into the TSSW stack
+  This will require many changes to fit with the TSSW standards.
+
+- Arrange for the django server to be started (nginx, etc?) along with
+  other TSSW software.
+
+- Add reqression tests
+
+- Different authentication since RSP is not part of the TSSW stack
+
+- Define new dev (maintenance) work-flow
 
 
 
@@ -153,8 +252,46 @@ testing (e.g. some systems are down).
 
 
 * Data Characterization
+The content of the data can and should affect how its displayed.  A
+field that only has a small set of values can be summarized with a
+pull-down menu, but one with a unique value for every record cannot.
+(consider [[https://web.library.yale.edu/quicksearch/tips/using-facets][facets]])  It is possible to characters actual data over a
+selected date range in a way that captures the diveristy of the data.
+
+Write software to capture the diversity and store it as metadata along
+with the source data.  Use diveristy data to tune the rendering.
+Consier a table of 50 records that has a column called "tag". If there
+are only two unique tags in the table, render them as a list below the
+table and remove the "tag" column from the table.  If there are 40
+unique values for tag, show them in a column.  Essentially, we change
+our behavior based upon "data density".
+(a picture would help here!)
 
 * References
 - [[https://rubinobs.atlassian.net/l/cp/xghb1nCR][(SIT-Com) Logging doc by Bruno]]
 - SUTL (Single Unified Time Log, "subtle")
--
+
+
+
+* POSTSCRIPT							   :noexport:
+/(this section here to keep Document Comments out of the way)/
+source: /home/pothiers/orgfiles/designs.org
+
+Something like this can be inserted into doc by invoking export dispatcher
+and selected "insert template" (C-c C-e #).
+
+
+#+TITLE:       Night Digest Fresh Start
+#+AUTHOR:      Steve Pothier
+#+EMAIL:       steve.pothier@noirlab.edu
+#+DESCRIPTION: Views on the next major release of Nightly Digest.
+#+KEYWORDS:
+#+LANGUAGE:  en
+#+OPTIONS:   H:3 num:t toc:t \n:nil @:t ::t |:t ^:nil -:t f:t *:t <:t
+#+OPTIONS:   TeX:t LaTeX:t skip:nil d:nil todo:t pri:nil tags:nil
+#+INFOJS_OPT: view:nil toc:t ltoc:t mouse:underline buttons:0 path:http://orgmode.org/org-info.js
+#+EXPORT_SELECT_TAGS: export
+#+EXPORT_EXCLUDE_TAGS: noexport
+#+LINK_UP:
+#+LINK_HOME:
+#+XSLT:
