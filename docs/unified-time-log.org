@@ -1,17 +1,7 @@
+Time-stamp: <2025-01-24 12:36:59 pothiers>
 * COMMENT PRESCRIPT
 \setlength{\parindent}{0em}
 \parskip 7.2pt
-* About this Document
-# *DRAFT:   This will probably ALWAYS be a DRAFT!*
-Time-stamp: <2025-01-24 12:29:08 pothiers>
-
-This white-paper describes a partially implemented vision/design
-created [2024-11-28 Thu]--[2024-12-02 Mon]. I wrote it after I found
-myself excitedly yammering incoherently to a few people about the
-concepts. These ideas can be grouped under what I have come to call a
-*Single Unified Time Log* /(SUTL="subtle")/. SUTL is currently being
-used (in DRAFT form) in the /Night Summary/ being created for /TSSW Logging and
-Reporting//
 
 * Abstract
 Create a *Single Unified Time Log* using a sequence of steps that
@@ -21,6 +11,22 @@ Render/.  The /Rendering/ step partitions the combined data from a
 single Data-Frame into a structure that is rendered into HTML through a
 jinja template. The use of templates admits the possibility of
 generating alternate reports for different use-cases.
+
+* About this Document
+# *DRAFT:   This will probably ALWAYS be a DRAFT!*
+
+This white-paper describes a partially implemented vision/design
+created [2024-11-28 Thu]--[2024-12-02 Mon]. I wrote it after I found
+myself excitedly yammering incoherently to a few people about the
+concepts. These ideas can be grouped under what I have come to call a
+*Single Unified Time Log* /(SUTL="subtle")/. SUTL is currently being
+used (in DRAFT form) in the /Night Summary/ being created for /TSSW Logging and
+Reporting//
+
+This doc was created in a plain text [[https://orgmode.org/][org-mode]] format.  GitHub
+understands the format and renders is fairly well.  But it can also be
+easily exported to other formats such as PDF/LaTeX.  There may be
+differences in rendering -- include what sections are included.
 
 * Executive Summary
 The /Night Summary/ being developed under Logging & Reporting is
