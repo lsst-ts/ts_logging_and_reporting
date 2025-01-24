@@ -1,0 +1,160 @@
+* Overview
+In Aug 2024 we began working on what is now called the Nightly Digest.
+It was to develop a /project-wide logging initiative/.  Virtually
+nothing else about it was known. Developers were brand new to Rubin.
+As should be expected: no requirements existed, no framework for the
+work existed, and development was chaotic.  Thankfully, there were
+three log sources with API access already in place.  Three months
+later, we had an MVP (Minimum Viable Product) "release" delivered as
+notebook under Times Square.
+
+It is now (<2025-01-23 Thu>) time to take stalk of what we have
+learned, where we want to go, and how we might get there.   This
+document is an attempt to do just that.
+
+# TODO!!!
+# After the following looks good under GitHub, move it to the logrep repo
+# https://github.com/pothiers/notes/blob/master/noirlab/rubin/unified-time-log.org
+
+* What We Have Now (Nightly Digest, Beta-1)
+As of <2025-01-23 Thu>, we have the [[https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog][Nightly Digest]] installed in Times
+Square. Internally, it uses the [[https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/ExposureDetail][Exposure Detail]] page we also installed
+in Times Square.
+
+** We use 6 data (log) sources:
+1. Almanac (Astroplan)
+2. Night Report
+3. Narrative Log
+4. Exposure Log
+5. Consolidated DB
+6. +EFD+; currently disabled
+
+** The Nightly Digest is divided in to the following sections (sources):
+- About This Page
+- Table Contents
+- Almanac (Astroplan)
+- Night Report (nightreport)
+- Links to related resources
+- Time Accounting (Almanac, exposureLog, narrativelog)
+- Jira Tickets (exposureLog, narrativelog)
+- Data Log (exposureLog, narrativelog)
+- Narrative Log (narrativelog)
+
+** Types of Summaries
+  + Time Accounting: summary of where time is spent (uses 3 data sources)
+  + URLs (links, includuing to Confluence and Jira) from any read sources.
+  + Data Log: tally of number exposures for various categories of
+    exposures.  Drill down into detail exposure info.
+
+
+* Lessons Learned from MVP
+- Times Square with Notebook on "prototype" as default branch allows
+  for fast dev cycle.  Local run in notebook, push to github, show in
+  Times Square.
+
+- Conditional (only on RSP) ~pip install~ of our backend within notebook
+  strikes good balance.
+
+- TSSW Docker container env (for local dev) is different than RSP env.
+  Generally RSP has more. I've never had to install more in RSP
+  other than our backend (logrep package)
+
+- We get almost no feedback.  What feedback we do get is not from
+  someone that uses it. (They are imagining someone else using it.)
+  Number of real user names identified = ZERO.
+
+- A trick to add some dynamic nature to Nightly Digest is to include
+  parameterized URL links to another Times Square page.  E.G. Links in
+  the Data Log section drill down into *detailed and filtered* Exposure
+  info.
+
+- Access to individual Sources may fail for reasons beyond our
+  control.  Must keep going and process other sources. Also must be
+  able to report the failure at a level the is helpful to report on
+  slack.
+
+- Must add formatting to text of narrative log messages.
+  Tracebacks are cut/pasted into log.  Make them look different.
+
+- There may be many *thousands of exposures*.
+
+- For a single night of narative log text I have *seen over 7,000 characters*.
+
+
+* Goals (Where we want to go)
+
+* Requirements
+There have been no requirements imposed upon us from outside. So, we
+created our own.
+
+1. Report must fit into a window as narrow as 2560 pixels (smallest
+   MacBook screen)
+
+2. When tracebacks are cut/pasted into log, make them visually
+   distinct. Keep most preformat (newlines, indentation, and other
+   whitespace often matters).
+
+3. Regression tests
+   There *must* be regression tests for all functions or methods
+   called by the front-end (a notebook or whatever replaces it).
+
+4. Handle future data
+   We must be able to handle any data that could be in the sources we
+   use as long as their schema remains unchanged.  Its unacceptable
+   for us to say "the data is usually like this" if the result of data
+   outside the usual is a broken report.
+
+
+
+* Anti Requirements (we explicitly REJECT having to do these)
+- Support print of report (print of web page possible but may give
+  poor results)
+
+
+
+* Approach (How get get where we want to go)
+** Prove approach outside of Notebooks
+Show as Django App?
+
+** Transition to Operations
+
+
+
+* Challenges
+** Character of logging data (our sources)
+The usefulness of a reporting application goes beyond the look and
+feel for a small subset of the data.
+
+- The character of the logging data for a night can be very different
+  from night to night. It depends on what telescopes and instruments
+  were used, observation goals, commissioning verses operation,
+  version of the software that saves the data, how and when manualy
+  entereed is added, etc.
+
+- The dynamic diversity of source (log) data SHOULD affect how it is
+  displayed.
+  For instance: If all the data is associated with a single telescope,
+  the telescope name should not be repeated for all the various
+  reported records.  Reporting once is prefered.
+
+- Judging the Look and Feel based on one (or a few) dayobs is silly.
+  Because of dynamic diversity, a report might look great for one
+  night but look horrible for a night with very different data.
+
+
+
+** Testing
+We do not do Testing!
+
+We run the report against 1 (maybe more) dayobs. If it works, we
+assume its good. No systematic testing against different dayobs
+(different data, diff diversity). No edge case testing.  Not exception
+testing (e.g. some systems are down).
+
+
+* Data Characterization
+
+* References
+- [[https://rubinobs.atlassian.net/l/cp/xghb1nCR][(SIT-Com) Logging doc by Bruno]]
+- SUTL (Single Unified Time Log, "subtle")
+-
