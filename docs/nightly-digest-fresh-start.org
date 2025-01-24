@@ -1,5 +1,13 @@
 This file was last modified:
-Time-stamp: <2025-01-24 09:55:12 pothiers>
+Time-stamp: <2025-01-24 10:55:11 pothiers>
+# TODO!!!
+# After the following looks good under GitHub, move it to the logrep repo
+# https://github.com/pothiers/notes/blob/master/noirlab/rubin/unified-time-log.org
+
+# MORE: Non times square means maybe accessible on Summit. So
+# observers could benefit from "Observers View"
+#
+# Time Lost?
 
 * Overview
 In Aug 2024 we began working on what is now called the Nightly Digest.
@@ -14,10 +22,6 @@ a notebook under Times Square.
 It is now (<2025-01-23 Thu>) and time to take stock of what we have
 learned, where we want to go, and how we might get there.   This
 document is an attempt to do that.
-
-# TODO!!!
-# After the following looks good under GitHub, move it to the logrep repo
-# https://github.com/pothiers/notes/blob/master/noirlab/rubin/unified-time-log.org
 
 * About this document
 This was written by Steve Pothier.  All errors and opinions are
@@ -170,8 +174,9 @@ created our own.
 
 
 *** Anti Requirements (we explicitly REJECT having to do these)
-- Support print of report (print of web page possible but may give
+- Do not Support print of report (print of web page possible but may give
   poor results)
+- Do Not support real time diagnosing of "what went wrong"
 
 
 
