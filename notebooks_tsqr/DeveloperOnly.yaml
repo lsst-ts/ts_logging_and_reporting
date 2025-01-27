@@ -1,0 +1,42 @@
+# For use with a Times Square notebook
+title: Developer Only
+description: Intended to use with Nightly Digest
+authors:
+  - name: Steve Pothier
+    slack: Steve Pothier
+tags:
+  - debug
+  - prototype
+parameters:
+  day_obs:
+    type: string
+    description: >
+      The last observing night to report on. (Allowed: YYYY-MM-DD,
+      TODAY, YESTERDAY) You probably want YESTERDAY. A value of TODAY
+      means the last night shown will be the one that starts tonight.
+    default: "YESTERDAY"
+  number_of_days:
+    type: integer
+    description: >
+      Number of days (nights) to show in the report.
+    default: 1
+    minimum: 1
+    maximum: 9
+  period:
+    type: string
+    description: >
+      Interval of time for grouping and aggregating records. E.G. 2h
+      See:
+        <a href="https://pandas.pydata.org/docs/user_guide/timeseries.html#period-aliases">Period aliases</a>
+    default: "4h"
+  verbose:
+    type: boolean
+    description: >
+      Enable verbose output. (Generally for development use.)
+    default: false
+  warning:
+    type: boolean
+    description: >
+      Enable warnings when: zero records retrieved from a source, instruments are
+      excluded, etc.
+    default: false
