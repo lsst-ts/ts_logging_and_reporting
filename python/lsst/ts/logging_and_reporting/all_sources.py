@@ -344,12 +344,17 @@ class AllSources:
         total_observable_hours = self.alm_src.night_hours
         used_instruments = self.exposed_instruments()
         if len(used_instruments) == 0:
-            return {
-                "": {
-                    "Total night": ut.hhmmss(total_observable_hours),
-                    "Idle time": ut.hhmmss(total_observable_hours),
-                }
-            }
+            df = pd.DataFrame.from_records(
+                [
+                    {
+                        "Total night": ut.hhmmss(total_observable_hours),
+                        "Idle time": ut.hhmmss(total_observable_hours),
+                    }
+                ]
+            )
+            footnotes = {}
+            return (df, footnotes)
+
         # Scot says use 2.41 sec/exposure in slack #consolidated-database
         exp_readout_hours = 2.41 / (60 * 60.0)  # hrs per exposure
 
