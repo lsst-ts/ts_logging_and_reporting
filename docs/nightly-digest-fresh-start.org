@@ -1,11 +1,14 @@
-Time-stamp: <2025-01-24 16:29:44 pothiers>
+Time-stamp: <2025-01-28 10:33:09 pothiers>
+# name?  TSSW Nightly Digest
+# ~/sandbox/notes/noirlab/rubin/nightly-digest-beta2.org
+
 * Abstract
 In Aug 2024 we began working on what is now called the Nightly Digest.
 It was to develop a /project-wide logging initiative/.  Virtually
 nothing else about it was known. Developers were brand new to Rubin.
 As should be expected: no requirements existed, no framework for the
 work existed, and development was chaotic.  Thankfully, there were
-three log sources with API access already in place.  Three months
+`three log sources with API access already in place.  Three months
 later, we had an MVP (Minimum Viable Product) "release" delivered as
 a notebook under Times Square.
 
@@ -185,7 +188,7 @@ created our own.
 
 
 * Approach (How get get where we want to go)
-See also: [[https://github.com/lsst-ts/ts_logging_and_reporting/blob/prototype/docs/unified-time-log.org][SUTL]]; *Single Unified Time Log* /(SUTL="subtle")/
+See also: [[https://github.com/lsst-ts/ts_logging_and_reporting/blob/prototype/docs/unified-time-log.org][SUTiL]]; *Single Unified Time Log* /(SUTiL="subtle")/
 
 ** Prove approach outside of Notebooks
 To prove that we can provide an application that does not use
@@ -201,7 +204,7 @@ instance, we might not move our back-end into the TSSW stack (to avoid
 the changes to fit dev style and approvals that will require). Perhaps
 pass token to app via env variable when app launched.
 
-*** Create MVP Django App
+*** Create Django App
   + Should the Django app be in the same repo as back-end? Probably.
   + Move data from all_sources into a database. Extend this to hold
     most recent N days. Atomically remove data older than N days.
@@ -232,6 +235,8 @@ pass token to app via env variable when app launched.
 
 - Define new dev (maintenance) work-flow
 
+
+** Tasks                                                           :noexport:
 
 * Challenges
 ** Users

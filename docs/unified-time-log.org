@@ -1,4 +1,4 @@
-Time-stamp: <2025-01-24 12:36:59 pothiers>
+Time-stamp: <2025-01-27 13:54:17 pothiers>
 * COMMENT PRESCRIPT
 \setlength{\parindent}{0em}
 \parskip 7.2pt
@@ -19,7 +19,7 @@ This white-paper describes a partially implemented vision/design
 created [2024-11-28 Thu]--[2024-12-02 Mon]. I wrote it after I found
 myself excitedly yammering incoherently to a few people about the
 concepts. These ideas can be grouped under what I have come to call a
-*Single Unified Time Log* /(SUTL="subtle")/. SUTL is currently being
+*Single Unified Time Log* /(SUTiL="subtle")/. SUTiL is currently being
 used (in DRAFT form) in the /Night Summary/ being created for /TSSW Logging and
 Reporting//
 
@@ -46,7 +46,6 @@ tests).
 \pagebreak
 \tableofcontents
 #+End_Latex``
-
 
 * Challenges
 1. Every data *source is accessed in its own way*.
@@ -190,7 +189,6 @@ rendering is created for each user type.
 
 6. /"Throw it against the all and see what sticks."/
 
-
 * Future
 ** Beyond a Night Summary
 The same technique used to summarize a night into periods could be used
@@ -252,7 +250,7 @@ and selected "insert template" (C-c C-e #).
 
 
 #+TITLE:   Night Summary
-#+SUBTITLE:   using a Single Unified Time Log (SUTL)
+#+SUBTITLE:   using a Single Unified Time Log (SUTiL)
 #+AUTHOR:    Steve Pothier
 #+EMAIL:     steve.pothier@noirlab.edu
 #+DESCRIPTION: Personal design notes
