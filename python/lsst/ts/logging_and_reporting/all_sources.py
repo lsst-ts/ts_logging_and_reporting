@@ -842,6 +842,27 @@ class AllSources:
         df = df[list(used_fields)].rename(columns=labels, errors="ignore")
         return df
 
+    # np.cumsum([r['message_text'].count('\n')
+    #   for r in allsrc.nar_src.records])
+    def nar_split_messages(self, max_head_lines=26):
+        """Split the narrativelog messages into two lists.
+        The HEAD contains records that contain <=r NUM_HEAD_LINES
+        lines of text.  The TAIL contains all the rest of the records.
+        The intention is to display HEAD in the Digest, and HEAD + TAIL in a
+        Detail page.  If UI supports, Digest could contain HEAD + "more" button
+        that will turn on/off visiblity of TAIL."""
+        num_lines = 0
+        records = self.nar_src.records
+        print(f"{max_head_lines=}")
+        for idx, rec in enumerate(records, 0):
+            num_lines += rec["message_text"].count("\n")
+            if num_lines > max_head_lines:
+                head = records[:idx]
+                tail = records[idx:]
+                return (head, tail)
+
+    # END class AllSources
+
 
 # display(all.get_facets(allsrc.exp_src.exposures['LATISS']))
 def get_facets(records, fieldnames=None, ignore_fields=None):

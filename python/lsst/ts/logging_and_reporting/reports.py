@@ -67,10 +67,20 @@ def html_draft(text):
     return msg
 
 
-def mdlink(url, string=None):
+def mdlink(
+    url,
+    title=None,
+    description="",
+    caveat="Links to an external page that might not be maintained.",
+):
     """Wrap link in html to open link in new tab, must be used in an md()"""
-    string = url if string is None else string
-    html = f'<a href="{url}" target="_blank" rel="noreferrer noopener">{string}</a>'
+    if title is None:
+        title = url
+    html = (
+        f'<a href="{url}"'
+        f' target="_blank" rel="noreferrer noopener">{title}</a>'
+        f" {description} ({caveat}) "
+    )
     return html
 
 
