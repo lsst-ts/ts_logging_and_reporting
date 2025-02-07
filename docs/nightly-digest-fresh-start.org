@@ -1,6 +1,11 @@
-Time-stamp: <2025-01-28 10:33:09 pothiers>
+Time-stamp: <2025-02-03 09:43:44 pothiers>
 # name?  TSSW Nightly Digest
 # ~/sandbox/notes/noirlab/rubin/nightly-digest-beta2.org
+
+* Needs a home
+hierarchy between SAL Commands, SAL Scripts, BLOCKs and Scheduler
+Driven Observations.
+
 
 * Abstract
 In Aug 2024 we began working on what is now called the Nightly Digest.
