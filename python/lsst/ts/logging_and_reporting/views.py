@@ -77,7 +77,7 @@ def render_reduced_df(df, thresh=0.95, verbose=False):
 
     if verbose:
         print(
-            f"""DBG view.render_reduced_df:
+            f"""Debug view.render_reduced_df:
         columns={list(dense_df.columns)}
         keys={list(sparse_dict.keys())}
         """

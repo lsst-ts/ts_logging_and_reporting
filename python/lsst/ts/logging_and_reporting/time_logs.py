@@ -163,15 +163,17 @@ def merge_sources(allsrc, verbose=False):
     df = utl_df
     for srcname, srcdf in srecs.items():
         if verbose:
-            print(f"DBG merge_sources: {srcname=}")
+            print(f"Debug merge_sources: {srcname=}")
         df = merge_to_timelog(f"{srcname}_", df, srcdf)
         if verbose:
-            print(f"DBG merge_sources: {srcname=} {df.shape=} {df.columns.to_list()=}")
+            print(
+                f"Debug merge_sources: {srcname=} {df.shape=} {df.columns.to_list()=}"
+            )
 
     df.set_index(["Time"], inplace=True)
 
     if verbose:
-        print(f"DBG merge_sources: Output {df.shape=}")
+        print(f"Debug merge_sources: Output {df.shape=}")
     return df
 
 
@@ -181,11 +183,11 @@ def sutl(allsrc, delta="2h", allow_data_loss=False, verbose=False):
     fdf = merge_sources(allsrc)
     cdf = compact(fdf, delta=delta, allow_data_loss=allow_data_loss)
     if verbose:
-        print(f"DBG sutl: {fdf.shape=} {fdf.columns.to_list()=}")
-        print(f"DBG sutl: {cdf.shape=} {cdf.columns.to_list()=}")
+        print(f"Debug sutl: {fdf.shape=} {fdf.columns.to_list()=}")
+        print(f"Debug sutl: {cdf.shape=} {cdf.columns.to_list()=}")
     rdf = reduce_period(cdf)
     if verbose:
-        print(f"DBG sutl: {rdf.shape=}")
+        print(f"Debug sutl: {rdf.shape=}")
     html = views.render_reduced_df(rdf)
     return html
 
@@ -245,7 +247,7 @@ def render_df(df):
 def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
     df = full_df.copy()
     if verbose:
-        print(f"DBG compact: Input {df.shape=}")
+        print(f"Debug compact: Input {df.shape=}")
 
     exclude_cols = [  # TODO  REMOVE, calc columns instead of list them
         "day_obs",
@@ -283,10 +285,10 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
     ]
     if allow_data_loss:
         if verbose:
-            print(f"DBG compact: {sorted(drop_cols)=}\n\n")
+            print(f"Debug compact: {sorted(drop_cols)=}\n\n")
         df.drop(drop_cols, axis=1, inplace=True)  # DATA LOSS
         if verbose:
-            print(f"DBG compact: {sorted(df.columns)=}\n\n")
+            print(f"Debug compact: {sorted(df.columns)=}\n\n")
 
         # Remove columns >= 95% NaN
         val_count = int(0.05 * len(df))
@@ -307,7 +309,7 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
     df, columns = remove_list_columns(df)  # DATA LOSS
     if verbose:
         print(f"WARNING removed {len(columns)} containing list values. {columns=}")
-        print(f"DBG compact: Output {df.shape=}")
+        print(f"Debug compact: Output {df.shape=}")
 
     return (
         df.reset_index()
@@ -343,7 +345,7 @@ def reduce_period(df, verbose=False):
         return ", ".join([str(x) for x in set(group) if not pd.isna(x)])
 
     if verbose:
-        print(f"DBG reduce_period: Input {df.shape=}")
+        print(f"Debug reduce_period: Input {df.shape=}")
 
     nuke_columns = {
         "NIG_id",  # ignore
@@ -408,7 +410,7 @@ def reduce_period(df, verbose=False):
     group_aggregator["NAR_time_lost"] = "sum"
 
     if verbose:
-        print(f"DBG reduce_period: columns {df.columns.to_list()=}")
+        print(f"Debug reduce_period: columns {df.columns.to_list()=}")
     agg_keys = set(group_aggregator.keys())
     use_agg = agg_keys & used_columns
     drop_agg = agg_keys - use_agg
@@ -416,17 +418,17 @@ def reduce_period(df, verbose=False):
         del group_aggregator[col]
 
     if verbose:
-        print(f"DBG {agg_keys=}")
-        print(f"DBG {used_columns=}")
-        print(f"DBG {use_agg=}")
-        print(f"DBG {drop_agg=}")
-        print(f"DBG final agg_keys={set(group_aggregator.keys())}")
+        print(f"Debug {agg_keys=}")
+        print(f"Debug {used_columns=}")
+        print(f"Debug {use_agg=}")
+        print(f"Debug {drop_agg=}")
+        print(f"Debug final agg_keys={set(group_aggregator.keys())}")
     if group_aggregator:
         df = df.groupby(level="Period").agg(group_aggregator)
     else:
         df = df.groupby(level="Period").last()
     if verbose:
-        print(f"DBG reduce_period: Output {df.shape=}")
+        print(f"Debug reduce_period: Output {df.shape=}")
     return df
 
 

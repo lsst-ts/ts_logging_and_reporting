@@ -57,6 +57,15 @@ class Almanac(SourceAdapter):
             self.get_moon()
             self.get_sun()
 
+    @property
+    def sources(self):
+        return {
+            "Astroplan": (
+                "https://astroplan.readthedocs.io/en/stable/api/"
+                "astroplan.Observer.html"
+            ),
+        }
+
     def get_moon(self):
         self.moon_rise_time = self.observer.moon_rise_time(
             self.astro_midnight, which="nearest"

@@ -1,6 +1,5 @@
 # Used efd.py as a starting point.  Layered in consolidated_database.py
 
-import os
 import warnings
 from collections import defaultdict
 
@@ -53,14 +52,6 @@ class ConsdbAdapter(SourceAdapter):
             verbose=verbose,
             warning=warning,
         )
-        try:
-            import lsst.rsp
-
-            self.token = lsst.rsp.get_access_token()
-        except Exception as err:
-            if self.verbose:
-                print(f"Could not get_access_token: {err}")
-            self.token = os.environ.get("ACCESS_TOKEN")
 
         self.status = dict()
         self.exposures = dict()  # dd[instrument] = [rec, ...]
@@ -76,7 +67,7 @@ class ConsdbAdapter(SourceAdapter):
         #  self.hack_reconnect_after_idle()   # Need for some sources
         self.status["instruments"] = self.get_instruments()
         if self.verbose:
-            print(f"DBG ConsdbAdapter: {self.instruments=}")
+            print(f"Debug ConsdbAdapter: {self.instruments=}")
         for instrument in self.instruments:
             self.get_exposures(instrument)
 
@@ -85,16 +76,16 @@ class ConsdbAdapter(SourceAdapter):
     # where part of the name comes from the instrument. It turns
     # out EITHER lowcase or camel case is ok for table.
     # Identifiers in Postgresql are case insenstive unless quoted.
-    def get_instruments(self, include=None):
+    def get_instruments(self, include=None) -> dict:
         url = f"{self.server}/{self.service}/schema"
-        ok, result, code = self.protected_get(url, token=self.token)
+        ok, result, code = self.protected_get(url)
         if not ok:  # failure
             print(f"ERROR: Failed GET {ok=} {result=} {code=}")
             return None
         available_instruments = set(result)
         include_default = {
             "latiss",
-            # "lsstcam",  # CDB lists as instrument but has no table for it!
+            "lsstcam",  # CDB lists as instrument but has no table for it!
             # "lsstcamsim",
             "lsstcomcam",
             # "lsstcomcamsim",
@@ -170,11 +161,12 @@ class ConsdbAdapter(SourceAdapter):
         if self.verbose:
             print(f"DEBUG query: {url=} {sql=}")
         jsondata = dict(query=sql)
-        auth = ("user", self.token)
         timeout = self.timeout
         records = []
         try:
-            response = requests.post(url, json=jsondata, auth=auth, timeout=timeout)
+            response = requests.post(
+                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header()
+            )
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
             # Invalid URL?, etc.
@@ -213,7 +205,7 @@ class ConsdbAdapter(SourceAdapter):
     # DM-48072 Add a visit1_exposure table to link visits and exposures
     # In the meantime KT says assume visit_id = exposure_id
     # In the presence of snaps, exposure_id and visit_id many-to-one.
-    def get_exposures(self, instrument):
+    def get_exposures(self, instrument) -> pd.DataFrame:
         """SIDE-EFFECT: cache results in self.exposures[instrument]"""
         # DM-47573
         exposure_out = [
@@ -233,7 +225,7 @@ class ConsdbAdapter(SourceAdapter):
             "exposure_name",
             "target_name",
             "group_id",
-            "exp_time",  # seconds
+            "exp_time",  # seconds, duration
             "obs_start",  # TAI
             "day_obs",  # int
         ]
@@ -265,8 +257,8 @@ class ConsdbAdapter(SourceAdapter):
         sql = " ".join(ssql.split())  # remove redundant whitespace
         records = self.query(sql)
         if self.verbose and len(records) > 0:
-            print(f"DBG cdb.get_exposures {instrument=} {sql=}")
-            print(f"DBG cdb.get_exposures: {records[0]=}")
+            print(f"Debug cdb.get_exposures {instrument=} {sql=}")
+            print(f"Debug cdb.get_exposures: {records[0]=}")
 
         self.exposures[instrument] = records
 
@@ -303,7 +295,7 @@ class ConsdbAdapter(SourceAdapter):
             print("Loading schema: instruments")
         endpoint = f"{self.server}/{self.service}/schema"
         url = endpoint
-        ok, result, code = self.protected_get(url, token=self.token)
+        ok, result, code = self.protected_get(url)
         if not ok:  # failure
             status = dict(
                 endpoint_url=url,
@@ -322,7 +314,7 @@ class ConsdbAdapter(SourceAdapter):
         for instrument in self.instruments:
             endpoint = f"{self.server}/{self.service}/schema"
             url = f"{endpoint}/{instrument}"
-            ok, result, code = self.protected_get(url, token=self.token)
+            ok, result, code = self.protected_get(url)
             if not ok:  # failure
                 status = dict(
                     endpoint_url=url,
@@ -345,7 +337,7 @@ class ConsdbAdapter(SourceAdapter):
             for table in self.tables[instrument]:
                 endpoint = f"{self.server}/{self.service}/schema"
                 url = f"{endpoint}/{instrument}/{table}"
-                ok, result, code = self.protected_get(url, token=self.token)
+                ok, result, code = self.protected_get(url)
                 if not ok:  # failure
                     status = dict(
                         endpoint_url=url,

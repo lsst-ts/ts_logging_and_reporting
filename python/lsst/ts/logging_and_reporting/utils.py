@@ -20,6 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import datetime as dt
+import os
 import time
 
 import pandas as pd
@@ -188,7 +189,7 @@ dayobs2dt = get_datetime_from_dayobs_str
 
 def hhmmss(decimal_hours):
     if pd.isna(decimal_hours):
-        return "NA"
+        return decimal_hours
 
     hours = int(decimal_hours)
     minutes = int((decimal_hours * 60) % 60)
@@ -248,9 +249,41 @@ class Timer:
 
 # Servers we might use
 class Server:
+    """Do I need a class for this instead of just using line 262?"""
+
     summit = "https://summit-lsp.lsst.codes"
-    usdf = "https://usdf-rsp-dev.slac.stanford.edu"
+    usdfdev = "https://usdf-rsp-dev.slac.stanford.edu"
+    usdf = "https://usdf-rsp.slac.stanford.edu"
     tucson = "https://tucson-teststand.lsst.codes"
+    base = "https://base.lsst.codes"
+
+    @classmethod
+    def get_all(cls):
+        return [
+            value
+            for value in cls.__dict__.values()
+            if isinstance(value, str) and value.startswith("https")
+        ]
+
+    @classmethod
+    def get_url(cls):
+        current = os.environ.get("EXTERNAL_INSTANCE_URL")
+
+        match current:
+            case Server.summit:
+                return Server.summit
+            case Server.usdfdev | None:
+                # If the EXTERNAL_INSTANCE_URL is not set
+                return Server.usdfdev
+            case Server.usdf:
+                return Server.usdf
+            case Server.tucson:
+                return Server.tucson
+            case Server.base:
+                return Server.base
+            case _:
+                # If the EXTERNAL_INSTANCE_URL is not in our list
+                return ""
 
 
 def wrap_dataframe_columns(df):
@@ -259,3 +292,19 @@ def wrap_dataframe_columns(df):
 
     column_map = {colname: spacify(colname) for colname in df.columns}
     return df.rename(columns=column_map)
+
+
+def get_access_token():
+    """Return access token to be sent in headers as Auth Bearer"""
+    try:
+        import lsst.rsp.utils
+
+        return lsst.rsp.utils.get_access_token()
+    except ImportError:
+        return os.getenv("ACCESS_TOKEN", None)
+
+
+def get_auth_header():
+    """return dict obj for request auth headers"""
+    toke = get_access_token()
+    return {"Authorization": f"Bearer {toke}"}
