@@ -12,7 +12,15 @@ parameters:
     type: string
     description: Date on which to query
     default: '2024-06-26'
+  day_obs_end:
+    type: string
+    description: Date on which to end query
+    default: '2024-06-28'
   instruments:
     type: string
     description: Which instrument to query
-    default: 'latiss, lsstcomcamsim, lsstcomcam'
+    default: 'latiss, lsstcam, lsstcomcam'
+  variables:
+    type: string
+    description: Extra variable to plot against obs_start
+    default: 'airmass, seq_num'
