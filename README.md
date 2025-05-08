@@ -6,7 +6,8 @@ Project-wide Logging and Reporting
 This is a **Prototype** application.  It is intended to help figure
 out what is needed for a *Project-wide Logging and Reporting* system
 for Rubin. It helps with this by presenting content in the
-[NightLog](https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog)
+[NightlyDigest-dev](https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog)
+[NightlyDigest](https://usdf-rsp.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog)
 jupyter notebook under Times Square. The intent is to eventually put
 the content into a solid User Interface environment (such as **LOVE:**
 *LSST Operator's Visualization Environment*). The Times Square
@@ -33,3 +34,7 @@ This repository uses pre-commit hooks to ensure code is formatted correctly and 
 
 pre-commit install
 ```
+
+## Times Square Docs 
+
+https://rsp.lsst.io/v/usdfprod/guides/times-square/github-repos/installation-howto.html#add-a-readme-md-file

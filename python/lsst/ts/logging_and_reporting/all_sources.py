@@ -61,18 +61,21 @@ class AllSources:
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
             verbose=verbose,
+            warning=warning,
         )
         self.exp_src = sad.ExposurelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
             verbose=verbose,
+            warning=warning,
         )
         self.nar_src = sad.NarrativelogAdapter(
             server_url=server_url,
             min_dayobs=min_dayobs,
             max_dayobs=max_dayobs,
             verbose=verbose,
+            warning=warning,
         )
         self.cdb_src = cdb.ConsdbAdapter(
             server_url=server_url,
@@ -138,27 +141,27 @@ class AllSources:
         # Almanac
         alm_df = recs2df(self.alm_src.as_records(), "UTC")
         if verbose:
-            print(f"DBG get_sources_time_logs: {alm_df.shape=}")
+            print(f"Debug get_sources_time_logs: {alm_df.shape=}")
 
         # Night Report
         nig_df = recs2df(self.nig_src.records, self.nig_src.log_dt_field)
         if verbose:
-            print(f"DBG get_sources_time_logs: {nig_df.shape=}")
+            print(f"Debug get_sources_time_logs: {nig_df.shape=}")
 
         # NarrativeLog
         nar_df = recs2df(self.nar_src.records, self.nar_src.log_dt_field)
         if verbose:
-            print(f"DBG get_sources_time_logs: {nar_df.shape=}")
+            print(f"Debug get_sources_time_logs: {nar_df.shape=}")
 
         # ExposureLog
         exp_df = recs2df(self.exp_src.records, self.exp_src.log_dt_field)
         if verbose:
-            print(f"DBG get_sources_time_logs: {exp_df.shape=}")
+            print(f"Debug get_sources_time_logs: {exp_df.shape=}")
 
         recs = itertools.chain.from_iterable(self.exp_src.exposures.values())
         exp_detail_df = recs2df(recs, "timespan_begin")
         if verbose:
-            print(f"DBG get_sources_time_logs: {exp_detail_df.shape=}")
+            print(f"Debug get_sources_time_logs: {exp_detail_df.shape=}")
 
         # self.cdb_src
         # The best time resolution is currently "day_obs"! (not good enuf)
@@ -260,6 +263,9 @@ class AllSources:
             # TODO despite unreliability, use messages values.
             ltypes = set([r["time_lost_type"] for r in self.nar_src.records])
             ltime = defaultdict(int)
+            print(
+                f"Debug night_tally_observation_gaps: {ltypes=} {len(self.nar_src.records)=}"
+            )
             for t in ltypes:
                 for r in self.nar_src.records:
                     ltime[t] += r["time_lost"]
@@ -307,7 +313,7 @@ class AllSources:
             "Readout time(1)": "Sum of exposure readout times",
             "Slew time(2)": "Sum of slew times",
             "Time loss due to fault": "Sum of time lost due to faults (apx)",
-            "Time loss due to weather": ("Sum of time lost due to weather (apx)"),
+            "Time loss due to weather": "Sum of time lost due to weather (apx)",
             "Idle time": "Sum of time doing 'nothing'",
             "Number of exposures": "",
             "Number of slews": "",
@@ -317,6 +323,178 @@ class AllSources:
 
         instrument_tally["Remarks"] = tally_remarks
         return instrument_tally
+
+    def exposed_instruments(self):
+        """Non-excluded instruments from in exposures from ExposureLog."""
+        used_instruments = set()
+        for instrum, recs in self.exp_src.exposures.items():
+            if instrum in self.exclude_instruments:
+                continue
+            if len(recs) > 0:
+                used_instruments.add(instrum)
+        return used_instruments
+
+    # modified from night_tally_observation_gaps()
+    # Internal times in decimal hours. Render as HH:MM:SS
+    def time_account(self, verbose=False):
+        """Report on how instrument time is partitioned over the
+        observing night."""
+
+        # between 18deg twilights
+        total_observable_hours = self.alm_src.night_hours
+        used_instruments = self.exposed_instruments()
+        if len(used_instruments) == 0:
+            df = pd.DataFrame.from_records(
+                [
+                    {
+                        "Total night": ut.hhmmss(total_observable_hours),
+                        "Idle time": ut.hhmmss(total_observable_hours),
+                    }
+                ]
+            )
+            footnotes = {}
+            return (df, footnotes)
+
+        # Scot says use 2.41 sec/exposure in slack #consolidated-database
+        exp_readout_hours = 2.41 / (60 * 60.0)  # hrs per exposure
+
+        # Initial. Add Instrument columns.
+        columns = ["Row", "Source", "Name", "Description"]
+        account_records = [  # COLUMNS
+            ("A", "<alm>", "Total Observable Night", "(between 18 deg twilights)"),
+            ("B", "<nar>", "Total Exposure", "Total exposure time"),
+            ("C", "const*<nar>", "Readout time(1)", "Total exposure readout time"),
+            ("D", "(ConsDB later)", "Slew time(2)", "Total slew time"),
+            ("E", "<nar>", "Time loss due to fault(3)", ""),
+            ("F", "<nar>", "Time loss due to weather(4)", ""),
+            ("G", "A-(B+C+D+F)", "Idle time", 'Time doing "nothing"'),
+            ("H", "<nar>", "Number of exposures", ""),
+            ("I", "D", "Number of slews", ""),
+            ("J", "D", "Mean Slew time", ""),
+            ("K", "B+C+D+G", "Total Accounted for time", ""),
+        ]
+        footnotes = {
+            "1": (
+                "There is no practical way to get detector read-out "
+                "time. A value of 2.41 seconds per exposure is used."
+            ),
+            "2": (
+                "There is no simple way to get slew times. We expect SlewTime "
+                "to find its way into the Consolidated Database eventually"
+            ),
+            "3": (
+                "A fault loss is assumed to be associated with a specific "
+                "Instrument so is counted as applying to just that instrument. "
+                "The Instrument for the fault loss is derived from "
+                "a 'component' field that MIGHT contain a the Telescope name. "
+                "The derived Instrument is different for records added "
+                "on or after 2025-01-20. "
+                "If a particular fault loss cannot be associated with a "
+                "known telescope, that loss it not counted here at all. "
+                "If the Instrument associated with a fault lost "
+                "is not one that has exposures in the above table, "
+                "it is not counted here. "
+                "The Telescope -> Instrument mapping used is: "
+                "AuxTel->LATISS, "
+                "(MainTel,Simonyi)->LSSTComCam (before 2025-01-20), "
+                "(MainTel,Simonyi)->LSSTCam (on/after 2025-01-20), "
+                "For purposes of counting this loss, it does not matter "
+                "if the associated exposure was on sky or not."
+            ),
+            "4": (
+                "A weather loss is not associated with a specific Instrument "
+                "so it is counted as applying to all instruments. "
+                "Different telescopes might have different weather "
+                "(e.g. clouds) so this might be wrong occasionaly. "
+                "For purposes of counting this loss, it does not matter "
+                "if the associated exposure was on sky or not."
+            ),
+        }
+
+        df = pd.DataFrame.from_records(account_records, columns=columns).set_index(
+            "Row"
+        )
+
+        # Calc time accounting for each Instrument.
+        # "Total Observable Night" same for all instruments.
+        for instrument in used_instruments:
+            exp_records = self.exp_src.exposures[instrument]
+
+            exposure_seconds = 0
+            for rec in exp_records:
+                begin = dt.datetime.fromisoformat(rec["timespan_begin"])
+                end = dt.datetime.fromisoformat(rec["timespan_end"])
+                exposure_seconds += (end - begin).total_seconds()
+            exposure_hours = exposure_seconds / (60 * 60.0)
+            readout_hours = len(exp_records) * exp_readout_hours
+
+            # Merlin might add this to consdb or efd .... eventually
+            # In the meantime, accept that we don't have SLEW times
+            num_slews = pd.NA
+            total_slew_seconds = pd.NA
+            mean_slew = total_slew_seconds / num_slews
+            slew_hours = total_slew_seconds / (60 * 60.0)
+
+            # Calc observable time lost per instrument from Fault and Weather.
+            # Its possible that both Fault and Weather affect same or
+            # overlapping time. Also, we don't know if Fault is for specific
+            # instrument.
+            # In both cases we may double count!
+            # TODO despite unreliability, use messages values.
+            ltypes = set([r["time_lost_type"] for r in self.nar_src.records])
+            ltime = defaultdict(int)
+            for lt in ltypes:
+                for r in self.nar_src.records:
+                    if r["instrument"] == instrument:
+                        ltime[lt] += r["time_lost"]
+            # Loss due to FAULT
+            if "fault" in ltypes:
+                loss_fault = ltime["fault"]  # hours
+            else:
+                loss_fault = 0
+            # Loss due to WEATHER
+            if "weather" in ltypes:
+                loss_weather = ltime["weather"]  # hours
+            else:
+                loss_weather = 0
+
+            act_hours = exposure_hours + readout_hours
+            if pd.notna(slew_hours):
+                act_hours += slew_hours
+            if pd.notna(loss_fault):
+                act_hours += loss_fault
+            if pd.notna(loss_weather):
+                act_hours += loss_weather
+            idle_hours = total_observable_hours - act_hours
+
+            # Stuff values
+            def rt(hours):  # Render Time
+                return ut.hhmmss(hours)
+                # return f'{hours:.2f}'
+
+            df.loc["A", instrument] = rt(total_observable_hours)
+            df.loc["B", instrument] = rt(exposure_hours)
+            df.loc["C", instrument] = rt(readout_hours)
+            df.loc["D", instrument] = rt(slew_hours)
+            df.loc["E", instrument] = rt(loss_fault)
+            df.loc["F", instrument] = rt(loss_weather)
+            df.loc["G", instrument] = rt(idle_hours)
+            df.loc["H", instrument] = len(exp_records)
+            df.loc["I", instrument] = num_slews
+            df.loc["J", instrument] = rt(mean_slew)
+            df.loc["K", instrument] = rt(
+                exposure_hours
+                + readout_hours
+                + (0 if pd.isna(slew_hours) else slew_hours)
+                + loss_fault
+                + loss_weather
+                + idle_hours
+            )
+        return (
+            df[["Name"] + list(used_instruments) + ["Description", "Source"]],
+            footnotes,
+        )
+        # END time_account()
 
     # see source_record_counts()
     def records_per_source(self):
@@ -511,7 +689,7 @@ class AllSources:
         return df_dict
 
     # Similar to ExposurelogAdapter.exposure_detail but includes consdb
-    def exposure_detail(
+    def exposure_detail_all_src(
         self,
         instrument,
         science_program=None,
@@ -654,7 +832,8 @@ class AllSources:
         # #! df.columns = df.columns.str.title()
         if self.verbose:
             print(
-                "DBG allsrc.exposure_detail " f"{used_fields=} {sorted(labels.keys())=}"
+                "Debug allsrc.exposure_detail "
+                f"{used_fields=} {sorted(labels.keys())=}"
             )
         if self.warning:
             if used_fields < fields:
@@ -663,6 +842,27 @@ class AllSources:
                 warnings.warn(msg, category=ex.NotAvailWarning, stacklevel=2)
         df = df[list(used_fields)].rename(columns=labels, errors="ignore")
         return df
+
+    # np.cumsum([r['message_text'].count('\n')
+    #   for r in allsrc.nar_src.records])
+    def nar_split_messages(self, max_head_lines=26):
+        """Split the narrativelog messages into two lists.
+        The HEAD contains records that contain <=r NUM_HEAD_LINES
+        lines of text.  The TAIL contains all the rest of the records.
+        The intention is to display HEAD in the Digest, and HEAD + TAIL in a
+        Detail page.  If UI supports, Digest could contain HEAD + "more" button
+        that will turn on/off visiblity of TAIL."""
+        num_lines = 0
+        records = self.nar_src.records
+        print(f"{max_head_lines=}")
+        for idx, rec in enumerate(records, 0):
+            num_lines += rec["message_text"].count("\n")
+            if num_lines > max_head_lines:
+                head = records[:idx]
+                tail = records[idx:]
+                return (head, tail)
+
+    # END class AllSources
 
 
 # display(all.get_facets(allsrc.exp_src.exposures['LATISS']))
