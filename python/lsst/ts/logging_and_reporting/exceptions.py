@@ -120,6 +120,12 @@ class NoRecordsWarning(BaseLogrepError):  # noqa: N818
     error_code = "ZERORECS"
 
 
+class UnknownTelescopeWarning(BaseLogrepError):  # noqa: N818
+    """Got unexpected Telescope namee."""
+
+    error_code = "UNKTELE"
+
+
 class NotAvailWarning(BaseLogrepError):  # noqa: N818
     """Some requested fields were not available.
     This might be ok, or maybe there is a bug.

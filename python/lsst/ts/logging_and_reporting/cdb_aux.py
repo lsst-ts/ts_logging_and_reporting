@@ -1,5 +1,4 @@
-import os
-
+import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 import requests
 
@@ -31,11 +30,9 @@ def field_schema_location_table(
     # schemas[instrum][table] => [field_name_1, ...]
     schemas = dict()
 
-    token = os.environ.get("ACCESS_TOKEN")
-    auth = ("user", token)
     timeout = (5.05, 20.0)
     url = schema_endpoint
-    response = requests.get(url, auth=auth, timeout=timeout)
+    response = requests.get(url, timeout=timeout, headers=ut.get_auth_header())
     response.raise_for_status()
     instruments = set(response.json())
 
@@ -45,11 +42,11 @@ def field_schema_location_table(
     for instrument in available:
         schemas[instrument] = dict()
         url = f"{schema_endpoint}/{instrument}"
-        response = requests.get(url, auth=auth, timeout=timeout)
+        response = requests.get(url, timeout=timeout, headers=ut.get_auth_header())
         response.raise_for_status()
         for table in set(response.json()):
             url = f"{schema_endpoint}/{instrument}/{table}"
-            response = requests.get(url, auth=auth, timeout=timeout)
+            response = requests.get(url, timeout=timeout, headers=ut.get_auth_header())
             response.raise_for_status()
             schemas[instrument][table] = set(response.json().keys())
     # Now we have

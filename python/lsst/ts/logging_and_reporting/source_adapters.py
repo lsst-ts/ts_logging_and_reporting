@@ -52,10 +52,12 @@ import datetime as dt
 import itertools
 import re
 import traceback
+import warnings
 from abc import ABC
 from collections import defaultdict
 from urllib.parse import urlencode
 
+import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.parse_message as pam
 import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
@@ -64,11 +66,7 @@ import requests
 
 MAX_CONNECT_TIMEOUT = 7.05  # seconds
 MAX_READ_TIMEOUT = 180  # seconds
-summit = "https://summit-lsp.lsst.codes"
-usdf = "https://usdf-rsp-dev.slac.stanford.edu"
-tucson = "https://tucson-teststand.lsst.codes"
-
-default_server = usdf
+default_server = ut.Server.get_url()
 
 maximum_record_limit = 9000
 
@@ -124,7 +122,7 @@ class SourceAdapter(ABC):
         limit=None,  # max records to read in one API call
         connect_timeout=5.05,  # seconds
         read_timeout=20,  # seconds
-        verbose=False,
+        verbose=True,
         warning=True,
     ):
         """Load the relevant data for the Source.
@@ -135,6 +133,7 @@ class SourceAdapter(ABC):
         range large or you will use lots of memory. Tens of days is probably
         ok.
         """
+
         self.server = server_url or default_server
         self.verbose = verbose
         self.warning = warning
@@ -146,6 +145,8 @@ class SourceAdapter(ABC):
         self.c_timeout = min(MAX_CONNECT_TIMEOUT, cto)  # seconds
         self.r_timeout = min(MAX_READ_TIMEOUT, float(read_timeout))  # seconds
         self.timeout = (self.c_timeout, self.r_timeout)
+
+        self.token = ut.get_access_token()
 
         self.records = None  # else: list of dict
 
@@ -186,7 +187,7 @@ class SourceAdapter(ABC):
         else:
             return df
 
-    def protected_post(self, url, jsondata, token=None, timeout=None):
+    def protected_post(self, url, jsondata, timeout=None):
         """Do a POST against an API url.
         Do NOT stop processing when we have a problem with a URL. There
         have been cases where the problem has been with
@@ -203,11 +204,12 @@ class SourceAdapter(ABC):
         if self.verbose:
             print(f"DEBUG protected_post({url=},{timeout=})")
         try:
-            auth = ("user", token)
-            response = requests.post(url, json=jsondata, auth=auth, timeout=timeout)
+            response = requests.post(
+                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header()
+            )
             if self.verbose:
                 print(
-                    f"DEBUG protected_post({url=},{auth=},{timeout=}) => "
+                    f"DEBUG protected_post({url=},{ut.get_auth_header()=},{timeout=}) => "
                     f"{response.status_code=} {response.reason}"
                 )
             response.raise_for_status()
@@ -236,7 +238,7 @@ class SourceAdapter(ABC):
         # when ok=True, result is records (else error message)
         return ok, result, code
 
-    def protected_get(self, url, token=None, timeout=None):
+    def protected_get(self, url, timeout=None):
         """Do a GET against an API url.
         Do NOT stop processing when we have a problem with a URL. There
         have been cases where the problem has been with
@@ -250,14 +252,13 @@ class SourceAdapter(ABC):
         ok = True
         code = 200
         timeout = timeout or self.timeout
-        auth = ("user", token)
         if self.verbose:
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
-            response = requests.get(url, auth=auth, timeout=timeout)
+            response = requests.get(url, timeout=timeout, headers=ut.get_auth_header())
             if self.verbose:
                 print(
-                    f"DEBUG protected_get({url=},{auth=},{timeout=}) => "
+                    f"DEBUG protected_get({url=},{ut.get_auth_header()=},{timeout=}) => "
                     f"{response.status_code=} {response.reason}"
                 )
             response.raise_for_status()
@@ -276,6 +277,11 @@ class SourceAdapter(ABC):
             result = f"Error connecting to {url} (with timeout={timeout}). "
             result += str(err)
         else:  # No exception. Could something else be wrong?
+            if self.verbose:
+                print(
+                    f"DEBUG protected_get: {response.status_code=} "
+                    f"{response.reason=}"
+                )
             result = response.json()
             if self.verbose:
                 print(f"DEBUG protected_get: {len(result)=}")
@@ -297,7 +303,7 @@ class SourceAdapter(ABC):
         qparams = dict(limit=2)  # API requires > 1 !
         url = f"{endpoint}?{urlencode(qparams)}"
         try:
-            requests.get(url, timeout=self.timeout)
+            requests.get(url, timeout=self.timeout, headers=ut.get_auth_header())
         except Exception:
             pass  # this is a hack to force reconnect. Response irrelevent.
 
@@ -447,6 +453,7 @@ class NightReportAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
         verbose=False,
+        warning=False,
     ):
         super().__init__(
             server_url=server_url,
@@ -454,6 +461,7 @@ class NightReportAdapter(SourceAdapter):
             min_dayobs=min_dayobs,
             limit=limit,
             verbose=verbose,
+            warning=warning,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -463,6 +471,12 @@ class NightReportAdapter(SourceAdapter):
         if self.min_date:
             self.hack_reconnect_after_idle()
             self.status[self.primary_endpoint] = self.get_records()
+
+    @property
+    def sources(self):
+        return {
+            "Nightreport API": f"{self.server}/{self.service}/{self.primary_endpoint}"
+        }
 
     @property
     def urls(self):
@@ -534,7 +548,7 @@ class NightReportAdapter(SourceAdapter):
     ):
         endpoint = f"{self.server}/{self.service}/{self.primary_endpoint}"
         if self.verbose:
-            print(f"DBG get_records {endpoint=}")
+            print(f"Debug get_records {endpoint=}")
 
         qparams = dict(
             is_human=is_human,
@@ -556,7 +570,7 @@ class NightReportAdapter(SourceAdapter):
         recs = []
         while len(recs) <= maximum_record_limit:
             if self.verbose:
-                print(f"DBG get_records qstr: {urlencode(qparams)}")
+                print(f"Debug get_records qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
             ok, result, code = self.protected_get(url)
             if not ok:  # failure
@@ -576,8 +590,8 @@ class NightReportAdapter(SourceAdapter):
 
         self.records = recs
         if recs and self.verbose:
-            print(f"DBG get_records-2 {len(page)=} {len(recs)=}")
-            print(f"DBG get_records-2 {len(self.records)=} {status=}")
+            print(f"Debug get_records-2 {len(page)=} {len(recs)=}")
+            print(f"Debug get_records-2 {len(self.records)=} {status=}")
 
         return status
 
@@ -594,8 +608,6 @@ class NarrativelogAdapter(SourceAdapter):
     abbrev = "NAR"
     outfields = {
         "category",
-        "components",
-        "cscs",
         "date_added",
         "date_begin",
         "date_end",
@@ -606,17 +618,22 @@ class NarrativelogAdapter(SourceAdapter):
         "level",
         "message_text",
         "parent_id",
-        "primary_hardware_components",
-        "primary_software_components",
         "site_id",
-        "subsystems",
-        "systems",
         "tags",
         "time_lost",
         "time_lost_type",
         "urls",
         "user_agent",
         "user_id",
+        # ## The following are deprecated. Removed in v1.0.0.
+        # ## Use 'components_path' (components_json) instead
+        # "subsystems",
+        # "systems",
+        # "cscs",
+        # "components",
+        # "primary_hardware_components",
+        # "primary_software_components",
+        "components_json",
     }
     default_record_limit = 1000  # Adapter specific default
     service = "narrativelog"
@@ -634,6 +651,7 @@ class NarrativelogAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
         verbose=False,
+        warning=False,
     ):
         super().__init__(
             server_url=server_url,
@@ -641,6 +659,7 @@ class NarrativelogAdapter(SourceAdapter):
             min_dayobs=min_dayobs,
             limit=limit,
             verbose=verbose,
+            warning=warning,
         )
         if self.verbose:
             print(
@@ -655,6 +674,12 @@ class NarrativelogAdapter(SourceAdapter):
         if self.min_date:
             self.hack_reconnect_after_idle()
             self.status[self.primary_endpoint] = self.get_records()
+
+    @property
+    def sources(self):
+        return {
+            "Narrative Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"
+        }
 
     @property
     def urls(self):
@@ -728,6 +753,60 @@ class NarrativelogAdapter(SourceAdapter):
                         table.append(f"- Link: {rep.mdpathlink(url)}")
         return table
 
+    # figure out instrument name from telescope name
+    def add_instrument(self, records):
+        """Add 'instrument' field to records (SIDE-EFFECT)
+        Narrativelog gives Telescope (field="components") but not Instrument,
+        but we need to report by Instrument since that is what is used for
+        exposures.
+        Therefore, we must map Telescope to the Instrument that is assumed to
+        be on the Telescope.
+        We always assume Telescope=AuxTel means Instrument=LATISS
+        For Telescope=MainTel (aka Simonyi) the Instrument assumed is different
+        depending on the dayobs.
+        Prior to dayobs=2025-01-19 we assume Instrument=LSSTComCam
+          from then on we assume Instrument=LSSTCam.
+        For any Telescope value other than AuxTel or MainTel we ignore the data
+          (but warn about what Telescope we are ignoring).
+        """
+
+        LSST_DAYOBS = 20250120
+        for rec in records:
+            dayobs = int(rec["date_added"][:8].replace("-", ""))
+
+            if rec["components"] is None:
+                instrument = None
+            elif rec["components"][0] == "AuxTel":
+                instrument = "LATISS"
+            elif rec["components"][0] == "MainTel":
+                instrument = "lsst"
+            elif rec["components"][0] == "Simonyi":
+                instrument = "lsst"
+            else:
+                instrument = None
+
+            if self.warning and instrument is None:
+                components = rec["components"]
+                dateadded = rec["date_added"]
+                msg = (
+                    'Unknown Telescope found in "components" field '
+                    "of a record in the Narrative Log "
+                    f"added on {dateadded}. "
+                    "Expected one of {AuxTel, MainTel, Simonyi} "
+                    f"got {components=}. "
+                )
+                warnings.warn(msg, category=ex.UnknownTelescopeWarning, stacklevel=2)
+
+            if instrument == "lsst":
+                if dayobs >= LSST_DAYOBS:
+                    rec["instrument"] = "LSSTCam"
+                else:  # dayobs < LSST_DAYOBS
+                    rec["instrument"] = "LSSTComCam"
+            else:
+                rec["instrument"] = instrument
+
+        return records
+
     def get_records(
         self,
         site_ids=None,
@@ -764,7 +843,7 @@ class NarrativelogAdapter(SourceAdapter):
         while len(recs) <= maximum_record_limit:
             url = f"{endpoint}?{urlencode(qparams)}"
             if self.verbose:
-                print(f"DBG get_records qstr: {urlencode(qparams)}")
+                print(f"Debug get_records qstr: {urlencode(qparams)}")
             ok, result, code = self.protected_get(url)
             if not ok:  # failure
                 status = dict(
@@ -786,9 +865,17 @@ class NarrativelogAdapter(SourceAdapter):
             qparams["offset"] += len(page)
         # END: while
 
-        self.records = recs
-        pam.markup_errors(recs)
+        self.records = self.add_instrument(recs)
+        pam.markup_errors(self.records)
         return status
+
+    def verify_records(self):
+        telescope_fault_loss = [
+            (r["date_added"], r["time_lost"], r["time_lost_type"], r["components"])
+            for r in self.records
+            if r["time_lost"] > 0
+        ]
+        return telescope_fault_loss
 
     # END: class NarrativelogAdapter
 
@@ -834,6 +921,7 @@ class ExposurelogAdapter(SourceAdapter):
         max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
         limit=None,
         verbose=False,
+        warning=False,
     ):
         super().__init__(
             server_url=server_url,
@@ -841,6 +929,7 @@ class ExposurelogAdapter(SourceAdapter):
             min_dayobs=min_dayobs,
             limit=limit,
             verbose=verbose,
+            warning=warning,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -860,6 +949,12 @@ class ExposurelogAdapter(SourceAdapter):
             self.status[self.primary_endpoint] = self.get_records()
         # Copy exposure_flag from messages to exposures (some to many).
         self.add_exposure_flag_to_exposures()
+
+    @property
+    def sources(self):
+        return {
+            "Exposure Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"
+        }
 
     # SIDE-EFFECT: Modifies self.exp_src.exposures in place.429
     def add_exposure_flag_to_exposures(self):
@@ -1044,7 +1139,7 @@ class ExposurelogAdapter(SourceAdapter):
     def get_exposures(self, instrument):
         endpoint = f"{self.server}/{self.service}/exposures"
         if self.verbose:
-            print(f"DBG get_exposures {endpoint=}")
+            print(f"Debug get_exposures {endpoint=}")
 
         registry = self.instruments[instrument]
         qparams = dict(
@@ -1061,7 +1156,7 @@ class ExposurelogAdapter(SourceAdapter):
         recs = []
         while len(recs) <= maximum_record_limit:
             if self.verbose:
-                print(f"DBG get_exposures qstr: {urlencode(qparams)}")
+                print(f"Debug get_exposures qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
             ok, result, code = self.protected_get(url)
             if not ok:  # failure
@@ -1109,7 +1204,7 @@ class ExposurelogAdapter(SourceAdapter):
     ):
         endpoint = f"{self.server}/{self.service}/messages"
         if self.verbose:
-            print(f"DBG get_records: {endpoint=}")
+            print(f"Debug get_records: {endpoint=}")
 
         qparams = dict(
             is_human=is_human,
@@ -1138,7 +1233,7 @@ class ExposurelogAdapter(SourceAdapter):
         # try:
         while len(recs) <= maximum_record_limit:
             if self.verbose:
-                print(f"DBG get_records qstr: {urlencode(qparams)}")
+                print(f"Debug get_records qstr: {urlencode(qparams)}")
             url = f"{endpoint}?{urlencode(qparams)}"
             ok, result, code = self.protected_get(url)
             if not ok:  # failure

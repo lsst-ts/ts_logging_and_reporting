@@ -4,6 +4,7 @@ from warnings import warn
 
 import lsst.ts.logging_and_reporting.consdb as cdb
 import lsst.ts.logging_and_reporting.source_adapters as sad
+import lsst.ts.logging_and_reporting.utils as ut
 import requests
 
 
@@ -17,11 +18,11 @@ class Dashboard:  # TODO Move to its own file (utils.py).
     envs = dict(  # key, server
         summit="https://summit-lsp.lsst.codes",
         usdf_dev="https://usdf-rsp-dev.slac.stanford.edu",
+        usdf="https://usdf-rsp.slac.stanford.edu",
         tucson="https://tucson-teststand.lsst.codes",
         # Environments not currently used:
         #    rubin_usdf_dev = '',
         #    data_lsst_cloud = '',
-        #    usdf = '',
         #    base_data_facility = '',
         #    rubin_idf_int = '',
     )
@@ -53,7 +54,8 @@ class Dashboard:  # TODO Move to its own file (utils.py).
             limit=samples,
         )
         url = f"{endpoint}?{urlencode(qparams)}"
-        response = requests.get(url, timeout=timeout)
+        response = requests.get(url, timeout=timeout, headers=ut.get_auth_header())
+
         response.raise_for_status()
         records = response.json()
         self.keep_fields(records, fields)
@@ -87,7 +89,9 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                 qstr = "?instrument=LSSTComCamSim" if ep == "exposures" else ""
                 url = f"{server}/{sa.service}/{ep}{qstr}"
                 try:
-                    res = requests.get(url, timeout=self.timeout)
+                    res = requests.get(
+                        url, timeout=self.timeout, headers=ut.get_auth_header()
+                    )
                     recs = res.json()
                     if isinstance(recs, dict):
                         samples[url] = recs

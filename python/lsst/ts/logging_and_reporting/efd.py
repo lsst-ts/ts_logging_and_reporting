@@ -46,12 +46,18 @@ class EfdAdapter(SourceAdapter):
         super().__init__(max_dayobs=max_dayobs, min_dayobs=min_dayobs)
 
         self.client = None
-        instance_url = os.getenv("EXTERNAL_INSTANCE_URL", self.server)
+        instance_url = ut.Server.get_url()
         self.server_url = server_url or instance_url
         match self.server_url:
             case ut.Server.summit:
                 self.client = EfdClient("summit_efd")
                 # #!self.client = makeEfdClient()
+            case ut.Server.usdfdev:
+                self.client = EfdClient("usdf_efd")
+                # #!self.client = makeEfdClient()
+                os.environ["RUBIN_SIM_DATA_DIR"] = (
+                    "/sdf/data/rubin/shared/rubin_sim_data"
+                )
             case ut.Server.usdf:
                 self.client = EfdClient("usdf_efd")
                 # #!self.client = makeEfdClient()
@@ -60,12 +66,14 @@ class EfdAdapter(SourceAdapter):
                 )
             case ut.Server.tucson:
                 pass
+            case ut.Server.base:
+                pass
             case _:
                 msg = (
-                    f"Unknown server from EXTERNAL_INSTANCE (env var).  "
-                    f"Got {self.server_url=} "
-                    f"Expected one of: "
-                    f"{ut.Server.summit}, {ut.Server.usdf}, {ut.Server.tucson}"
+                    f"Unknown value for environment variable EXTERNAL_INSTANCE_URL\n"
+                    f"Got {self.server_url=} \n"
+                    f"Expected one of: \n"
+                    f"{ut.Server.get_all()}"
                 )
                 raise Exception(msg)
 
@@ -199,7 +207,7 @@ class EfdAdapter(SourceAdapter):
         for topic in topics:
             colname = topic.replace("lsst.sal.", "").replace(".logevent_", "_")
             colname = colname.replace("InPosition", "")
-            print(f"DBG get_mount_moves: {topic=} {colname=}")
+            print(f"Debug get_mount_moves: {topic=} {colname=}")
             series = await self.query_nights(topic, fields_wanted)
             moves[topic] = series.rename(columns={"inPosition": colname})
         df = pd.concat(moves.values(), axis=1)
