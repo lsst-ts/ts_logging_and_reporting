@@ -22,7 +22,7 @@ parameters:
       Instrument used for exposures.
       One of: LSSTComCamSim, LATISS, LSSTComCam, LSSTCam,
       StarTrackerFast, StarTrackerNarrow, StarTrackerWide
-    default: "LSSTComCam"
+    default: "LSSTCam"
   observation_reason:
     type: string
     description: >
