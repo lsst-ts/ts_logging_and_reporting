@@ -25,6 +25,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+version.py
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -167,3 +168,4 @@ cython_debug/
 .isort.cfg
 .mypy.ini
 .ruff.toml
+towncrier.toml

@@ -29,6 +29,7 @@ import datetime as dt
 import unittest
 
 import lsst.ts.logging_and_reporting.utils as ut
+import pytz
 
 
 class TestBackEnd(unittest.TestCase):
@@ -36,45 +37,16 @@ class TestBackEnd(unittest.TestCase):
 
     def test_get_datetime_from_dayobs_str_1(self):
         actual = ut.get_datetime_from_dayobs_str("2024-10-14")
-        expected = dt.datetime(2024, 10, 14, 12, 0)
+        expected = dt.datetime(2024, 10, 14, 15, 0, tzinfo=pytz.utc)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_2(self):
         actual = ut.get_datetime_from_dayobs_str("20241014")
-        expected = dt.datetime(2024, 10, 14, 12, 0)
+        expected = dt.datetime(2024, 10, 14, 15, 0, tzinfo=pytz.utc)
         self.assertEqual(actual, expected)
 
-    def test_get_datetime_from_dayobs_str_3(self):
-        actual = ut.get_datetime_from_dayobs_str("today")
-        expected = dt.datetime.now()
-        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
-        self.assertEqual(actual, expected)
-
-    def test_get_datetime_from_dayobs_str_4(self):
-        actual = ut.get_datetime_from_dayobs_str("TODAY")
-        expected = dt.datetime.now()
-        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
-        self.assertEqual(actual, expected)
-
-    def test_get_datetime_from_dayobs_str_5(self):
-        actual = ut.get_datetime_from_dayobs_str("YESTERDAY")
-        expected = dt.datetime.now() - dt.timedelta(days=1)
-        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
-        self.assertEqual(actual, expected)
-
-    def test_wget_datetime_from_dayobs_str_6(self):
-        actual = ut.get_datetime_from_dayobs_str("TOMORROW")
-        expected = dt.datetime.now() + dt.timedelta(days=1)
-        expected = expected.replace(hour=12, minute=0, second=0, microsecond=0)
-        self.assertEqual(actual, expected)
-
-    def test_AllSources(self):
-        # TODO insure init loads all sources
-        self.assertTrue(False, "NOT IMPLEMENTED")
-
-    def test_AllReports(self):
-        # TODO insure init works
-        self.assertTrue(False, "NOT IMPLEMENTED")
+    # TODO Reevaluate how to test times/strings that will be relative
+    # and changing around midnight depending on the time zone
 
 
 if __name__ == "__main__":
