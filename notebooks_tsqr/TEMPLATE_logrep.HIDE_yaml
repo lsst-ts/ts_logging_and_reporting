@@ -1,0 +1,19 @@
+# For use with a Times Square notebook
+title: TEMPLATE for LR
+description: >
+  Copy and rename this ipynb and yaml sidecar into a new
+  pair of files (<log_source>.ipynb, <log_source>.yaml).
+  The TEMPLATE_* files will eventually be hidden in Times Square.
+authors:
+  - name: Steve Pothier
+    slack: Steve Pothier
+tags:
+  - reporting
+  - prototype
+parameters:
+  record_limit:
+    type: integer
+    description: Max number of records to output
+    default: 99
+    minimum: 1
+    maximum: 9999

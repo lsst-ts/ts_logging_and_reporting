@@ -1,0 +1,53 @@
+# For use with a Times Square notebook
+title: Nightly Digest
+description: Combined report from Summit logs
+authors:
+  - name: Steve Pothier
+    slack: Steve Pothier
+  - name: Valerie Becker
+    slack: valerie becker
+tags:
+  - reporting
+  - prototype
+  - exposure
+parameters:
+  day_obs:
+    type: string
+    description: >
+      The last observing night to report on. (Allowed: YYYY-MM-DD,
+      TODAY, YESTERDAY) You probably want YESTERDAY. A value of TODAY
+      means the last night shown will be the one that starts tonight.
+    detailed_description: >
+      The last observing night to report on. (Allowed: YYYY-MM-DD,
+      TODAY, YESTERDAY) The report will include all observing nights
+      upto and including, day_obs.  You probably want YESTERDAY
+      (meaning the last night shown will be the one that started at
+      sunset yesterday). A value of TODAY means the last night shown
+      will be the one that starts tonight (which will have no nightly
+      data before sunset).
+    default: "YESTERDAY"
+  number_of_days:
+    type: integer
+    description: >
+      Number of days (nights) to show in the report.
+    default: 1
+    minimum: 1
+    maximum: 9
+  period:
+    type: string
+    description: >
+      Interval of time for grouping and aggregating records. E.G. 2h
+      See:
+        https://pandas.pydata.org/docs/user_guide/timeseries.html#period-aliases
+    default: "4h"
+  verbose:
+    type: boolean
+    description: >
+      Enable verbose output. (Generally for development use.)
+    default: false
+  warning:
+    type: boolean
+    description: >
+      Enable warnings when: zero records retrieved from a source, instruments are
+      excluded, etc.
+    default: false

@@ -1,4 +1,6 @@
 enabled: true
-root: notebooks_for_times_square
+root: notebooks_tsqr
+ignore:
+  - logrep_proto_*
 description: >
-  Times Square for project-wide Logging & Reporting.
+  Times Square for project-wide Logging and Reporting.

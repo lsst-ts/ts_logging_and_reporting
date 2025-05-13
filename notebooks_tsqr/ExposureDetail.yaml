@@ -1,0 +1,40 @@
+# For use with a Times Square notebook
+title: Exposure Detail
+description: Details of Nightly Exposures
+authors:
+  - name: Steve Pothier
+    slack: Steve Pothier
+tags:
+  - reporting
+  - prototype
+  - exposure
+parameters:
+  day_obs:
+    type: string
+    description: >
+      The last observing night to report on. (Allowed: YYYY-MM-DD,
+      TODAY, YESTERDAY) You probably want YESTERDAY. A value of TODAY
+      means the last night shown will be the one that starts tonight.`
+    default: "YESTERDAY"
+  instrument:
+    type: string
+    description: >
+      Instrument used for exposures.
+      One of: LSSTComCamSim, LATISS, LSSTComCam, LSSTCam,
+      StarTrackerFast, StarTrackerNarrow, StarTrackerWide
+    default: "LSSTCam"
+  observation_reason:
+    type: string
+    description: >
+      Observation reason.
+    default: "ALL"
+  observation_type:
+    type: string
+    description: >
+      Observation Type.
+    default: "ALL"
+  science_program:
+    type: string
+    description: >
+      Science Program
+    default: "ALL"
