@@ -1,6 +1,5 @@
 requests
-# jupyter-lab --ip=0.0.0.0
-jupyterlab # =4.3.4
+jupyterlab 
 pandas
 matplotlib
 numpy
@@ -8,5 +7,4 @@ pre-commit
 astroplan
 astropy
 bokeh
-#! lsst-efd-client
-# Possibly need: nbstripout --install
+
