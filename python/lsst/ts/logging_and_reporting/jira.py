@@ -1,10 +1,8 @@
 import os
-from datetime import timedelta
+import requests
 from urllib.parse import quote
 
-import requests
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
-from pytz import timezone
 
 
 class JiraAdapter(SourceAdapter):
@@ -26,21 +24,23 @@ class JiraAdapter(SourceAdapter):
             verbose=verbose,
             warning=warning,
         )
+        self.issues = None
 
-    ### FROM LOVE
-    def get_jira_obs_report(request_data):
-        """Connect to the Rubin Observatory JIRA Cloud REST API to
-        query all issues of the OBS project for a certain obs day.
+    def fetch_issues(self):
+        """Query JIRA issues for the configured dayobs range, save and
+        return them via self.issues."""
+        if self.issues is None:
+            self.issues = self.get_jira_obs_report()
+        return self.issues
+
+    def get_jira_obs_report(self):
+        """From LOVE-Manager, connect to the Rubin Observatory JIRA Cloud
+        REST API to query all issues of the OBS project for a certain obs day.
 
         For more information on the REST API endpoints refer to:
         - https://developer.atlassian.com/cloud/jira/platform/rest/v3
         - https://developer.atlassian.com/cloud/jira/platform/\
             basic-auth-for-rest-apis/
-
-        Parameters
-        ----------
-        request_data : `dict`
-            The request data
 
         Notes
         -----
@@ -68,11 +68,13 @@ class JiraAdapter(SourceAdapter):
         end_dayobs_str = self.max_dayobs.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         jql_query = (
-            f"project = OBS AND created >= \"{start_dayobs_str}\" AND created < \"{end_dayobs_str}\""
+            f'project = OBS AND created >= "{start_dayobs_str}" '
+            f'AND created < "{end_dayobs_str}"'
         )
 
         url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/search?jql={quote(jql_query)}"
         response = requests.get(url, headers=headers)
+
         if response.status_code == 200:
             issues = response.json()["issues"]
             return [
@@ -85,10 +87,12 @@ class JiraAdapter(SourceAdapter):
                 }
                 for issue in issues
             ]
-        raise Exception(f"Error getting issues from {os.environ.get('JIRA_API_HOSTNAME')}")
-
+        raise Exception(
+            f"Error getting issues from {os.environ.get('JIRA_API_HOSTNAME')}"
+        )
 
     # Do we need to parse into html?
+    @staticmethod
     def parse_obs_issues_array_to_plain_text(obs_issues):
         """Parse the OBS issues array to plain text.
 
@@ -121,14 +125,3 @@ class JiraAdapter(SourceAdapter):
             plain_text += f"Created by {issue.get('reporter')}\n"
 
         return plain_text
-
-    ### FROM LOVE
-    ## To test get_jira_obs_report:
-    # # Get JIRA observation issues
-    try:
-        report["obs_issues"] = get_jira_obs_report({"day_obs": report["day_obs"]})
-    except Exception as e:
-        return Response(
-            {"error": str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
