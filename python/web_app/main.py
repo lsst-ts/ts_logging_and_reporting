@@ -1,14 +1,19 @@
 import datetime
 from typing import Union
-import httpx
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse, JSONResponse
 
-from services.jira import get_jira_tickets
-from services.consdb_service import get_exposures
+from services.jira_service import get_jira_tickets
+from services.consdb_service import get_exposures, get_mock_exposures, test_my_get_exposures
 from services.almanac_service import get_almanac
+from services.narrativelog_service import get_messages
+
+
+logger = logging.getLogger("uvicorn.error")
+logger.setLevel(logging.DEBUG)
 
 
 app = FastAPI()
@@ -27,77 +32,46 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-async def read_root(request: Request):
-    print(request.headers)
-    print(request.cookies)
-    response = RedirectResponse(
-        "https://usdf-rsp.slac.stanford.edu/login?rd=https://usdf-rsp.slac.stanford.edu/auth/api/v1/token-info",
-    )
-    # response.headers['Access-Control-Allow-Origin'] = request.headers['Origin']
-    print(response)
-    return response
+logger.info("Starting FastAPI app")
+
+
+@app.get("/mock-exposures")
+async def read_exposures_from_mock_data(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
+    logger.info(f"Getting exposures from mock data ")
+    exposures = get_mock_exposures(dayObsStart, dayObsEnd, instrument)
+    return {"exposures": exposures}
 
 
 @app.get("/exposures")
 async def read_exposures(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
+    logger.info(f"Getting exposures from adapter for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     exposures = get_exposures(dayObsStart, dayObsEnd, instrument)
+    return {"exposures_count": len(exposures)}
+
+@app.get("/test-exposures")
+async def test_read_exposures(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
+    logger.info(f"Testing exposures from adapter custom func for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
+    exposures = test_my_get_exposures(dayObsStart, dayObsEnd, instrument)
     return {"exposures": exposures}
 
 
 @app.get("/jira-tickets")
 async def read_jira_tickets(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
+    logger.info(f"Getting jira tickets res from mock data for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
     return {"issues": tickets}
     
 
 @app.get("/almanac")
 async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date):
-    print(f"hellloooo: dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    logger.info(f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
     almanac = get_almanac(dayObsStart, dayObsEnd)
     print(almanac)
     return {"almanac": almanac}
 
 
-# @app.get("/token")
-# def create_token():
-#     return "my-token"
-
-
-# @app.get("/test")
-# async def read_root(request: Request):
-#     print(request.cookies.get("gafaelfawr"))
-#     auth = ("user", "my-token")
-#     response = httpx.get(
-#         # "https://usdf-rsp.slac.stanford.edu/auth/api/v1/token-info",
-#         "https://usdf-rsp-dev.slac.stanford.edu/exposurelog/exposures?registry=1&instrument=LSSTComCam&min_day_obs=20241205&max_day_obs=20241209&limit=10",
-#         auth=auth
-#     )
-
-#     # if response.status_code == 200:
-#     print(response)
-#     return response
-
-
-# @app.get("/items/{item_id}")
-# def read_item(item_id: int, q: Union[str, None] = None):
-#     return {"item_id": item_id, "q": q}
-
-
-# @app.get("/user-info")
-# def read_user_info(request: Request):
-#     refresh_token = "my-token"
-#     response = JSONResponse({"user_info":{
-#             "username": "eali",
-#             "email": "ee@gmail.com"
-#         }})
-#     response.set_cookie(
-#         key="nd_token",
-#         value=refresh_token,
-#         # httponly=True,
-#         secure=False,  # use True in production with HTTPS
-#         samesite="lax",
-#         # max_age=60 * 60 * 24 * 7,
-#         # path="/token"
-#     )
-#     return response
+@app.get("/narrative-log")
+async def read_narrative_log(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date,  instrument: str):
+    logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd} and instrument: {instrument}")
+    records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam")
+    return {"narrative_log": records}

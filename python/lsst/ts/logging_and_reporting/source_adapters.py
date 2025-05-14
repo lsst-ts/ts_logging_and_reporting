@@ -773,14 +773,13 @@ class NarrativelogAdapter(SourceAdapter):
         LSST_DAYOBS = 20250120
         for rec in records:
             dayobs = int(rec["date_added"][:8].replace("-", ""))
-
-            if rec["components"] is None:
+            if rec["components_json"] is None:
                 instrument = None
-            elif rec["components"][0] == "AuxTel":
+            elif rec["components_json"].get('name') == "AuxTel":
                 instrument = "LATISS"
-            elif rec["components"][0] == "MainTel":
+            elif rec["components_json"].get('name') == "MainTel":
                 instrument = "lsst"
-            elif rec["components"][0] == "Simonyi":
+            elif rec["components_json"].get('name') == "Simonyi":
                 instrument = "lsst"
             else:
                 instrument = None

@@ -40,4 +40,6 @@ requirements:
         - numpy
         - astroplan
         - astropy
+        - fastapi[standard]
+        - pydantic
 
