@@ -91,4 +91,9 @@ async def read_narrative_log(
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam")
     time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
-    return {"narrative_log": records, "time_lost_to_weather": time_lost_to_weather}
+    time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
+    return {
+        "narrative_log": records,
+        "time_lost_to_weather": time_lost_to_weather,
+        "time_lost_to_faults": time_lost_to_faults
+    }
