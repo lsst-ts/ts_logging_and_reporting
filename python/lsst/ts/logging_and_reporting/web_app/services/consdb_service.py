@@ -24,41 +24,40 @@ def get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telesc
     Get exposures from the ConsDB for a given time range and telescope.
     """
     try:
-        logger.info(f"Getting exposures for start: {dayobs_start}, "
-                    f"end: {dayobs_end} and telescope: {telescope}")
+        print(f"Getting exposures for start: "
+              f"{dayobs_start}, end: {dayobs_end} "
+              f"and telescope: {telescope}")
         cons_db = ConsdbAdapter(
             server_url=nd_utils.Server.get_url(),
-            # max_dayobs=dayobs_end,
-            # min_dayobs=dayobs_start,
-            verbose=False,
+            max_dayobs=nd_utils.datetime_to_dayobs(dayobs_end),
+            min_dayobs=nd_utils.datetime_to_dayobs(dayobs_start),
         )
-        logger.debug(f"max_dayobs: {cons_db.max_dayobs}, "
-                     f"min_dayobs: {cons_db.min_dayobs}, "
-                     f"telescope: {telescope}")
-        exposure_df = cons_db.get_exposures(instrument=telescope)
-        return exposure_df
+        print(f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}")
+        exposures = cons_db.get_exposures(instrument=telescope)
+        print(f"Exposures: {exposures}")
+        return exposures
+
     except Exception as e:
         print(f"Error getting exposures: {e}")
-        return exposure_df.empty
+        return {}
 
 
-def test_my_get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telescope: str) -> dict:
+def custom_get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telescope: str) -> dict:
     try:
         exposures = {}
         logger.info(f"Getting exposures for start: {dayobs_start}, "
                     f"end: {dayobs_end} and telescope: {telescope}")
         cons_db = ConsdbAdapter(
             server_url=nd_utils.Server.get_url(),
-            # max_dayobs=dayobs_end,
-            # min_dayobs=dayobs_start,
-            verbose=False,
+            max_dayobs=nd_utils.datetime_to_dayobs(dayobs_end),
+            min_dayobs=nd_utils.datetime_to_dayobs(dayobs_start),
         )
         logger.info(
             f"max_dayobs: {cons_db.max_dayobs}, "
             f"min_dayobs: {cons_db.min_dayobs}, "
             f"telescope: {telescope}"
         )
-        ssql = f"""SELECT *
+        ssql = f"""SELECT exposure_id, exp_time
           FROM cdb_{telescope}.exposure e, cdb_{telescope}.visit1_quicklook q
           WHERE e.exposure_id = q.visit_id
               AND {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
