@@ -4,10 +4,10 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from services.jira_service import get_jira_tickets
-from services.consdb_service import get_mock_exposures, custom_get_exposures
-from services.almanac_service import get_almanac
-from services.narrativelog_service import get_messages
+from .services.jira_service import get_jira_tickets
+from .services.consdb_service import get_mock_exposures, custom_get_exposures
+from .services.almanac_service import get_almanac
+from .services.narrativelog_service import get_messages
 
 
 logger = logging.getLogger("uvicorn.error")
