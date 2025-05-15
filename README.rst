@@ -42,7 +42,3 @@ To set up the pre-commit hooks, run the following command in the root directory 
 
 pre-commit install
 ```
-
-## Times Square Docs 
-
-https://rsp.lsst.io/v/usdfprod/guides/times-square/github-repos/installation-howto.html#add-a-readme-md-file

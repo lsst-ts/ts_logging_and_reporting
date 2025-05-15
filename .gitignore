@@ -169,4 +169,4 @@ cython_debug/
 .mypy.ini
 .ruff.toml
 towncrier.toml
-web_app/data/*
+python/lsst/ts/logging_and_reporting/web_app/data/*

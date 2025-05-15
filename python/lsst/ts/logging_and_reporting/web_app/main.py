@@ -1,10 +1,8 @@
 import datetime
-from typing import Union
 import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import RedirectResponse, JSONResponse
 
 from services.jira_service import get_jira_tickets
 from services.consdb_service import get_exposures, get_mock_exposures, test_my_get_exposures
@@ -36,31 +34,54 @@ logger.info("Starting FastAPI app")
 
 
 @app.get("/mock-exposures")
-async def read_exposures_from_mock_data(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
-    logger.info(f"Getting exposures from mock data ")
+async def read_exposures_from_mock_data(
+    request: Request,
+    dayObsStart: datetime.date,
+    dayObsEnd: datetime.date,
+    instrument: str
+    ):
+    logger.info("Getting exposures from mock data")
     exposures = get_mock_exposures(dayObsStart, dayObsEnd, instrument)
     return {"exposures": exposures}
 
 
 @app.get("/exposures")
-async def read_exposures(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
-    logger.info(f"Getting exposures from adapter for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
+async def read_exposures(
+    request: Request,
+    dayObsStart: datetime.date,
+    dayObsEnd: datetime.date,
+    instrument: str):
+    logger.info(f"Getting exposures from adapter for start: "
+                f"{dayObsStart}, end: {dayObsEnd} "
+                f"and instrument: {instrument}")
     exposures = get_exposures(dayObsStart, dayObsEnd, instrument)
     return {"exposures_count": len(exposures)}
 
 @app.get("/test-exposures")
-async def test_read_exposures(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
-    logger.info(f"Testing exposures from adapter custom func for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
+async def test_read_exposures(
+    request: Request,
+    dayObsStart: datetime.date,
+    dayObsEnd: datetime.date,
+    instrument: str):
+    logger.info(f"Testing exposures from adapter custom func for start: "
+                f"{dayObsStart}, end: {dayObsEnd} "
+                f"and instrument: {instrument}")
     exposures = test_my_get_exposures(dayObsStart, dayObsEnd, instrument)
     return {"exposures": exposures}
 
 
 @app.get("/jira-tickets")
-async def read_jira_tickets(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date, instrument: str):
-    logger.info(f"Getting jira tickets res from mock data for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
+async def read_jira_tickets(
+    request: Request,
+    dayObsStart:datetime.date,
+    dayObsEnd: datetime.date,
+    instrument: str):
+    logger.info(f"Getting jira tickets res from mock data for start: "
+                f"{dayObsStart}, end: {dayObsEnd} "
+                f"and instrument: {instrument}")
     tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
     return {"issues": tickets}
-    
+
 
 @app.get("/almanac")
 async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date):
@@ -71,7 +92,12 @@ async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: 
 
 
 @app.get("/narrative-log")
-async def read_narrative_log(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date,  instrument: str):
-    logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd} and instrument: {instrument}")
+async def read_narrative_log(
+    request: Request,
+    dayObsStart: datetime.date,
+    dayObsEnd: datetime.date,
+    instrument: str):
+    logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
+                f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam")
     return {"narrative_log": records}

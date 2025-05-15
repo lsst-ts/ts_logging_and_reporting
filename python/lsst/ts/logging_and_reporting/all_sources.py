@@ -186,7 +186,7 @@ class AllSources:
 
     # This will have to be async def night_tally_observation_gaps
     # if efd_src is used.
-    def SAVE_night_tally_observation_gaps(self, verbose=False):
+    def night_tally_observation_gaps(self, verbose=False):
         # observable is between 18deg twilights
         total_observable_hours = self.alm_src.night_hours
         used_instruments = set()
