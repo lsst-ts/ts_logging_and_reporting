@@ -42,4 +42,5 @@ requirements:
         - astropy
         - fastapi[standard]
         - pydantic
+        - uvicorn
 

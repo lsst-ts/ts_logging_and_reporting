@@ -23,7 +23,7 @@ version = { attr = "setuptools_scm.get_version" }
 where = [ "python" ]
 
 [project.scripts]
-run_logging_and_reporting = "lsst.ts.logging_and_reporting:run_logging_and_reporting"
+run_logging_and_reporting = "lsst.ts.logging_and_reporting.run_logging_and_reporting:run_logging_and_reporting"
 
 [tool.setuptools_scm]
 
