@@ -29,8 +29,8 @@ def get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telesc
               f"and telescope: {telescope}")
         cons_db = ConsdbAdapter(
             server_url=nd_utils.Server.get_url(),
-            max_dayobs=nd_utils.datetime_to_dayobs(dayobs_end),
-            min_dayobs=nd_utils.datetime_to_dayobs(dayobs_start),
+            max_dayobs=dayobs_end,
+            min_dayobs=dayobs_start,
         )
         print(f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}")
         exposures = cons_db.get_exposures(instrument=telescope)
@@ -49,8 +49,8 @@ def custom_get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date,
                     f"end: {dayobs_end} and telescope: {telescope}")
         cons_db = ConsdbAdapter(
             server_url=nd_utils.Server.get_url(),
-            max_dayobs=nd_utils.datetime_to_dayobs(dayobs_end),
-            min_dayobs=nd_utils.datetime_to_dayobs(dayobs_start),
+            max_dayobs=dayobs_end,
+            min_dayobs=dayobs_start,
         )
         logger.info(
             f"max_dayobs: {cons_db.max_dayobs}, "

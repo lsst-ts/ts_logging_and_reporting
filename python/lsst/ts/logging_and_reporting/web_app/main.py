@@ -51,11 +51,14 @@ async def test_read_exposures(
     dayObsStart: datetime.date,
     dayObsEnd: datetime.date,
     instrument: str):
-    logger.info(f"Testing exposures from adapter custom func for start: "
+    logger.info(f"Getting exposures for start: "
                 f"{dayObsStart}, end: {dayObsEnd} "
                 f"and instrument: {instrument}")
     exposures = custom_get_exposures(dayObsStart, dayObsEnd, instrument)
-    return {"exposures_count": len(exposures)}
+    total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
+    return {
+        "exposures_count": len(exposures),
+        "sum_exposure_time": total_exposure_time}
 
 
 @app.get("/jira-tickets")
@@ -75,8 +78,7 @@ async def read_jira_tickets(
 async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date):
     logger.info(f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
     almanac = get_almanac(dayObsStart, dayObsEnd)
-    print(almanac)
-    return {"almanac": almanac}
+    return {"night_hours": almanac.night_hours}
 
 
 @app.get("/narrative-log")
@@ -88,4 +90,5 @@ async def read_narrative_log(
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam")
-    return {"narrative_log": records}
+    time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
+    return {"narrative_log": records, "time_lost_to_weather": time_lost_to_weather}
