@@ -41,6 +41,7 @@ requirements:
         - astroplan
         - astropy
         - fastapi
+        - ipython
         - pydantic
         - uvicorn
 
