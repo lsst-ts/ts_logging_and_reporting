@@ -124,6 +124,7 @@ class SourceAdapter(ABC):
         read_timeout=20,  # seconds
         verbose=True,
         warning=True,
+        auth_token=None,
     ):
         """Load the relevant data for the Source.
 
@@ -146,7 +147,7 @@ class SourceAdapter(ABC):
         self.r_timeout = min(MAX_READ_TIMEOUT, float(read_timeout))  # seconds
         self.timeout = (self.c_timeout, self.r_timeout)
 
-        self.token = ut.get_access_token()
+        self.token = auth_token
 
         self.records = None  # else: list of dict
 
@@ -205,11 +206,11 @@ class SourceAdapter(ABC):
             print(f"DEBUG protected_post({url=},{timeout=})")
         try:
             response = requests.post(
-                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header()
+                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header(self.token)
             )
             if self.verbose:
                 print(
-                    f"DEBUG protected_post({url=},{ut.get_auth_header()=},{timeout=}) => "
+                    f"DEBUG protected_post({url=},{ut.get_auth_header(self.token)=},{timeout=}) => "
                     f"{response.status_code=} {response.reason}"
                 )
             response.raise_for_status()
@@ -255,10 +256,10 @@ class SourceAdapter(ABC):
         if self.verbose:
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
-            response = requests.get(url, timeout=timeout, headers=ut.get_auth_header())
+            response = requests.get(url, timeout=timeout, headers=ut.get_auth_header(self.token))
             if self.verbose:
                 print(
-                    f"DEBUG protected_get({url=},{ut.get_auth_header()=},{timeout=}) => "
+                    f"DEBUG protected_get({url=},{ut.get_auth_header(self.token)=},{timeout=}) => "
                     f"{response.status_code=} {response.reason}"
                 )
             response.raise_for_status()
@@ -303,7 +304,7 @@ class SourceAdapter(ABC):
         qparams = dict(limit=2)  # API requires > 1 !
         url = f"{endpoint}?{urlencode(qparams)}"
         try:
-            requests.get(url, timeout=self.timeout, headers=ut.get_auth_header())
+            requests.get(url, timeout=self.timeout, headers=ut.get_auth_header(self.token))
         except Exception:
             pass  # this is a hack to force reconnect. Response irrelevent.
 
@@ -652,6 +653,7 @@ class NarrativelogAdapter(SourceAdapter):
         limit=None,
         verbose=False,
         warning=False,
+        auth_token=None,
     ):
         super().__init__(
             server_url=server_url,
@@ -660,6 +662,7 @@ class NarrativelogAdapter(SourceAdapter):
             limit=limit,
             verbose=verbose,
             warning=warning,
+            auth_token=auth_token,
         )
         if self.verbose:
             print(

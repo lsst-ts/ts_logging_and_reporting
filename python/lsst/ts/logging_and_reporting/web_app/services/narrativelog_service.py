@@ -7,7 +7,12 @@ import lsst.ts.logging_and_reporting.utils as nd_utils
 logger = logging.getLogger(__name__)
 
 
-def get_messages(dayobs_start: datetime.date, dayobs_end: datetime.date, telescope: str) -> list:
+def get_messages(
+    dayobs_start: datetime.date,
+    dayobs_end: datetime.date,
+    telescope: str,
+    auth_token: str = None
+    ) -> list:
     """
     Get messages from the narrative log for a given time range and telescope.
     """
@@ -16,6 +21,7 @@ def get_messages(dayobs_start: datetime.date, dayobs_end: datetime.date, telesco
             server_url=nd_utils.Server.get_url(),
             max_dayobs=dayobs_end,
             min_dayobs=dayobs_start,
+            auth_token=auth_token,
         )
         status = narrative_log.get_records()
         logger.info(f"status: {status}")
