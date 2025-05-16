@@ -40,4 +40,8 @@ requirements:
         - numpy
         - astroplan
         - astropy
+        - fastapi
+        - ipython
+        - pydantic
+        - uvicorn
 

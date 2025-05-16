@@ -43,6 +43,7 @@ class ConsdbAdapter(SourceAdapter):
         limit=None,
         verbose=False,
         warning=True,
+        auth_token=None,
     ):
         super().__init__(
             server_url=server_url,
@@ -51,6 +52,7 @@ class ConsdbAdapter(SourceAdapter):
             limit=limit,
             verbose=verbose,
             warning=warning,
+            auth_token=auth_token,
         )
 
         self.status = dict()
@@ -165,7 +167,7 @@ class ConsdbAdapter(SourceAdapter):
         records = []
         try:
             response = requests.post(
-                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header()
+                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header(self.token)
             )
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
