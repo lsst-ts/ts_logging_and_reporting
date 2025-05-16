@@ -255,7 +255,7 @@ class Server:
     usdfdev = "https://usdf-rsp-dev.slac.stanford.edu"
     usdf = "https://usdf-rsp.slac.stanford.edu"
     tucson = "https://tucson-teststand.lsst.codes"
-    base = "https://base.lsst.codes"
+    base = "https://base-lsp.lsst.codes"
 
     @classmethod
     def get_all(cls):
