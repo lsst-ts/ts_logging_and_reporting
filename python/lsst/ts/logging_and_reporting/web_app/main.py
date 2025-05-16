@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, custom_get_exposures
@@ -31,6 +32,14 @@ app.add_middleware(
 
 
 logger.info("Starting FastAPI app")
+
+
+@app.get("/health")
+def health():
+    """Health check endpoint.
+    Used by kubernetes readiness and liveness probes.
+    """
+    return JSONResponse(status_code=200, content={"status": "ok"})
 
 
 @app.get("/mock-exposures")
