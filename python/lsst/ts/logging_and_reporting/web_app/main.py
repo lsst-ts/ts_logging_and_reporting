@@ -50,6 +50,7 @@ async def read_exposures_from_mock_data(
     dayObsEnd: datetime.date,
     instrument: str
     ):
+
     logger.info("Getting exposures from mock data")
     exposures = get_mock_exposures(dayObsStart, dayObsEnd, instrument)
     return {"exposures": exposures}
@@ -64,7 +65,9 @@ async def test_read_exposures(
     logger.info(f"Getting exposures for start: "
                 f"{dayObsStart}, end: {dayObsEnd} "
                 f"and instrument: {instrument}")
-    exposures = custom_get_exposures(dayObsStart, dayObsEnd, instrument)
+    auth_header = request.headers.get("Authorization")
+    auth_token = auth_header.split(" ")[1] if auth_header else None
+    exposures = custom_get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
     total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
     return {
         "exposures_count": len(exposures),
@@ -99,7 +102,9 @@ async def read_narrative_log(
     instrument: str):
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
-    records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam")
+    auth_header = request.headers.get("Authorization")
+    auth_token = auth_header.split(" ")[1] if auth_header else None
+    records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token)
     time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
     time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
     return {
