@@ -42,7 +42,12 @@ def get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telesc
         return {}
 
 
-def custom_get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telescope: str) -> dict:
+def custom_get_exposures(
+    dayobs_start: datetime.date,
+    dayobs_end: datetime.date,
+    telescope: str,
+    auth_token: str = None,
+    ) -> dict:
     try:
         exposures = {}
         logger.info(f"Getting exposures for start: {dayobs_start}, "
@@ -51,6 +56,7 @@ def custom_get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date,
             server_url=nd_utils.Server.get_url(),
             max_dayobs=dayobs_end,
             min_dayobs=dayobs_start,
+            auth_token=auth_token,
         )
         logger.info(
             f"max_dayobs: {cons_db.max_dayobs}, "

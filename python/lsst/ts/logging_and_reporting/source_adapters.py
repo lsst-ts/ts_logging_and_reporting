@@ -124,6 +124,7 @@ class SourceAdapter(ABC):
         read_timeout=20,  # seconds
         verbose=True,
         warning=True,
+        auth_token=None,
     ):
         """Load the relevant data for the Source.
 
@@ -146,7 +147,7 @@ class SourceAdapter(ABC):
         self.r_timeout = min(MAX_READ_TIMEOUT, float(read_timeout))  # seconds
         self.timeout = (self.c_timeout, self.r_timeout)
 
-        self.token = ut.get_access_token()
+        self.token = auth_token if auth_token is not None else ut.get_access_token()
 
         self.records = None  # else: list of dict
 
@@ -652,6 +653,7 @@ class NarrativelogAdapter(SourceAdapter):
         limit=None,
         verbose=False,
         warning=False,
+        auth_token=None,
     ):
         super().__init__(
             server_url=server_url,
@@ -660,6 +662,7 @@ class NarrativelogAdapter(SourceAdapter):
             limit=limit,
             verbose=verbose,
             warning=warning,
+            auth_token=auth_token,
         )
         if self.verbose:
             print(
