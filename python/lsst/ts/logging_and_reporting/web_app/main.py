@@ -67,6 +67,7 @@ async def test_read_exposures(
                 f"and instrument: {instrument}")
     auth_header = request.headers.get("Authorization")
     auth_token = auth_header.split(" ")[1] if auth_header else None
+    logger.info(f"Auth token: {auth_token}")
     exposures = custom_get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
     total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
     return {
