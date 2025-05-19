@@ -1,7 +1,11 @@
 import datetime
 import json
+import logging
 
 from pydantic import BaseModel
+
+
+logger = logging.getLogger(__name__)
 
 
 class JiraTicket(BaseModel):
@@ -14,26 +18,17 @@ class JiraTicket(BaseModel):
     key: str
 
 
-def extract_ticket_info(tic) -> JiraTicket:
-    return {
-        "url": f"https://rubinobs.atlassian.net/browse/{tic["key"]}",
-        "summary": tic["fields"]["summary"],
-        "updated": tic["fields"]["updated"],
-        "created": tic["fields"]["created"],
-        "status": tic["fields"]["status"]["name"],
-        "key": tic["key"]
-    }
-
 
 def get_jira_tickets(
         dayobs_start: datetime.date,
         dayobs_end: datetime.date,
         telescope: str
         ) -> list[JiraTicket]:
-    print(f"Getting Jira tickets for start: {dayobs_start}, "
+    logger.info(f"Getting Jira tickets for start: {dayobs_start}, "
           f"end: {dayobs_end} and telescope: {telescope}")
     # TODO: replace with code to retrieve
     # ticket information using data adaptors
+    # See DM-12345.
     with open("data/jira-tickets.json") as f:
         content = json.load(f)
         tickets = [{
@@ -45,5 +40,4 @@ def get_jira_tickets(
             "system": telescope,
             "key": tic["key"]
         } for tic in content['issues']]
-        # tickets = list(map(extract_ticket_info, content['issues']))
     return tickets

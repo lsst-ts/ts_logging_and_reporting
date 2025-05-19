@@ -24,10 +24,10 @@ def get_messages(
             auth_token=auth_token,
         )
         status = narrative_log.get_records()
-        logger.info(f"status: {status}")
+        logger.debug(f"status: {status}")
         records = narrative_log.records
         instrument_records = [record for record in records if record.get("instrument") == telescope]
         return instrument_records
     except Exception as e:
-        print(f"Error getting narrative log records: {e}")
+        logger.error(f"Error getting narrative log records: {e}")
         return []

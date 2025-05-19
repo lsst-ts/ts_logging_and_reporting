@@ -24,7 +24,7 @@ from lsst.ts.logging_and_reporting.web_app.main import app
 
 
 def run_logging_and_reporting() -> None:
-    """Run the night report REST API web server."""
+    """Run the nightly digest REST API web server."""
     uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
 
 

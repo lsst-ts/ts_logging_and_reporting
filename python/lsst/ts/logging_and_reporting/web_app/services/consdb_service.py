@@ -24,7 +24,7 @@ def get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telesc
     Get exposures from the ConsDB for a given time range and telescope.
     """
     try:
-        print(f"Getting exposures for start: "
+        logger.info(f"Getting exposures for start: "
               f"{dayobs_start}, end: {dayobs_end} "
               f"and telescope: {telescope}")
         cons_db = ConsdbAdapter(
@@ -32,13 +32,12 @@ def get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telesc
             max_dayobs=dayobs_end,
             min_dayobs=dayobs_start,
         )
-        print(f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}")
+        logger.debug(f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}")
         exposures = cons_db.get_exposures(instrument=telescope)
-        print(f"Exposures: {exposures}")
         return exposures
 
     except Exception as e:
-        print(f"Error getting exposures: {e}")
+        logger.error(f"Error getting exposures: {e}")
         return {}
 
 
@@ -58,15 +57,14 @@ def custom_get_exposures(
             min_dayobs=dayobs_start,
             auth_token=auth_token,
         )
-        logger.info(
+        logger.debug(
             f"max_dayobs: {cons_db.max_dayobs}, "
             f"min_dayobs: {cons_db.min_dayobs}, "
             f"telescope: {telescope}"
         )
         ssql = f"""SELECT exposure_id, exp_time
-          FROM cdb_{telescope}.exposure e, cdb_{telescope}.visit1_quicklook q
-          WHERE e.exposure_id = q.visit_id
-              AND {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
+          FROM cdb_{telescope}.exposure e
+          WHERE {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
               AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
         """
 
@@ -77,5 +75,5 @@ def custom_get_exposures(
             logger.debug(f"Debug cdb.get_exposures: {exposures[0]=}")
 
     except Exception as e:
-        print(f"Error getting exposures: {e}")
+        logger.error(f"Error getting exposures: {e}")
     return exposures
