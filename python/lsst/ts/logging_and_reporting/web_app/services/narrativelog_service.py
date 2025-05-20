@@ -1,0 +1,33 @@
+import datetime
+import logging
+from lsst.ts.logging_and_reporting.source_adapters import NarrativelogAdapter
+import lsst.ts.logging_and_reporting.utils as nd_utils
+
+
+logger = logging.getLogger(__name__)
+
+
+def get_messages(
+    dayobs_start: datetime.date,
+    dayobs_end: datetime.date,
+    telescope: str,
+    auth_token: str = None
+    ) -> list:
+    """
+    Get messages from the narrative log for a given time range and telescope.
+    """
+    try:
+        narrative_log = NarrativelogAdapter(
+            server_url=nd_utils.Server.get_url(),
+            max_dayobs=dayobs_end,
+            min_dayobs=dayobs_start,
+            auth_token=auth_token,
+        )
+        status = narrative_log.get_records()
+        logger.debug(f"status: {status}")
+        records = narrative_log.records
+        instrument_records = [record for record in records if record.get("instrument") == telescope]
+        return instrument_records
+    except Exception as e:
+        logger.error(f"Error getting narrative log records: {e}")
+        return []

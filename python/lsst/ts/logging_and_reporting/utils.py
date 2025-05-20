@@ -255,7 +255,7 @@ class Server:
     usdfdev = "https://usdf-rsp-dev.slac.stanford.edu"
     usdf = "https://usdf-rsp.slac.stanford.edu"
     tucson = "https://tucson-teststand.lsst.codes"
-    base = "https://base.lsst.codes"
+    base = "https://base-lsp.lsst.codes"
 
     @classmethod
     def get_all(cls):
@@ -305,7 +305,7 @@ def get_access_token():
         return os.getenv("ACCESS_TOKEN", None)
 
 
-def get_auth_header():
+def get_auth_header(token=None):
     """return dict obj for request auth headers"""
-    toke = get_access_token()
-    return {"Authorization": f"Bearer {toke}"}
+    bearer_token = token if token is not None else get_access_token()
+    return {"Authorization": f"Bearer {bearer_token}"}
