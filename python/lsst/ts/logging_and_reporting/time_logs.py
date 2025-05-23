@@ -116,8 +116,8 @@ def gen_timelog_frame(dayobs, noon="12:00", freq="20min"):
     """
     dtnoon = dt.time.fromisoformat(noon)
     idayobs = ut.dayobs_int(dayobs)
-    start_date = ut.get_datetime_from_dayobs_str(dayobs, local_noon=dtnoon)
-    end_date = ut.get_datetime_from_dayobs_str(idayobs + 1, local_noon=dtnoon)
+    start_date = ut.get_utc_datetime_from_dayobs_str(dayobs, local_noon=dtnoon)
+    end_date = ut.get_utc_datetime_from_dayobs_str(idayobs + 1, local_noon=dtnoon)
     dr = pd.date_range(start=start_date, end=end_date, freq=freq)
     df = pd.DataFrame(data=list(dr), index=dr, columns=["time"])
     return df, dr
@@ -201,7 +201,7 @@ def merge_all(date="2024-12-01", freq="20min"):
     source_dfs = gen_source_dataframes(date)
     tl_df, dr = gen_timelog_frame(date, freq=freq)
 
-    df = pd.DataFrame([dict(time=ut.get_datetime_from_dayobs_str(date))])
+    df = pd.DataFrame([dict(time=ut.get_utc_datetime_from_dayobs_str(date))])
     for source, source_df in source_dfs.items():
         df = merge_to_timelog(df, source_df, f"{source}_date")
 
