@@ -1,0 +1,11 @@
+name: ChangelogUpdated
+
+on:
+  pull_request:
+    types: [assigned, opened, synchronize, reopened, labeled, unlabeled]
+    branches:
+      - develop
+
+jobs:
+  call-workflow:
+    uses: lsst-ts/tssw_workflows/.github/workflows/news_creation.yaml@main
