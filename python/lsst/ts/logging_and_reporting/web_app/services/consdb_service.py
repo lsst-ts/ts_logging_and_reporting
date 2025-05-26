@@ -18,7 +18,7 @@ def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> li
     return exposures
 
 
-def get_exposures(dayobs_start: int, dayobs_end: int, telescope: str) :
+def get_exposures_from_adapter(dayobs_start: int, dayobs_end: int, telescope: str) :
     """
     Get exposures from the ConsDB for a given time range and telescope.
     """
@@ -40,7 +40,7 @@ def get_exposures(dayobs_start: int, dayobs_end: int, telescope: str) :
         return {}
 
 
-def custom_get_exposures(
+def get_exposures(
     dayobs_start: int,
     dayobs_end: int,
     telescope: str,
@@ -61,7 +61,7 @@ def custom_get_exposures(
             f"min_dayobs: {cons_db.min_dayobs}, "
             f"telescope: {telescope}"
         )
-        ssql = f"""SELECT exposure_id, exp_time
+        ssql = f"""SELECT exposure_id, exp_time, img_type
           FROM cdb_{telescope}.exposure e
           WHERE {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
               AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
