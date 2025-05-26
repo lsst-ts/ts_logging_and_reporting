@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 import numpy as np
 from astropy.table import Table
 
@@ -13,13 +12,13 @@ def convert_row(row):
     return {key: (row[key].item() if isinstance(row[key], np.generic) else row[key]) for key in row.keys()}
 
 
-def get_mock_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telescope: str) -> list:
+def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> list:
     exposure_table = Table.read("data/exposures-lsstcam0413.ecsv")
     exposures = [convert_row(exp) for exp in exposure_table]
     return exposures
 
 
-def get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telescope: str) :
+def get_exposures(dayobs_start: int, dayobs_end: int, telescope: str) :
     """
     Get exposures from the ConsDB for a given time range and telescope.
     """
@@ -42,8 +41,8 @@ def get_exposures(dayobs_start: datetime.date, dayobs_end: datetime.date, telesc
 
 
 def custom_get_exposures(
-    dayobs_start: datetime.date,
-    dayobs_end: datetime.date,
+    dayobs_start: int,
+    dayobs_end: int,
     telescope: str,
     auth_token: str = None,
     ) -> dict:

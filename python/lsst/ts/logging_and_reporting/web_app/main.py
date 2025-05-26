@@ -46,8 +46,8 @@ async def health():
 @app.get("/mock-exposures")
 async def read_exposures_from_mock_data(
     request: Request,
-    dayObsStart: datetime.date,
-    dayObsEnd: datetime.date,
+    dayObsStart: int,
+    dayObsEnd: int,
     instrument: str
     ):
 
@@ -59,8 +59,8 @@ async def read_exposures_from_mock_data(
 @app.get("/exposures")
 async def test_read_exposures(
     request: Request,
-    dayObsStart: datetime.date,
-    dayObsEnd: datetime.date,
+    dayObsStart: int,
+    dayObsEnd: int,
     instrument: str):
     logger.info(f"Getting exposures for start: "
                 f"{dayObsStart}, end: {dayObsEnd} "
@@ -88,7 +88,7 @@ async def read_jira_tickets(
 
 
 @app.get("/almanac")
-async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date):
+async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
     logger.info(f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
     almanac = get_almanac(dayObsStart, dayObsEnd)
     return {"night_hours": almanac.night_hours}
@@ -97,8 +97,8 @@ async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: 
 @app.get("/narrative-log")
 async def read_narrative_log(
     request: Request,
-    dayObsStart: datetime.date,
-    dayObsEnd: datetime.date,
+    dayObsStart: int,
+    dayObsEnd: int,
     instrument: str):
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")

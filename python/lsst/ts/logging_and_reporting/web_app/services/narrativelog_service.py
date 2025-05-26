@@ -1,4 +1,3 @@
-import datetime
 import logging
 from lsst.ts.logging_and_reporting.source_adapters import NarrativelogAdapter
 import lsst.ts.logging_and_reporting.utils as nd_utils
@@ -8,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 def get_messages(
-    dayobs_start: datetime.date,
-    dayobs_end: datetime.date,
+    dayobs_start: int,
+    dayobs_end: int,
     telescope: str,
     auth_token: str = None
     ) -> list:
