@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .services.jira_service import get_jira_tickets
-from .services.consdb_service import get_mock_exposures, custom_get_exposures
+from .services.consdb_service import get_mock_exposures, get_exposures
 from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
 
@@ -46,8 +46,8 @@ async def health():
 @app.get("/mock-exposures")
 async def read_exposures_from_mock_data(
     request: Request,
-    dayObsStart: datetime.date,
-    dayObsEnd: datetime.date,
+    dayObsStart: int,
+    dayObsEnd: int,
     instrument: str
     ):
 
@@ -57,19 +57,20 @@ async def read_exposures_from_mock_data(
 
 
 @app.get("/exposures")
-async def test_read_exposures(
+async def read_exposures(
     request: Request,
-    dayObsStart: datetime.date,
-    dayObsEnd: datetime.date,
+    dayObsStart: int,
+    dayObsEnd: int,
     instrument: str):
     logger.info(f"Getting exposures for start: "
                 f"{dayObsStart}, end: {dayObsEnd} "
                 f"and instrument: {instrument}")
     auth_header = request.headers.get("Authorization")
     auth_token = auth_header.split(" ")[1] if auth_header else None
-    exposures = custom_get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
+    exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
     total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
     return {
+        "exposures": exposures,
         "exposures_count": len(exposures),
         "sum_exposure_time": total_exposure_time}
 
@@ -88,7 +89,7 @@ async def read_jira_tickets(
 
 
 @app.get("/almanac")
-async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: datetime.date):
+async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
     logger.info(f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
     almanac = get_almanac(dayObsStart, dayObsEnd)
     return {"night_hours": almanac.night_hours}
@@ -97,8 +98,8 @@ async def read_almanac(request: Request, dayObsStart: datetime.date, dayObsEnd: 
 @app.get("/narrative-log")
 async def read_narrative_log(
     request: Request,
-    dayObsStart: datetime.date,
-    dayObsEnd: datetime.date,
+    dayObsStart: int,
+    dayObsEnd: int,
     instrument: str):
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
