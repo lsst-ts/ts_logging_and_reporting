@@ -45,28 +45,6 @@ def test_get_system_names(input_data, expected):
 
 
 # ------------------------
-# Tests for parse_obs_issues_array_to_plain_text
-# Example output string: "OBS-911 - To Do - Rotator Stop Command Timeout
-# when changing the filter Created: 2025-05-02T00:14:34, Last Updated:
-# 2025-05-02T12:58:39.382-0700, Impacting: ['LSSTCam']"
-# ------------------------
-def test_parse_obs_issues_array_to_plain_text():
-    obs_issues = [
-        {
-            "key": "OBS-123",
-            "status": "Open",
-            "summary": "Something failed",
-            "created": "2025-01-01 10:00",
-            "updated": "2025-01-01 11:00",
-            "system": ["Simonyi"],
-        }
-    ]
-    output = JiraAdapter.parse_obs_issues_array_to_plain_text(obs_issues)
-    assert "OBS-123 - Open - Something failed" in output
-    assert "Impacting: ['Simonyi']" in output
-
-
-# ------------------------
 # Tests for get_jira_obs_report (mocked)
 # ------------------------
 @patch("lsst.ts.logging_and_reporting.jira.requests.get")

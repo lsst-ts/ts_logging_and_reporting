@@ -133,39 +133,3 @@ class JiraAdapter(SourceAdapter):
             f"Error getting issues from {os.environ.get('JIRA_API_HOSTNAME')}: "
             f"{response.status_code} - {response.text}"
         )
-
-    @staticmethod
-    def parse_obs_issues_array_to_plain_text(obs_issues):
-        """Parse the OBS issues array to plain text.
-
-        Parameters
-        ----------
-        obs_issues : `list`
-            List of OBS issues
-
-        Notes
-        -----
-        Each list entry (issue) of obs_issues must be dictionary
-        with the following keys:
-        - key: The key of the issue
-        - status: The status of the issue
-        - summary: The summary of the issue
-        - created: The creation datetime of the issue
-        - updated: The last updated datetime of the issue
-        - system: The system "customfield_10476" of the issue
-
-        If a key is missing, it will be replaced by a "None".
-
-        Returns
-        -------
-        str
-            The OBS issues in plain text format
-        """
-        lines = []
-        for issue in obs_issues:
-            lines.append(
-                f"{issue.get('key')} - {issue.get('status')} - {issue.get('summary')} "
-                f"Created: {issue.get('created')}, Last Updated: {issue.get('updated')}, "
-                f"Impacting: {issue.get('system')}"
-            )
-        return "\n".join(lines)
