@@ -1,9 +1,10 @@
 import datetime
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures
@@ -63,16 +64,24 @@ async def read_exposures(
     dayObsEnd: int,
     instrument: str):
     logger.info(f"Getting exposures for start: "
-                f"{dayObsStart}, end: {dayObsEnd} "
-                f"and instrument: {instrument}")
-    auth_header = request.headers.get("Authorization")
-    auth_token = auth_header.split(" ")[1] if auth_header else None
-    exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
-    total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
-    return {
-        "exposures": exposures,
-        "exposures_count": len(exposures),
-        "sum_exposure_time": total_exposure_time}
+                    f"{dayObsStart}, end: {dayObsEnd} "
+                    f"and instrument: {instrument}")
+    try:
+        auth_header = request.headers.get("Authorization")
+        auth_token = auth_header.split(" ")[1] if auth_header else None
+        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
+        total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
+        return {
+            "exposures": exposures,
+            "exposures_count": len(exposures),
+            "sum_exposure_time": total_exposure_time
+        }
+    except ConsdbQueryError as ce:
+        logger.error(f"ConsdbQueryError in /exposures: {ce}")
+        raise HTTPException(status_code=502, detail=f"Consdb query failed: {ce}")
+    except Exception as e:
+        logger.error(f"Error in /exposures: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/jira-tickets")
