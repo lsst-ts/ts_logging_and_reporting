@@ -362,12 +362,19 @@ class ConsdbAdapter(SourceAdapter):
     async def query_from_app(self, sql):
         url = f"{self.server}/{self.service}/query"
         jsondata = dict(query=sql)
-        timeout = self.timeout
+        # using self.timeout to set the timeout for the request
+        # The timeout is a tuple: (connect_timeout, read_timeout)
+        timeout_config = httpx.Timeout(
+            connect=self.timeout[0],  # time to establish TCP connection
+            read=self.timeout[1],    # time to wait for a server response
+            write=self.timeout[1],   # time to send request body
+            pool=self.timeout[0]      # how long to wait for a connection from the pool
+        )
         try:
             headers = ut.get_auth_header(self.token)
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout_config) as client:
                 response = await client.post(
-                    url, json=jsondata, timeout=timeout, headers=headers
+                    url, json=jsondata, headers=headers
                 )
                 response.raise_for_status()
         except httpx.HTTPStatusError as err:

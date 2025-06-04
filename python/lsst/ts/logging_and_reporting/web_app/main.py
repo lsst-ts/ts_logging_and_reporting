@@ -69,7 +69,7 @@ async def read_exposures(
     try:
         auth_header = request.headers.get("Authorization")
         auth_token = auth_header.split(" ")[1] if auth_header else None
-        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
+        exposures = await get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         return {
             "exposures": exposures,
@@ -78,7 +78,7 @@ async def read_exposures(
         }
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /exposures: {ce}")
-        raise HTTPException(status_code=502, detail=f"Consdb query failed: {ce}")
+        raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
         logger.error(f"Error in /exposures: {e}")
         raise HTTPException(status_code=500, detail=str(e))

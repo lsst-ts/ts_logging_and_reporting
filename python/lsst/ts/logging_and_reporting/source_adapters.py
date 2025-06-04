@@ -120,7 +120,7 @@ class SourceAdapter(ABC):
         max_dayobs=None,  # EXCLUSIVE: default=TODAY other=YYYY-MM-DD
         offset=0,
         limit=None,  # max records to read in one API call
-        connect_timeout=5.05,  # seconds
+        connect_timeout=7.05,  # seconds
         read_timeout=20,  # seconds
         verbose=True,
         warning=True,
