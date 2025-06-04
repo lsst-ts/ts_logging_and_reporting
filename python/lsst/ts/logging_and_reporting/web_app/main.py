@@ -100,8 +100,12 @@ async def read_jira_tickets(
 @app.get("/almanac")
 async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
     logger.info(f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
-    almanac = get_almanac(dayObsStart, dayObsEnd)
-    return {"night_hours": almanac.night_hours}
+    try:
+        almanac = get_almanac(dayObsStart, dayObsEnd)
+        return {"night_hours": almanac.night_hours}
+    except Exception as e:
+        logger.error(f"Error in /almanac: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/narrative-log")
@@ -112,13 +116,17 @@ async def read_narrative_log(
     instrument: str):
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
-    auth_header = request.headers.get("Authorization")
-    auth_token = auth_header.split(" ")[1] if auth_header else None
-    records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token)
-    time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
-    time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
-    return {
-        "narrative_log": records,
-        "time_lost_to_weather": time_lost_to_weather,
-        "time_lost_to_faults": time_lost_to_faults
-    }
+    try:
+        auth_header = request.headers.get("Authorization")
+        auth_token = auth_header.split(" ")[1] if auth_header else None
+        records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token)
+        time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
+        time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
+        return {
+            "narrative_log": records,
+            "time_lost_to_weather": time_lost_to_weather,
+            "time_lost_to_faults": time_lost_to_faults
+        }
+    except Exception as e:
+        logger.error(f"Error in /narrative-log: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
