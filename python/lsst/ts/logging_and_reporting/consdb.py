@@ -185,6 +185,8 @@ class ConsdbAdapter(SourceAdapter):
               {str(err)}
             """
             warnings.warn(msg, category=ex.ConsdbQueryError, stacklevel=2)
+            traceback.print_exc()
+            raise ex.ConsdbQueryError(f"Upstream error: {msg}") from err
         except requests.exceptions.ConnectionError as err:
             # No VPN? Broken API?
             code = None
@@ -195,11 +197,12 @@ class ConsdbAdapter(SourceAdapter):
               {str(err)}.
             """
             warnings.warn(msg, category=ex.ConsdbQueryError, stacklevel=2)
-        else:  # No exception. Could something else be wrong?
-            result = response.json()
-            records = [
-                {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
-            ]
+            traceback.print_exc()
+            raise ex.ConsdbQueryError(f"Connection error: {msg}") from err
+        result = response.json()
+        records = [
+            {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
+        ]
         if len(records) == 0 and self.warning:
             msg = f"No results returned from {self.abbrev}.query().  "
             msg += f"{sql=!r} {url=}"
@@ -365,10 +368,10 @@ class ConsdbAdapter(SourceAdapter):
         # using self.timeout to set the timeout for the request
         # The timeout is a tuple: (connect_timeout, read_timeout)
         timeout_config = httpx.Timeout(
-            connect=self.timeout[0],  # time to establish TCP connection
-            read=self.timeout[1],    # time to wait for a server response
-            write=self.timeout[1],   # time to send request body
-            pool=self.timeout[0]      # how long to wait for a connection from the pool
+            connect=10,  # time to establish TCP connection
+            read=20,    # time to wait for a server response
+            write=10,   # time to send request body
+            pool=5      # how long to wait for a connection from the pool
         )
         try:
             headers = ut.get_auth_header(self.token)

@@ -41,7 +41,7 @@ def get_exposures_from_adapter(dayobs_start: int, dayobs_end: int, telescope: st
         return {}
 
 
-async def get_exposures(
+def get_exposures(
     dayobs_start: int,
     dayobs_end: int,
     telescope: str,
@@ -69,7 +69,7 @@ async def get_exposures(
     """
 
     sql = " ".join(ssql.split())
-    exposures = await cons_db.query_from_app(sql)
+    exposures = cons_db.query(sql)
 
     if cons_db.verbose and len(exposures) > 0:
         logger.debug(f"Debug cdb.get_exposures {telescope=} {sql=}")

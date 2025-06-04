@@ -69,7 +69,7 @@ async def read_exposures(
     try:
         auth_header = request.headers.get("Authorization")
         auth_token = auth_header.split(" ")[1] if auth_header else None
-        exposures = await get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
+        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         return {
             "exposures": exposures,
