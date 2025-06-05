@@ -54,7 +54,7 @@ def fallback_parameters(day_obs, number_of_days, period, verbose, warning):
 
     try:
         # dayobs(str): YYYY-MM-DD, YYYYMMDD, TODAY, YESTERDAY
-        get_datetime_from_dayobs_str(day_obs)  # ignore result
+        get_utc_datetime_from_dayobs_str(day_obs)  # ignore result
     except Exception as err:
         message += f"""\nInvalid day_obs given: {day_obs!r}
         Available values are: YYYY-MM-DD, YYYYMMDD, TODAY, YESTERDAY.
@@ -160,14 +160,15 @@ def dayobs_int(dayobs: str) -> int:
 # dayobs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
 # Allow TODAY, YESTERDAY, TOMORROW
 # was: dos2dt
-def get_datetime_from_dayobs_str(dayobs):
+def get_utc_datetime_from_dayobs_str(dayobs):
+    # Add timezone = Chile to now datetime
     dome_tz = pytz.timezone("Chile/Continental")
     dome_today_noon = dome_tz.localize(
-        dt.datetime.now().replace(hour=12, minute=0, second=0)
+        dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
     )
 
-    sdayobs = str(dayobs)
-    match sdayobs.lower():
+    dayobs_str = str(dayobs)
+    match dayobs_str.lower():
         case "today":
             datetime = dome_today_noon
         case "yesterday":
@@ -175,7 +176,8 @@ def get_datetime_from_dayobs_str(dayobs):
         case "tomorrow":
             datetime = dome_today_noon + dt.timedelta(days=1)
         case _:
-            no_dash = sdayobs.replace("-", "")
+            no_dash = dayobs_str.replace("-", "")
+            # noon is the start of an observing day
             datetime = dome_tz.localize(
                 dt.datetime.strptime(no_dash, "%Y%m%d").replace(
                     hour=12, minute=0, second=0
@@ -184,7 +186,7 @@ def get_datetime_from_dayobs_str(dayobs):
     return datetime.astimezone(pytz.utc)
 
 
-dayobs2dt = get_datetime_from_dayobs_str
+dayobs2dt = get_utc_datetime_from_dayobs_str
 
 
 def hhmmss(decimal_hours):

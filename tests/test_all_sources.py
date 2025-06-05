@@ -36,12 +36,12 @@ class TestBackEnd(unittest.TestCase):
     """Test backend methods used by NightLog.ipynb"""
 
     def test_get_datetime_from_dayobs_str_1(self):
-        actual = ut.get_datetime_from_dayobs_str("2024-10-14")
+        actual = ut.get_utc_datetime_from_dayobs_str("2024-10-14")
         expected = dt.datetime(2024, 10, 14, 15, 0, tzinfo=pytz.utc)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_2(self):
-        actual = ut.get_datetime_from_dayobs_str("20241014")
+        actual = ut.get_utc_datetime_from_dayobs_str("20241014")
         expected = dt.datetime(2024, 10, 14, 15, 0, tzinfo=pytz.utc)
         self.assertEqual(actual, expected)
 
