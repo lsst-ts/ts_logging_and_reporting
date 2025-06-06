@@ -164,7 +164,10 @@ class SourceAdapter(ABC):
             self.min_date = ut.dayobs2dt(min_dayobs)
         else:
             self.min_date = self.max_date - dt.timedelta(days=1)
-        assert self.min_date < self.max_date
+
+        if self.min_date < self.max_date:
+            self.min_date, self.max_date = self.max_date, self.min_date
+
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
 
     def __str__(self):
