@@ -35,7 +35,8 @@ class BaseLogrepError(Warning):
         Exception.__init__(self)
         self.error_message = error_message
         if error_code:
-            assert len(error_code) <= 8, f'error_code "{error_code}" too big'
+            if len(error_code) > 8:
+                raise ValueError(f'error_code "{error_code}" too big')
             self.error_code = error_code
 
         if error_code is not None:
