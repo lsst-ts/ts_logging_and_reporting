@@ -269,13 +269,13 @@ class Server:
 
     @classmethod
     def get_url(cls):
-        current = os.environ.get("EXTERNAL_INSTANCE_URL")
+        env_var_name = "EXTERNAL_INSTANCE_URL"
+        current = os.environ.get(env_var_name)
 
         match current:
             case Server.summit:
                 return Server.summit
-            case Server.usdfdev | None:
-                # If the EXTERNAL_INSTANCE_URL is not set
+            case Server.usdfdev:
                 return Server.usdfdev
             case Server.usdf:
                 return Server.usdf
@@ -284,8 +284,7 @@ class Server:
             case Server.base:
                 return Server.base
             case _:
-                # If the EXTERNAL_INSTANCE_URL is not in our list
-                return ""
+                raise ValueError(f"Unset or invalid {env_var_name}: {current}")
 
 
 def wrap_dataframe_columns(df):
