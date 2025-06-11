@@ -9,7 +9,7 @@ from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures
 from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
-
+from .services.exposurelog_service import get_exposure_flags
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -112,4 +112,17 @@ async def read_narrative_log(
         "narrative_log": records,
         "time_lost_to_weather": time_lost_to_weather,
         "time_lost_to_faults": time_lost_to_faults
+    }
+
+@app.get("/exposure-flags")
+async def read_exposure_flags(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str):
+    logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
+                f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
+    flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument)
+    return {
+        "exposure_flags": flags,
     }
