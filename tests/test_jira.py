@@ -1,7 +1,7 @@
-from lsst.ts.logging_and_reporting.jira import JiraAdapter, get_system_names
-
 import pytest
 from unittest.mock import patch, Mock
+
+from lsst.ts.logging_and_reporting.jira import JiraAdapter, get_system_names
 
 
 # ------------------------
