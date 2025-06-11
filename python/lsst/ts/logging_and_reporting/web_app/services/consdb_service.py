@@ -62,11 +62,12 @@ def get_exposures(
         f"min_dayobs: {cons_db.min_dayobs}, "
         f"telescope: {telescope}"
     )
-    ssql = f"""SELECT exposure_id, exp_time, img_type, observation_reason, science_program, target_name
+    ssql = f"""SELECT exposure_id, exposure_name, exp_time, img_type, observation_reason, science_program, target_name
         FROM cdb_{telescope}.exposure e
         WHERE {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
             AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
     """
+
 
     sql = " ".join(ssql.split())
     exposures = cons_db.query(sql)
