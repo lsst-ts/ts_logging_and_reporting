@@ -66,44 +66,44 @@ def get_exposure_flags(
         logger.error(f"Error retrieving exposure flags: {e}")
         return []
 
-# def get_exposure_flags_from_get_records(
-#     min_dayobs: str,
-#     max_dayobs: str,
-#     instrument: str,
-#     verbose: bool = False,
-#     limit: int = 2500,
-# ) -> list[dict]:
-#     """
-#     Get all records with 'questionable' or 'junk' exposure_flag from the
-#     Exposure Log for a specific instrument.
-#     """
-#     try:
-#         adapter = ExposurelogAdapter(
-#             min_dayobs=min_dayobs,
-#             max_dayobs=max_dayobs,
-#             limit=limit,
-#             verbose=verbose,
-#             connect_timeout=20,  # seconds
-#             read_timeout=40,  # seconds
-#         )
+def get_exposure_flags_from_get_records(
+    min_dayobs: str,
+    max_dayobs: str,
+    instrument: str,
+    verbose: bool = False,
+    limit: int = 2500,
+) -> list[dict]:
+    """
+    Get all records with 'questionable' or 'junk' exposure_flag from the
+    Exposure Log for a specific instrument.
+    """
+    try:
+        adapter = ExposurelogAdapter(
+            min_dayobs=min_dayobs,
+            max_dayobs=max_dayobs,
+            limit=limit,
+            verbose=verbose,
+            connect_timeout=20,  # seconds
+            read_timeout=40,  # seconds
+        )
 
-#         adapter.get_records(
-#             instruments=[instrument],
-#             # exposure_flags=["questionable", "junk"],
-#             exposure_flags=["questionable"],
-#         )
+        adapter.get_records(
+            instruments=[instrument],
+            # exposure_flags=["questionable", "junk"],
+            exposure_flags=["questionable"],
+        )
 
-#         records = adapter.messages.get(instrument, [])
-#         # if not records and verbose:
-#         if not records:
-#             logger.debug("No flagged messages for this instrument.")
-#             return []
+        records = adapter.messages.get(instrument, [])
+        # if not records and verbose:
+        if not records:
+            logger.debug("No flagged messages for this instrument.")
+            return []
 
-#         return [
-#             {"obs_id": rec["obs_id"], "exposure_flag": rec["exposure_flag"]}
-#             for rec in records
-#         ]
+        return [
+            {"obs_id": rec["obs_id"], "exposure_flag": rec["exposure_flag"]}
+            for rec in records
+        ]
 
-#     except Exception as e:
-#         logger.error(f"Error retrieving exposure flags: {e}")
-#         return []
+    except Exception as e:
+        logger.error(f"Error retrieving exposure flags: {e}")
+        return []
