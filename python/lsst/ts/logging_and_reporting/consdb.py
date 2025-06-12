@@ -8,6 +8,7 @@ import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 import requests
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
+import traceback
 
 # curl -X 'POST' \
 #   'https://usdf-rsp.slac.stanford.edu/consdb/query' \
@@ -182,6 +183,8 @@ class ConsdbAdapter(SourceAdapter):
               {str(err)}
             """
             warnings.warn(msg, category=ex.ConsdbQueryError, stacklevel=2)
+            traceback.print_exc()
+            raise ex.ConsdbQueryError(f"Upstream error: {msg}") from err
         except requests.exceptions.ConnectionError as err:
             # No VPN? Broken API?
             code = None
@@ -192,11 +195,12 @@ class ConsdbAdapter(SourceAdapter):
               {str(err)}.
             """
             warnings.warn(msg, category=ex.ConsdbQueryError, stacklevel=2)
-        else:  # No exception. Could something else be wrong?
-            result = response.json()
-            records = [
-                {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
-            ]
+            traceback.print_exc()
+            raise ex.ConsdbQueryError(f"Connection error: {msg}") from err
+        result = response.json()
+        records = [
+            {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
+        ]
         if len(records) == 0 and self.warning:
             msg = f"No results returned from {self.abbrev}.query().  "
             msg += f"{sql=!r} {url=}"

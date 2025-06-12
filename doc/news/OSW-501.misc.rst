@@ -1,0 +1,1 @@
+expose errors from source adapters to the FastAPI application and throw HTTP exceptions with appropriate status codes and messages.
