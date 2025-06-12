@@ -8,7 +8,6 @@ import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 import requests
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
-import httpx
 import traceback
 
 # curl -X 'POST' \
@@ -361,44 +360,3 @@ class ConsdbAdapter(SourceAdapter):
         if self.verbose:
             print(f"Loaded Consolidated Databased schemas: {self.schemas=}")
         # END load_schemas()
-
-    async def query_from_app(self, sql):
-        url = f"{self.server}/{self.service}/query"
-        jsondata = dict(query=sql)
-        # using self.timeout to set the timeout for the request
-        # The timeout is a tuple: (connect_timeout, read_timeout)
-        timeout_config = httpx.Timeout(
-            connect=10,  # time to establish TCP connection
-            read=20,    # time to wait for a server response
-            write=10,   # time to send request body
-            pool=5      # how long to wait for a connection from the pool
-        )
-        try:
-            headers = ut.get_auth_header(self.token)
-            async with httpx.AsyncClient(timeout=timeout_config) as client:
-                response = await client.post(
-                    url, json=jsondata, headers=headers
-                )
-                response.raise_for_status()
-        except httpx.HTTPStatusError as err:
-            # Handles HTTP errors, e.g., 400, 404, 500, etc.
-            traceback.print_exc()
-            url = err.request.url
-            try:
-                apimsg = err.response.json().get("message")
-            except ValueError:
-                apimsg = err.response.text  # Fallback to plain text if not JSON
-            raise ex.ConsdbQueryError(
-                f"Upstream error from {self.abbrev} while requesting {url}: {apimsg}"
-            ) from err
-        except httpx.RequestError as err:
-            # Handles connection errors, timeouts, etc.
-            traceback.print_exc()
-            raise ex.ConsdbQueryError(
-                f"Connection error from {self.abbrev} while requesting {url}: {str(err)}"
-            ) from err
-        result = response.json()
-        records = [
-            {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
-        ]
-        return records
