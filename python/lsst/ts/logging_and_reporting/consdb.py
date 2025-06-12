@@ -71,9 +71,8 @@ class ConsdbAdapter(SourceAdapter):
         self.status["instruments"] = self.get_instruments()
         if self.verbose:
             print(f"Debug ConsdbAdapter: {self.instruments=}")
-        #TODO: remove this ??? Will it break the MVP?
-        # for instrument in self.instruments:
-        #     self.get_exposures(instrument)
+        for instrument in self.instruments:
+            self.get_exposures(instrument)
 
     # NOTE: the API returns lowcase instrument names but
     # https://sdm-schemas.lsst.io/ lists CamelCase table names
