@@ -1,8 +1,6 @@
-import datetime
 import os
 import logging
 
-from pydantic import BaseModel
 from lsst.ts.logging_and_reporting.jira import JiraAdapter
 
 
@@ -31,14 +29,14 @@ def filter_tickets_by_instrument(tickets, instrument):
     return [ticket for ticket in tickets if matches_and_add_url(ticket)]
 
 
-class JiraTicket(BaseModel):
-    url: str
-    summary: str
-    updated: datetime.datetime
-    create: datetime.datetime
-    system: list[str]
-    status: str
-    key: str
+# class JiraTicket(BaseModel):
+#     url: str
+#     summary: str
+#     updated: datetime.datetime
+#     create: datetime.datetime
+#     system: list[str]
+#     status: str
+#     key: str
 
 
 
@@ -46,7 +44,7 @@ def get_jira_tickets(
         dayobs_start: int,
         dayobs_end: int,
         telescope: str
-        ) -> list[JiraTicket]:
+        ) -> list[dict]:
     logger.info(f"Jira service: start: {dayobs_start}, "
           f"end: {dayobs_end} and telescope: {telescope}")
 

@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
+from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures
@@ -95,11 +95,10 @@ async def read_jira_tickets(
                     f"and instrument: {instrument}")
     try:
         tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
-        print(tickets)
         return {"issues": tickets}
-    # except ConsdbQueryError as ce:
-    #     logger.error(f"ConsdbQueryError in /exposures: {ce}")
-    #     raise HTTPException(status_code=502, detail="ConsDB query failed")
+    except BaseLogrepError as ce:
+        logger.error(f"Jira API error in /jira-tickets: {ce}")
+        raise HTTPException(status_code=502, detail="Jira API query failed")
     except Exception as e:
         logger.error(f"Error in /jira-tickets: {e}")
         raise HTTPException(status_code=500, detail=str(e))
