@@ -82,6 +82,7 @@ class JiraAdapter(SourceAdapter):
             - created: The issue creation date
         """
 
+        # TODO: print stack trace and comment code
         headers = {
             "Authorization": f"Basic {os.environ.get('JIRA_API_TOKEN')}",
             "content-type": "application/json",
