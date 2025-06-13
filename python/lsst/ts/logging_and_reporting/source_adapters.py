@@ -165,7 +165,7 @@ class SourceAdapter(ABC):
         else:
             self.min_date = self.max_date - dt.timedelta(days=1)
 
-        if self.min_date < self.max_date:
+        if self.min_date > self.max_date:
             self.min_date, self.max_date = self.max_date, self.min_date
 
         self.min_dayobs = ut.datetime_to_dayobs(self.min_date)
@@ -209,7 +209,10 @@ class SourceAdapter(ABC):
             print(f"DEBUG protected_post({url=},{timeout=})")
         try:
             response = requests.post(
-                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header(self.token)
+                url,
+                json=jsondata,
+                timeout=timeout,
+                headers=ut.get_auth_header(self.token),
             )
             if self.verbose:
                 print(
@@ -259,7 +262,9 @@ class SourceAdapter(ABC):
         if self.verbose:
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
-            response = requests.get(url, timeout=timeout, headers=ut.get_auth_header(self.token))
+            response = requests.get(
+                url, timeout=timeout, headers=ut.get_auth_header(self.token)
+            )
             if self.verbose:
                 print(
                     f"DEBUG protected_get({url=},{ut.get_auth_header(self.token)=},{timeout=}) => "
@@ -307,7 +312,9 @@ class SourceAdapter(ABC):
         qparams = dict(limit=2)  # API requires > 1 !
         url = f"{endpoint}?{urlencode(qparams)}"
         try:
-            requests.get(url, timeout=self.timeout, headers=ut.get_auth_header(self.token))
+            requests.get(
+                url, timeout=self.timeout, headers=ut.get_auth_header(self.token)
+            )
         except Exception:
             pass  # this is a hack to force reconnect. Response irrelevent.
 
@@ -781,11 +788,11 @@ class NarrativelogAdapter(SourceAdapter):
             dayobs = int(rec["date_added"][:8].replace("-", ""))
             if rec["components_json"] is None:
                 instrument = None
-            elif rec["components_json"].get('name') == "AuxTel":
+            elif rec["components_json"].get("name") == "AuxTel":
                 instrument = "LATISS"
-            elif rec["components_json"].get('name') == "MainTel":
+            elif rec["components_json"].get("name") == "MainTel":
                 instrument = "lsst"
-            elif rec["components_json"].get('name') == "Simonyi":
+            elif rec["components_json"].get("name") == "Simonyi":
                 instrument = "lsst"
             else:
                 instrument = None
