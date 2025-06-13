@@ -1,0 +1,1 @@
+Flip greater than sign when comparing dates in SourceAdapter.
