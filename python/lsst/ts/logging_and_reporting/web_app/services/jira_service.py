@@ -14,6 +14,24 @@ INSTRUMENTS = {
 
 
 def filter_tickets_by_instrument(tickets, instrument):
+    """
+    Filters a list of JIRA tickets to include only those associated with a
+    specified instrument.
+
+    For each ticket, checks if any of the system names in the ticket's
+    'system' field match the instrument name or its corresponding value from
+    the INSTRUMENTS dictionary. If a match is found, adds a 'url' field to the
+    ticket containing a direct link to the JIRA ticket.
+
+    Args:
+        tickets (list of dict): List of JIRA ticket dictionaries,
+        each containing at least 'system' and 'key' fields.
+        instrument (str): The instrument name to filter tickets by.
+
+    Returns:
+        list of dict: Filtered list of tickets that match the instrument,
+        each with an added 'url' field.
+    """
 
     def matches_and_add_url(ticket):
         # Get the list of systems from the object
@@ -27,16 +45,6 @@ def filter_tickets_by_instrument(tickets, instrument):
         return False
 
     return [ticket for ticket in tickets if matches_and_add_url(ticket)]
-
-
-# class JiraTicket(BaseModel):
-#     url: str
-#     summary: str
-#     updated: datetime.datetime
-#     create: datetime.datetime
-#     system: list[str]
-#     status: str
-#     key: str
 
 
 
@@ -63,27 +71,4 @@ def get_jira_tickets(
         tickets,
         instrument=telescope,
     )
-    # Convert the tickets to a list of JiraTicket models
-    # tickets = [
-    #     JiraTicket(
-    #         url=f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{ticket.get('key')}",
-    #         summary=ticket.get('summary'),
-    #         updated=ticket.get('updated'),
-    #         create=ticket.get('created'),
-    #         system=ticket.get('system'),
-    #         status=ticket.get('status'),
-    #         key=ticket.get('key')
-    #     ) for ticket in tickets if ticket.get('system') == telescope
-    # ]
-    # with open("data/jira-tickets.json") as f:
-    #     content = json.load(f)
-    #     tickets = [{
-    #         "url": f"https://rubinobs.atlassian.net/browse/{tic["key"]}",
-    #         "summary": tic["fields"]["summary"],
-    #         "updated": tic["fields"]["updated"],
-    #         "created": tic["fields"]["created"],
-    #         "status": tic["fields"]["status"]["name"],
-    #         "system": telescope,
-    #         "key": tic["key"]
-    #     } for tic in content['issues']]
     return system_tickets
