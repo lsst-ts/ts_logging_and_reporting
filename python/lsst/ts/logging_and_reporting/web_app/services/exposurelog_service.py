@@ -50,11 +50,11 @@ def get_exposure_flags(
             verbose and logger.debug("No messages for this instrument.")
             return []
 
-        # Can we avoid looping through all records?
+        flags = {"questionable", "junk"}
         flagged = [
             {"obs_id": rec["obs_id"], "exposure_flag": rec["exposure_flag"]}
             for rec in records
-            if rec.get("exposure_flag")
+            if rec.get("exposure_flag") and rec["exposure_flag"] in flags
         ]
 
         if verbose:
