@@ -39,8 +39,6 @@ def get_exposure_flags(
             max_dayobs=max_dayobs,
             limit=limit,
             verbose=verbose,
-            # connect_timeout=20,  # seconds
-            # read_timeout=40,  # seconds
         )
 
         logger.info(f"Fetching exposure flags for instrument: {instrument}")
@@ -83,19 +81,15 @@ def get_exposure_flags_from_get_records(
             max_dayobs=max_dayobs,
             limit=limit,
             verbose=verbose,
-            # connect_timeout=20,  # seconds
-            # read_timeout=40,  # seconds
         )
 
         adapter.get_records(
             instruments=[instrument],
-            # exposure_flags=["questionable", "junk"],
-            exposure_flags=["questionable"],
+            exposure_flags=["questionable", "junk"],
         )
 
         records = adapter.messages.get(instrument, [])
-        # if not records and verbose:
-        if not records:
+        if not records and verbose:
             logger.debug("No flagged messages for this instrument.")
             return []
 
