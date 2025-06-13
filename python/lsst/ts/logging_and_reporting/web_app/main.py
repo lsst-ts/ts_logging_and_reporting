@@ -1,4 +1,3 @@
-import datetime
 import logging
 
 from fastapi import FastAPI, Request, HTTPException
@@ -87,14 +86,23 @@ async def read_exposures(
 @app.get("/jira-tickets")
 async def read_jira_tickets(
     request: Request,
-    dayObsStart:datetime.date,
-    dayObsEnd: datetime.date,
+    dayObsStart:int,
+    dayObsEnd: int,
     instrument: str):
-    logger.info(f"Getting jira tickets res from mock data for start: "
-                f"{dayObsStart}, end: {dayObsEnd} "
-                f"and instrument: {instrument}")
-    tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
-    return {"issues": tickets}
+
+    logger.info(f"Getting jira tickets for start: "
+                    f"{dayObsStart}, end: {dayObsEnd} "
+                    f"and instrument: {instrument}")
+    try:
+        tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
+        print(tickets)
+        return {"issues": tickets}
+    # except ConsdbQueryError as ce:
+    #     logger.error(f"ConsdbQueryError in /exposures: {ce}")
+    #     raise HTTPException(status_code=502, detail="ConsDB query failed")
+    except Exception as e:
+        logger.error(f"Error in /jira-tickets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/almanac")

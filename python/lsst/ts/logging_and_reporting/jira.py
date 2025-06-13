@@ -86,6 +86,8 @@ class JiraAdapter(SourceAdapter):
             "Authorization": f"Basic {os.environ.get('JIRA_API_TOKEN')}",
             "content-type": "application/json",
         }
+
+        print(self.min_dayobs, self.max_dayobs)
         # needs to be tai, is not yet tai
         start_dayobs_utc = ut.get_utc_datetime_from_dayobs_str(self.min_dayobs)
         end_dayobs_utc = ut.get_utc_datetime_from_dayobs_str(self.max_dayobs)
@@ -101,6 +103,10 @@ class JiraAdapter(SourceAdapter):
                 f"{response.status_code} - {response.text}"
             )
 
+        print(
+            f"Fetching JIRA issues for OBS project from {start_dayobs_utc} to {end_dayobs_utc} "
+            f"in user timezone: {user_timezone}"
+        )
         # convert the utc times to user timezone
         start_dayobs_user = start_dayobs_utc.astimezone(user_timezone)
         end_dayobs_user = end_dayobs_utc.astimezone(user_timezone)
@@ -108,12 +114,19 @@ class JiraAdapter(SourceAdapter):
         start_dayobs_str = start_dayobs_user.strftime("%Y-%m-%d %H:%M")
         end_dayobs_str = end_dayobs_user.strftime("%Y-%m-%d %H:%M")
 
+        print(
+            f"Converted start time: {start_dayobs_str}, "
+            f"end time: {end_dayobs_str} in user timezone: {user_timezone}"
+        )
+        # JQL query to get all issues in the OBS project created between
+
         jql_query = (
             f'project = OBS AND (created >= "{start_dayobs_str}" '
             f'AND created < "{end_dayobs_str}")'
         )
         fields = f"key,summary,updated,created,status,system,{OBS_SYSTEMS_FIELD}"
         url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/search/jql?jql={quote(jql_query)}&fields={fields}"
+        print(f"JIRA URL: {url}")
         response = requests.get(url, headers=headers)
 
         if response.status_code == 200:
