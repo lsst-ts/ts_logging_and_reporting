@@ -66,7 +66,6 @@ import requests
 
 MAX_CONNECT_TIMEOUT = 7.05  # seconds
 MAX_READ_TIMEOUT = 180  # seconds
-default_server = ut.Server.get_url()
 
 maximum_record_limit = 9000
 
@@ -135,7 +134,7 @@ class SourceAdapter(ABC):
         ok.
         """
 
-        self.server = server_url or default_server
+        self.server = server_url or ut.Server.get_url()
         self.verbose = verbose
         self.warning = warning
         self.offset = offset
