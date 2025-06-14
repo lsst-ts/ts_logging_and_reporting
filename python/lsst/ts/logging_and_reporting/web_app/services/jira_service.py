@@ -14,22 +14,23 @@ INSTRUMENTS = {
 
 
 def filter_tickets_by_instrument(tickets, instrument):
-    """
-    Filters a list of JIRA tickets to include only those associated with a
+    """Filters a list of JIRA tickets to include only those associated with a
     specified instrument.
-
     For each ticket, checks if any of the system names in the ticket's
     'system' field match the instrument name or its corresponding value from
     the INSTRUMENTS dictionary. If a match is found, adds a 'url' field to the
     ticket containing a direct link to the JIRA ticket.
-
-    Args:
-        tickets (list of dict): List of JIRA ticket dictionaries,
+    Parameters
+    ----------
+    tickets : `list[dict]`
+        List of JIRA ticket dictionaries,
         each containing at least 'system' and 'key' fields.
-        instrument (str): The instrument name to filter tickets by.
-
-    Returns:
-        list of dict: Filtered list of tickets that match the instrument,
+    instrument : `str`
+        The instrument name to filter tickets by.
+    Returns
+    -------
+    filtered_tickets : `list[dict]`
+        Filtered list of tickets that match the instrument,
         each with an added 'url' field.
     """
 

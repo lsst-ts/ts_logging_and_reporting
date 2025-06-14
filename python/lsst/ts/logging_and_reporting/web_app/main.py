@@ -96,8 +96,8 @@ async def read_jira_tickets(
     try:
         tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
         return {"issues": tickets}
-    except BaseLogrepError as ce:
-        logger.error(f"Jira API error in /jira-tickets: {ce}")
+    except BaseLogrepError as ble:
+        logger.error(f"Jira API error in /jira-tickets: {ble}")
         raise HTTPException(status_code=502, detail="Jira API query failed")
     except Exception as e:
         logger.error(f"Error in /jira-tickets: {e}")
