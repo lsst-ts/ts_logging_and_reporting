@@ -1,43 +1,75 @@
-import datetime
-import json
+import os
 import logging
 
-from pydantic import BaseModel
+from lsst.ts.logging_and_reporting.jira import JiraAdapter
 
 
 logger = logging.getLogger(__name__)
 
 
-class JiraTicket(BaseModel):
-    url: str
-    summary: str
-    updated: datetime.datetime
-    create: datetime.datetime
-    system: str
-    status: str
-    key: str
+INSTRUMENTS = {
+    "LATISS": "AuxTel",
+    "LSSTCam" : "Simonyi",
+}
+
+
+def filter_tickets_by_instrument(tickets, instrument):
+    """Filters a list of JIRA tickets to include only those associated with a
+    specified instrument.
+    For each ticket, checks if any of the system names in the ticket's
+    'system' field match the instrument name or its corresponding value from
+    the INSTRUMENTS dictionary. If a match is found, adds a 'url' field to the
+    ticket containing a direct link to the JIRA ticket.
+    Parameters
+    ----------
+    tickets : `list[dict]`
+        List of JIRA ticket dictionaries,
+        each containing at least 'system' and 'key' fields.
+    instrument : `str`
+        The instrument name to filter tickets by.
+    Returns
+    -------
+    filtered_tickets : `list[dict]`
+        Filtered list of tickets that match the instrument,
+        each with an added 'url' field.
+    """
+
+    def matches_and_add_url(ticket):
+        # Get the list of systems from the object
+        obj_system_list = ticket['system']
+        search_terms = (instrument, INSTRUMENTS[instrument])
+        # Check if any search term appears in any system name
+        matched = any(term in system for term in search_terms for system in obj_system_list)
+        if matched:
+            ticket['url'] = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{ticket.get('key')}"
+            return True
+        return False
+
+    return [ticket for ticket in tickets if matches_and_add_url(ticket)]
 
 
 
 def get_jira_tickets(
-        dayobs_start: datetime.date,
-        dayobs_end: datetime.date,
+        dayobs_start: int,
+        dayobs_end: int,
         telescope: str
-        ) -> list[JiraTicket]:
-    logger.info(f"Getting Jira tickets for start: {dayobs_start}, "
+        ) -> list[dict]:
+    logger.info(f"Jira service: start: {dayobs_start}, "
           f"end: {dayobs_end} and telescope: {telescope}")
-    # TODO: replace with code to retrieve
-    # ticket information using data adaptors
-    # See DM-12345.
-    with open("data/jira-tickets.json") as f:
-        content = json.load(f)
-        tickets = [{
-            "url": f"https://rubinobs.atlassian.net/browse/{tic["key"]}",
-            "summary": tic["fields"]["summary"],
-            "updated": tic["fields"]["updated"],
-            "created": tic["fields"]["created"],
-            "status": tic["fields"]["status"]["name"],
-            "system": telescope,
-            "key": tic["key"]
-        } for tic in content['issues']]
-    return tickets
+
+    jira = JiraAdapter(
+        max_dayobs=dayobs_end,
+        min_dayobs=dayobs_start,
+    )
+    logger.info(f"max_dayobs: {jira.max_dayobs}, min_dayobs: {jira.min_dayobs}, telescope: {telescope}")
+    tickets = jira.fetch_issues()
+    if not tickets:
+        logger.warning("No Jira tickets found for the specified date range and telescope.")
+        return []
+    logger.info(f"Found {len(tickets)} Jira tickets.")
+
+    system_tickets = filter_tickets_by_instrument(
+        tickets,
+        instrument=telescope,
+    )
+    return system_tickets
