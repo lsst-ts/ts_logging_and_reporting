@@ -271,6 +271,7 @@ class SourceAdapter(ABC):
                 )
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
+            traceback.print_exc()
             # Invalid URL?, etc.
             ok = False
             code = err.response.status_code
@@ -279,6 +280,7 @@ class SourceAdapter(ABC):
             result += f"{timeout=} {reason=} "
             result += str(err)
         except requests.exceptions.ConnectionError as err:
+            traceback.print_exc()
             # No VPN? Broken API?
             ok = False
             code = None
