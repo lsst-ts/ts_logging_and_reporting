@@ -146,7 +146,11 @@ async def read_exposure_flags(
     instrument: str):
     logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
-    flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument)
-    return {
-        "exposure_flags": flags,
-    }
+    try:
+        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument)
+        return {
+            "exposure_flags": flags,
+        }
+    except Exception as e:
+        logger.error(f"Error in /exposure-flags: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
