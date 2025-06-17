@@ -1,3 +1,27 @@
+v0.4.0 (2025-06-17)
+===================
+
+New Features
+------------
+
+- Add a fastapi endpoint and related service to fetch Jira tickets created between two dates and for a certain instrument. The service utilises the Jira source adapter to query the Jira API and return the results in a structured format. (`OSW-500 <https://rubinobs.atlassian.net//browse/OSW-500>`_)
+
+
+Bug Fixes
+---------
+
+- Flip greater than sign when comparing dates in SourceAdapter. (`OSW-513 <https://rubinobs.atlassian.net//browse/OSW-513>`_)
+- Remove asserts and replace with switching the date or raising an error. (`OSW-513 <https://rubinobs.atlassian.net//browse/OSW-513>`_)
+- Remove default option for EXTERNAL_INSTANCE_URL when choosing a server site. (`OSW-520 <https://rubinobs.atlassian.net//browse/OSW-520>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- expose errors from source adapters to the FastAPI application and throw HTTP exceptions with appropriate status codes and messages. (`OSW-501 <https://rubinobs.atlassian.net//browse/OSW-501>`_)
+- Create an Exposure Log service to query the messages associated with each exposure, written by the observers. (`OSW-537 <https://rubinobs.atlassian.net//browse/OSW-537>`_)
+
+
 v0.3.0 (2025-06-05)
 ===================
 
