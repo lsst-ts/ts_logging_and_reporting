@@ -33,33 +33,37 @@ def get_exposure_flags(
     List[dict]
         List of dicts with keys: 'obs_id' and 'exposure_flag'
     """
-    try:
-        adapter = ExposurelogAdapter(
-            min_dayobs=min_dayobs,
-            max_dayobs=max_dayobs,
-            limit=limit,
-            verbose=verbose,
+
+    adapter = ExposurelogAdapter(
+        min_dayobs=min_dayobs,
+        max_dayobs=max_dayobs,
+        limit=limit,
+        verbose=verbose,
+    )
+
+    logger.info(f"Fetching exposure flags for instrument: {instrument}")
+
+    status = adapter.status.get("messages")
+    logger.debug(f"ExposureLogAdapter status: {status}")
+
+    if status is None or status.get("error") is not None:
+        raise Exception(
+            f"Error getting exposure log messages from {status.get('endpoint_url')}: {status.get('error')}"
         )
 
-        logger.info(f"Fetching exposure flags for instrument: {instrument}")
-
-        records = adapter.messages.get(instrument, [])
-        if not records:
-            verbose and logger.debug("No messages for this instrument.")
-            return []
-
-        flags = {"questionable", "junk"}
-        flagged = [
-            {"obs_id": rec["obs_id"], "exposure_flag": rec["exposure_flag"]}
-            for rec in records
-            if rec.get("exposure_flag") and rec["exposure_flag"] in flags
-        ]
-
-        if verbose:
-            logger.debug(f"Retrieved {len(flagged)} flagged records")
-
-        return flagged
-
-    except Exception as e:
-        logger.error(f"Error retrieving exposure flags: {e}")
+    records = adapter.messages.get(instrument, [])
+    if not records:
+        verbose and logger.debug("No messages for this instrument.")
         return []
+
+    flags = {"questionable", "junk"}
+    flagged = [
+        {"obs_id": rec["obs_id"], "exposure_flag": rec["exposure_flag"]}
+        for rec in records
+        if rec.get("exposure_flag") and rec["exposure_flag"] in flags
+    ]
+
+    if verbose:
+        logger.debug(f"Retrieved {len(flagged)} flagged records")
+
+    return flagged
