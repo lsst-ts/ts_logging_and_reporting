@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
@@ -30,6 +30,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def get_auth_token(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or " " not in auth_header:
+        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
+    return auth_header.split(" ")[1]
 
 
 logger.info("Starting FastAPI app")
@@ -61,13 +67,13 @@ async def read_exposures(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str,
+    auth_token: str = Depends(get_auth_token),
+):
     logger.info(f"Getting exposures for start: "
                     f"{dayObsStart}, end: {dayObsEnd} "
                     f"and instrument: {instrument}")
     try:
-        auth_header = request.headers.get("Authorization")
-        auth_token = auth_header.split(" ")[1] if auth_header else None
         exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         return {
@@ -88,7 +94,8 @@ async def read_jira_tickets(
     request: Request,
     dayObsStart:int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str
+):
 
     logger.info(f"Getting jira tickets for start: "
                     f"{dayObsStart}, end: {dayObsEnd} "
@@ -120,12 +127,12 @@ async def read_narrative_log(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str,
+    auth_token: str = Depends(get_auth_token),
+):
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     try:
-        auth_header = request.headers.get("Authorization")
-        auth_token = auth_header.split(" ")[1] if auth_header else None
         records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token)
         time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
         time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
@@ -143,7 +150,8 @@ async def read_exposure_flags(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str,
+):
     logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     try:
