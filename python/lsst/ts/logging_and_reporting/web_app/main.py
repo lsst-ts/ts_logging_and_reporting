@@ -74,7 +74,7 @@ async def read_exposures(
                     f"{dayObsStart}, end: {dayObsEnd} "
                     f"and instrument: {instrument}")
     try:
-        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
+        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         return {
             "exposures": exposures,
@@ -133,7 +133,7 @@ async def read_narrative_log(
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     try:
-        records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token)
+        records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token=auth_token)
         time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
         time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
         return {
@@ -156,7 +156,7 @@ async def read_exposure_flags(
     logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     try:
-        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token)
+        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         return {
             "exposure_flags": flags,
         }
