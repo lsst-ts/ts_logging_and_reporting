@@ -151,11 +151,12 @@ async def read_exposure_flags(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
+    auth_token: str = Depends(get_auth_token),
 ):
     logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     try:
-        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument)
+        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token)
         return {
             "exposure_flags": flags,
         }
