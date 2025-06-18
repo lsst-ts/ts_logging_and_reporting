@@ -1242,7 +1242,7 @@ class ExposurelogAdapter(SourceAdapter):
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         if exposure_flags:
-            qparams["exposure_flags1"] = exposure_flags
+            qparams["exposure_flags"] = exposure_flags
 
         qstr = urlencode(qparams)
         url = f"{endpoint}?{qstr}"
