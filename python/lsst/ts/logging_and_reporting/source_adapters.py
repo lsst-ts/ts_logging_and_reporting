@@ -271,8 +271,8 @@ class SourceAdapter(ABC):
                 )
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
-            traceback.print_exc()
             # Invalid URL?, etc.
+            traceback.print_exc()
             ok = False
             code = err.response.status_code
             reason = err.response.reason
@@ -280,12 +280,17 @@ class SourceAdapter(ABC):
             result += f"{timeout=} {reason=} "
             result += str(err)
         except requests.exceptions.ConnectionError as err:
-            traceback.print_exc()
             # No VPN? Broken API?
+            traceback.print_exc()
             ok = False
             code = None
             result = f"Error connecting to {url} (with timeout={timeout}). "
             result += str(err)
+        except Exception as err:
+            traceback.print_exc()
+            ok = False
+            code = None
+            result = f"Error getting data from API at {url}. {err}"
         else:  # No exception. Could something else be wrong?
             if self.verbose:
                 print(
@@ -1237,7 +1242,7 @@ class ExposurelogAdapter(SourceAdapter):
         if self.max_dayobs:
             qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
         if exposure_flags:
-            qparams["exposure_flags"] = exposure_flags
+            qparams["exposure_flags1"] = exposure_flags
 
         qstr = urlencode(qparams)
         url = f"{endpoint}?{qstr}"
@@ -1255,7 +1260,7 @@ class ExposurelogAdapter(SourceAdapter):
                     number_of_records=None,
                     error=result,
                 )
-                break
+                return status
             page = result
             recs += page
             status = dict(endpoint_url=url, number_of_records=len(recs), error=None)
