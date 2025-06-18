@@ -1,1 +1,0 @@
-Remove asserts and replace with switching the date or raising an error.
