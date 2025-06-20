@@ -21,10 +21,12 @@
 
 import datetime as dt
 import os
-import time
-
 import pandas as pd
 import pytz
+import time
+
+from fastapi import Request, HTTPException
+
 
 # NOTE on day_obs vs dayobs:
 # Throughout Rubin, and perhaps Astonomy in general, a single night
@@ -295,15 +297,51 @@ def wrap_dataframe_columns(df):
     return df.rename(columns=column_map)
 
 
-def get_access_token():
+def get_access_token(request: Request = None):
     """Return access token to be sent in headers as Auth Bearer
-    Only for USDF or local notebook development when ACCESS_TOKEN is set"""
+
+    When calling from a notebook on the RSP `lsst.rsp.utils.get_access_token`
+    is used to get the token from the active client session.
+
+    When called from the FastAPI web server in local development
+    the token is read from the `ACCESS_TOKEN` environment variable.
+
+    Otherwise we assume this is called from the FastAPI web server running
+    on the RSP and the token is read from the request headers.
+
+    Parameters
+    ----------
+    request : `fastapi.Request`, optional
+        The request object, if available. Used to
+        extract the token from headers.
+
+    Raises
+    ------
+    HTTPException
+        If the access token cannot be retrieved by any method.
+
+    Returns
+    -------
+    str or None
+        The access token if available, otherwise None.
+    """
     try:
         import lsst.rsp.utils
-
-        return lsst.rsp.utils.get_access_token()
+        return lsst.rsp.utils.get_info()
     except ImportError:
-        return os.getenv("ACCESS_TOKEN", None)
+        env_token = os.getenv("ACCESS_TOKEN")
+        if env_token is not None:
+            return env_token
+
+        if request is not None:
+            auth_header = request.headers.get("Authorization")
+            if auth_header is not None and " " in auth_header:
+                return auth_header.split(" ")[1]
+
+    raise HTTPException(
+        status_code=401,
+        detail="RSP authentication token could not be retrieved by any method."
+    )
 
 
 def get_auth_header(token=None):

@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
+from lsst.ts.logging_and_reporting.utils import get_access_token
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures
@@ -30,12 +31,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-def get_auth_token(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or " " not in auth_header:
-        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
-    return auth_header.split(" ")[1]
 
 
 logger.info("Starting FastAPI app")
@@ -68,7 +63,7 @@ async def read_exposures(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_auth_token),
+    auth_token: str = Depends(get_access_token),
 ):
     logger.info(f"Getting exposures for start: "
                     f"{dayObsStart}, end: {dayObsEnd} "
@@ -128,7 +123,7 @@ async def read_narrative_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_auth_token),
+    auth_token: str = Depends(get_access_token),
 ):
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
@@ -151,7 +146,7 @@ async def read_exposure_flags(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_auth_token),
+    auth_token: str = Depends(get_access_token),
 ):
     logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
