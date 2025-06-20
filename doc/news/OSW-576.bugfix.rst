@@ -1,0 +1,1 @@
+Make sure the status dict isn't overwritten in ExposurelogAdapter.get_records when there is an exception. This ensures the status remains accurate and errors are reported correctly to the frontend. 
