@@ -466,6 +466,7 @@ class NightReportAdapter(SourceAdapter):
         limit=None,
         verbose=False,
         warning=False,
+        auth_token=None,
     ):
         super().__init__(
             server_url=server_url,
@@ -474,6 +475,7 @@ class NightReportAdapter(SourceAdapter):
             limit=limit,
             verbose=verbose,
             warning=warning,
+            auth_token=auth_token,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
@@ -935,6 +937,7 @@ class ExposurelogAdapter(SourceAdapter):
         limit=None,
         verbose=False,
         warning=False,
+        auth_token=None,
     ):
         super().__init__(
             server_url=server_url,
@@ -943,6 +946,7 @@ class ExposurelogAdapter(SourceAdapter):
             limit=limit,
             verbose=verbose,
             warning=warning,
+            auth_token=auth_token,
         )
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
