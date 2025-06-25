@@ -7,7 +7,7 @@ from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogre
 from lsst.ts.logging_and_reporting.utils import get_access_token
 
 from .services.jira_service import get_jira_tickets
-from .services.consdb_service import get_mock_exposures, get_exposures
+from .services.consdb_service import get_mock_exposures, get_exposures, get_data_log
 from .services.almanac_service import get_almanac_night_hours
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags
@@ -85,6 +85,30 @@ async def read_exposures(
         raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
         logger.error(f"Error in /exposures: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/data-log")
+async def read_data_log(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str):
+    logger.info(f"Getting data log for start: "
+                    f"{dayObsStart}, end: {dayObsEnd} "
+                    f"and instrument: {instrument}")
+    try:
+        auth_header = request.headers.get("Authorization")
+        auth_token = auth_header.split(" ")[1] if auth_header else None
+        data = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token)
+        return {
+            "data_log": data,
+        }
+    except ConsdbQueryError as ce:
+        logger.error(f"ConsdbQueryError in /data-log: {ce}")
+        raise HTTPException(status_code=502, detail="ConsDB query failed")
+    except Exception as e:
+        logger.error(f"Error in /data-log: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

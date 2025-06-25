@@ -79,3 +79,37 @@ def get_exposures(
         logger.debug(f"Debug cdb.get_exposures {telescope=} {sql=}")
         logger.debug(f"Debug cdb.get_exposures: {exposures[0]=}")
     return exposures
+
+
+def get_data_log(
+    dayobs_start: int,
+    dayobs_end: int,
+    telescope: str,
+    auth_token: str = None,
+    ) -> dict:
+    """
+    Get data log from the ConsDB for a given time range and telescope.
+    """
+
+    data_log = {}
+    logger.info(f"Getting data log for start: "
+            f"{dayobs_start}, end: {dayobs_end} "
+            f"and telescope: {telescope}")
+    cons_db = ConsdbAdapter(
+        server_url=nd_utils.Server.get_url(),
+        max_dayobs=dayobs_end,
+        min_dayobs=dayobs_start,
+        auth_token=auth_token,
+    )
+    logger.debug(
+        f"max_dayobs: {cons_db.max_dayobs}, "
+        f"min_dayobs: {cons_db.min_dayobs}, "
+        f"telescope: {telescope}"
+    )
+    data_log = cons_db.get_exposures(instrument=telescope)
+
+    if cons_db.verbose and len(data_log) > 0:
+        logger.debug(f"Debug cdb.get_data_log {telescope=} {dayobs_start=} {dayobs_end=}")
+        logger.debug(f"Debug cdb.get_data_log: {data_log[0]=}")
+
+    return data_log
