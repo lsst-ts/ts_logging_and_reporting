@@ -1,6 +1,4 @@
-import os
 import logging
-from datetime import datetime
 
 from lsst.ts.logging_and_reporting.jira import JiraAdapter
 
@@ -35,26 +33,15 @@ def filter_tickets_by_instrument(tickets, instrument):
         each with an added 'url' field.
     """
 
-    def matches_and_add_url(ticket):
+    def matches(ticket):
         # Get the list of systems from the object
         obj_system_list = ticket['system']
         search_terms = (instrument, INSTRUMENTS[instrument])
         # Check if any search term appears in any system name
         matched = any(term in system for term in search_terms for system in obj_system_list)
-        if matched:
-            ticket['url'] = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{ticket.get('key')}"
-            ticket['created'] = (
-                datetime.strptime(ticket['created'], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
-                if ticket.get('created') not in (None, "") else ""
-            )
-            ticket['updated'] = (
-                datetime.strptime(ticket['updated'], "%Y-%m-%dT%H:%M:%S.%f%z").strftime("%Y-%m-%d %H:%M:%S")
-                if ticket.get('updated') not in (None, "") else ""
-            )
-            return True
-        return False
+        return matched
 
-    return [ticket for ticket in tickets if matches_and_add_url(ticket)]
+    return [ticket for ticket in tickets if matches(ticket)]
 
 
 
