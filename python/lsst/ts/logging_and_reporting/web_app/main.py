@@ -3,14 +3,16 @@ import logging
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
 from lsst.ts.logging_and_reporting.utils import get_access_token
+import numpy as np
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures, get_data_log
 from .services.almanac_service import get_almanac_night_hours
 from .services.narrativelog_service import get_messages
-from .services.exposurelog_service import get_exposure_flags
+from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -88,6 +90,19 @@ async def read_exposures(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# TODO: Confirm where this util func should live.
+# Required to jasonify pandas DataFrame with special float values
+def stringify_special_floats(val):
+    if isinstance(val, float):
+        if np.isnan(val):
+            return "NaN"
+        elif np.isposinf(val):
+            return "Infinity"
+        elif np.isneginf(val):
+            return "-Infinity"
+    return val
+
+
 @app.get("/data-log")
 async def read_data_log(
     request: Request,
@@ -100,10 +115,18 @@ async def read_data_log(
     try:
         auth_header = request.headers.get("Authorization")
         auth_token = auth_header.split(" ")[1] if auth_header else None
-        data = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token)
-        return {
-            "data_log": data,
-        }
+
+        # Returns a pandas DataFrame
+        df = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token)
+
+        # Convert special floats (nans and infs) to strings
+        # This ensures that JSON serialisation does not fail
+        logger.debug(f"Converting DataFrame to JSON records: {df.shape}")
+        df_safe = df.applymap(stringify_special_floats)
+        records = df_safe.to_dict(orient="records")
+
+        return jsonable_encoder({"data_log": records})
+
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /data-log: {ce}")
         raise HTTPException(status_code=502, detail="ConsDB query failed")
@@ -168,6 +191,7 @@ async def read_narrative_log(
         logger.error(f"Error in /narrative-log: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/exposure-flags")
 async def read_exposure_flags(
     request: Request,
@@ -185,4 +209,22 @@ async def read_exposure_flags(
         }
     except Exception as e:
         logger.error(f"Error in /exposure-flags: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/exposure-entries")
+async def read_exposure_entries(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str):
+    logger.info(f"Getting Exposure Log entries for dayObsStart: {dayObsStart}, "
+                f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
+    try:
+        entries = get_exposurelog_entries(dayObsStart, dayObsEnd, instrument)
+        return {
+            "exposure_entries": entries,
+        }
+    except Exception as e:
+        logger.error(f"Error in /exposure-entries: {e}")
         raise HTTPException(status_code=500, detail=str(e))

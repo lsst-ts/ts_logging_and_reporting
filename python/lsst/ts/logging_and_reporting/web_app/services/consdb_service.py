@@ -19,6 +19,7 @@ def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> li
     return exposures
 
 
+# Used by MVP?
 def get_exposures_from_adapter(dayobs_start: int, dayobs_end: int, telescope: str) :
     """
     Get exposures from the ConsDB for a given time range and telescope.
@@ -88,7 +89,7 @@ def get_data_log(
     auth_token: str = None,
     ) -> dict:
     """
-    Get data log from the ConsDB for a given time range and telescope.
+    Get Data Log fields from the ConsDB for a given time range and telescope.
     """
 
     data_log = {}
