@@ -3,6 +3,7 @@ import requests
 from urllib.parse import quote
 from pytz import timezone
 import traceback
+from datetime import datetime
 
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 import lsst.ts.logging_and_reporting.utils as ut
@@ -113,8 +114,10 @@ class JiraAdapter(SourceAdapter):
 
             # JQL query to get all issues in the OBS project created between
             jql_query = (
-                f'project = OBS AND (created >= "{start_dayobs_str}" '
-                f'AND created < "{end_dayobs_str}")'
+                f'project = OBS AND ((created >= "{start_dayobs_str}" '
+                f'AND created < "{end_dayobs_str}") '
+                f'OR (updated >= "{start_dayobs_str}" '
+                f'AND updated < "{end_dayobs_str}"))'
             )
             fields = f"key,summary,updated,created,status,system,{OBS_SYSTEMS_FIELD}"
             url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/search/jql?jql={quote(jql_query)}&fields={fields}"
@@ -136,10 +139,21 @@ class JiraAdapter(SourceAdapter):
             {
                 "key": issue["key"],
                 "summary": issue["fields"]["summary"],
-                "updated": issue["fields"]["updated"],
-                "created": issue["fields"]["created"].split(".")[0],
+                "updated":
+                    datetime.strptime(issue["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                    .strftime("%Y-%m-%d %H:%M:%S"),
+                "created":
+                    datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                    .strftime("%Y-%m-%d %H:%M:%S"),
                 "status": issue["fields"]["status"]["name"],
                 "system": get_system_names(issue["fields"][OBS_SYSTEMS_FIELD]),
+                "isNew":
+                    datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                    >= start_dayobs_user
+                    and
+                    datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                    < end_dayobs_user,
+                "url": f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{issue['key']}",
             }
             for issue in issues
         ]
