@@ -10,6 +10,7 @@ def get_exposure_flags(
     instrument: str,
     verbose: bool = False,
     limit: int = 2500,
+    auth_token: str = None,
 ) -> list[dict]:
     """
     Get all records with non-empty exposure_flag from the
@@ -39,6 +40,7 @@ def get_exposure_flags(
         max_dayobs=max_dayobs,
         limit=limit,
         verbose=verbose,
+        auth_token=auth_token,
     )
 
     logger.info(f"Fetching exposure flags for instrument: {instrument}")

@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
+from lsst.ts.logging_and_reporting.utils import get_access_token
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures
@@ -61,14 +62,14 @@ async def read_exposures(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
     logger.info(f"Getting exposures for start: "
                     f"{dayObsStart}, end: {dayObsEnd} "
                     f"and instrument: {instrument}")
     try:
-        auth_header = request.headers.get("Authorization")
-        auth_token = auth_header.split(" ")[1] if auth_header else None
-        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token)
+        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         return {
             "exposures": exposures,
@@ -88,7 +89,8 @@ async def read_jira_tickets(
     request: Request,
     dayObsStart:int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str
+):
 
     logger.info(f"Getting jira tickets for start: "
                     f"{dayObsStart}, end: {dayObsEnd} "
@@ -120,13 +122,13 @@ async def read_narrative_log(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
     logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     try:
-        auth_header = request.headers.get("Authorization")
-        auth_token = auth_header.split(" ")[1] if auth_header else None
-        records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token)
+        records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token=auth_token)
         time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
         time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
         return {
@@ -143,11 +145,13 @@ async def read_exposure_flags(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    instrument: str):
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
     logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
                 f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
     try:
-        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument)
+        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         return {
             "exposure_flags": flags,
         }
