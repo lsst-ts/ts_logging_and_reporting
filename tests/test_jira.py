@@ -77,8 +77,8 @@ def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
                 "key": "OBS-999",
                 "fields": {
                     "summary": "Test issue",
-                    "updated": "2025-01-01 12:00:00",
-                    "created": "2025-01-01 11:00:00",
+                    "updated": "2025-01-01T12:00:00.000Z",
+                    "created": "2025-01-01T11:00:00.000Z",
                     "status": {"name": "Open"},
                     "customfield_10476": [[{"name": "Simonyi"}]],
                 },
@@ -98,4 +98,4 @@ def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
     assert isinstance(result, list)
     assert result[0]["key"] == "OBS-999"
     assert result[0]["system"] == ["Simonyi"]
-    assert result[0]["updated"] == "2025-01-01 12:00:00"
+    assert result[0]["updated"] == "2025-01-01T12:00:00.000Z"
