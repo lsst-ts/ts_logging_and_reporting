@@ -1,0 +1,1 @@
+Count for multiple nights when returning night hours in the almanac service to correct telescope efficiency calculation in frontend. The service now iterates over the dayobs range and sums night hours for each day.
