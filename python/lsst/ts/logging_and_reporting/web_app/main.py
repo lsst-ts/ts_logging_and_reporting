@@ -8,7 +8,7 @@ from lsst.ts.logging_and_reporting.utils import get_access_token
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures
-from .services.almanac_service import get_almanac
+from .services.almanac_service import get_almanac_night_hours
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags
 
@@ -110,8 +110,8 @@ async def read_jira_tickets(
 async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
     logger.info(f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
     try:
-        almanac = get_almanac(dayObsStart, dayObsEnd)
-        return {"night_hours": almanac.night_hours}
+        night_hours = get_almanac_night_hours(dayObsStart, dayObsEnd)
+        return {"night_hours": night_hours}
     except Exception as e:
         logger.error(f"Error in /almanac: {e}")
         raise HTTPException(status_code=500, detail=str(e))
