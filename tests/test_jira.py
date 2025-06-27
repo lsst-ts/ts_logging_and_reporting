@@ -98,4 +98,4 @@ def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
     assert isinstance(result, list)
     assert result[0]["key"] == "OBS-999"
     assert result[0]["system"] == ["Simonyi"]
-    assert result[0]["updated"] == "2025-01-01T12:00:00.000Z"
+    assert result[0]["updated"] == "2025-01-01 12:00:00"
