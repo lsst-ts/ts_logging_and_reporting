@@ -94,7 +94,9 @@ class JiraAdapter(SourceAdapter):
             end_dayobs_utc = ut.get_utc_datetime_from_dayobs_str(self.max_dayobs)
 
             # Get user's timezone
-            url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/myself"
+            url = (
+                f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/myself"
+            )
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
                 user_timezone = timezone(response.json()["timeZone"])
@@ -143,4 +145,3 @@ class JiraAdapter(SourceAdapter):
             }
             for issue in issues
         ]
-

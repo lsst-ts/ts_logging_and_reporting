@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 INSTRUMENTS = {
     "LATISS": "AuxTel",
-    "LSSTCam" : "Simonyi",
+    "LSSTCam": "Simonyi",
 }
 
 
@@ -36,35 +36,40 @@ def filter_tickets_by_instrument(tickets, instrument):
 
     def matches_and_add_url(ticket):
         # Get the list of systems from the object
-        obj_system_list = ticket['system']
+        obj_system_list = ticket["system"]
         search_terms = (instrument, INSTRUMENTS[instrument])
         # Check if any search term appears in any system name
-        matched = any(term in system for term in search_terms for system in obj_system_list)
+        matched = any(
+            term in system for term in search_terms for system in obj_system_list
+        )
         if matched:
-            ticket['url'] = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{ticket.get('key')}"
+            ticket["url"] = (
+                f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{ticket.get('key')}"
+            )
             return True
         return False
 
     return [ticket for ticket in tickets if matches_and_add_url(ticket)]
 
 
-
-def get_jira_tickets(
-        dayobs_start: int,
-        dayobs_end: int,
-        telescope: str
-        ) -> list[dict]:
-    logger.info(f"Jira service: start: {dayobs_start}, "
-          f"end: {dayobs_end} and telescope: {telescope}")
+def get_jira_tickets(dayobs_start: int, dayobs_end: int, telescope: str) -> list[dict]:
+    logger.info(
+        f"Jira service: start: {dayobs_start}, "
+        f"end: {dayobs_end} and telescope: {telescope}"
+    )
 
     jira = JiraAdapter(
         max_dayobs=dayobs_end,
         min_dayobs=dayobs_start,
     )
-    logger.info(f"max_dayobs: {jira.max_dayobs}, min_dayobs: {jira.min_dayobs}, telescope: {telescope}")
+    logger.info(
+        f"max_dayobs: {jira.max_dayobs}, min_dayobs: {jira.min_dayobs}, telescope: {telescope}"
+    )
     tickets = jira.fetch_issues()
     if not tickets:
-        logger.warning("No Jira tickets found for the specified date range and telescope.")
+        logger.warning(
+            "No Jira tickets found for the specified date range and telescope."
+        )
         return []
     logger.info(f"Found {len(tickets)} Jira tickets.")
 

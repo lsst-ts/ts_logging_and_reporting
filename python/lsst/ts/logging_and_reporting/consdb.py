@@ -156,7 +156,7 @@ class ConsdbAdapter(SourceAdapter):
     # "500 Internal Server Error"
     # if there is something wrong the SQL.
     # Not a "400 Bad Request" as it should.
-    # It will then put the Postgres error in the resonse body as json
+    # It will then put the Postgres error in the response body as json
     # under the key "message".  Seems convoluted, so codify handling of it
     # here.
     def query(self, sql):
@@ -168,7 +168,10 @@ class ConsdbAdapter(SourceAdapter):
         records = []
         try:
             response = requests.post(
-                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header(self.token)
+                url,
+                json=jsondata,
+                timeout=timeout,
+                headers=ut.get_auth_header(self.token),
             )
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
