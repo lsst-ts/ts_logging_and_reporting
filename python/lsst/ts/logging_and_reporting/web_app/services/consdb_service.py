@@ -10,7 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 def convert_row(row):
-    return {key: (row[key].item() if isinstance(row[key], np.generic) else row[key]) for key in row.keys()}
+    return {
+        key: (row[key].item() if isinstance(row[key], np.generic) else row[key])
+        for key in row.keys()
+    }
 
 
 def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> list:
@@ -19,20 +22,24 @@ def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> li
     return exposures
 
 
-def get_exposures_from_adapter(dayobs_start: int, dayobs_end: int, telescope: str) :
+def get_exposures_from_adapter(dayobs_start: int, dayobs_end: int, telescope: str):
     """
     Get exposures from the ConsDB for a given time range and telescope.
     """
     try:
-        logger.info(f"Getting exposures for start: "
-              f"{dayobs_start}, end: {dayobs_end} "
-              f"and telescope: {telescope}")
+        logger.info(
+            f"Getting exposures for start: "
+            f"{dayobs_start}, end: {dayobs_end} "
+            f"and telescope: {telescope}"
+        )
         cons_db = ConsdbAdapter(
             server_url=nd_utils.Server.get_url(),
             max_dayobs=dayobs_end,
             min_dayobs=dayobs_start,
         )
-        logger.debug(f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}")
+        logger.debug(
+            f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}"
+        )
         exposures = cons_db.get_exposures(instrument=telescope)
         return exposures
 
@@ -46,11 +53,13 @@ def get_exposures(
     dayobs_end: int,
     telescope: str,
     auth_token: str = None,
-    ) -> dict:
+) -> dict:
 
     exposures = {}
-    logger.info(f"Getting exposures for start: {dayobs_start}, "
-                f"end: {dayobs_end} and telescope: {telescope}")
+    logger.info(
+        f"Getting exposures for start: {dayobs_start}, "
+        f"end: {dayobs_end} and telescope: {telescope}"
+    )
     cons_db = ConsdbAdapter(
         server_url=nd_utils.Server.get_url(),
         max_dayobs=dayobs_end,
@@ -70,6 +79,146 @@ def get_exposures(
             AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
     """
 
+    sql = " ".join(ssql.split())
+    exposures = cons_db.query(sql)
+
+    if cons_db.verbose and len(exposures) > 0:
+        logger.debug(f"Debug cdb.get_exposures {telescope=} {sql=}")
+        logger.debug(f"Debug cdb.get_exposures: {exposures[0]=}")
+    return exposures
+
+
+def query_transformed_efd(
+    dayobs_start: int,
+    dayobs_end: int,
+    telescope: str,
+    auth_token: str = None,
+) -> dict:
+
+    exposures = {}
+    logger.info(
+        f"Getting transformed efd data for start: {dayobs_start}, "
+        f"end: {dayobs_end} and telescope: {telescope}"
+    )
+
+    cons_db = ConsdbAdapter(
+        server_url=nd_utils.Server.get_url(),
+        max_dayobs=dayobs_end,
+        min_dayobs=dayobs_start,
+        auth_token=auth_token,
+    )
+
+    logger.debug(
+        f"max_dayobs: {cons_db.max_dayobs}, "
+        f"min_dayobs: {cons_db.min_dayobs}, "
+        f"telescope: {telescope}"
+    )
+    # Hopefully this is overkill
+    temperatures = [
+        "mt_salindex101_temperature_0_mean",
+        "mt_salindex101_temperature_0_stddev",
+        "mt_salindex101_temperature_0_min",
+        "mt_salindex101_temperature_1_mean",
+        "mt_salindex101_temperature_0_max",
+        "mt_salindex101_temperature_1_stddev",
+        "mt_salindex101_temperature_1_min",
+        "mt_salindex101_temperature_1_max",
+        "mt_salindex101_temperature_2_mean",
+        "mt_salindex101_temperature_2_stddev",
+        "mt_salindex101_temperature_2_min",
+        "mt_salindex101_temperature_2_max",
+        "mt_salindex101_temperature_3_mean",
+        "mt_salindex101_temperature_3_stddev",
+        "mt_salindex101_temperature_3_min",
+        "mt_salindex101_temperature_3_max",
+        "mt_salindex101_temperature_4_mean",
+        "mt_salindex101_temperature_4_stddev",
+        "mt_salindex101_temperature_4_min",
+        "mt_salindex101_temperature_4_max",
+        "mt_salindex101_temperature_5_mean",
+        "mt_salindex101_temperature_5_stddev",
+        "mt_salindex101_temperature_5_min",
+        "mt_salindex101_temperature_5_max",
+        "mt_salindex101_temperature_6_mean",
+        "mt_salindex101_temperature_6_stddev",
+        "mt_salindex101_temperature_6_min",
+        "mt_salindex101_temperature_6_max",
+        "mt_salindex101_temperature_7_mean",
+        "mt_salindex101_temperature_7_stddev",
+        "mt_salindex101_temperature_7_min",
+        "mt_salindex101_temperature_7_max",
+        "mt_salindex102_temperature_0_mean",
+        "mt_salindex102_temperature_0_stddev",
+        "mt_salindex102_temperature_0_min",
+        "mt_salindex102_temperature_1_mean",
+        "mt_salindex102_temperature_0_max",
+        "mt_salindex102_temperature_1_stddev",
+        "mt_salindex102_temperature_1_min",
+        "mt_salindex102_temperature_1_max",
+        "mt_salindex102_temperature_2_mean",
+        "mt_salindex102_temperature_2_stddev",
+        "mt_salindex102_temperature_2_min",
+        "mt_salindex102_temperature_2_max",
+        "mt_salindex102_temperature_3_mean",
+        "mt_salindex102_temperature_3_stddev",
+        "mt_salindex102_temperature_3_min",
+        "mt_salindex102_temperature_3_max",
+        "mt_salindex102_temperature_4_mean",
+        "mt_salindex102_temperature_4_stddev",
+        "mt_salindex102_temperature_4_min",
+        "mt_salindex102_temperature_4_max",
+        "mt_salindex102_temperature_5_mean",
+        "mt_salindex102_temperature_5_stddev",
+        "mt_salindex102_temperature_5_min",
+        "mt_salindex102_temperature_5_max",
+        "mt_salindex102_temperature_6_mean",
+        "mt_salindex102_temperature_6_stddev",
+        "mt_salindex102_temperature_6_min",
+        "mt_salindex102_temperature_6_max",
+        "mt_salindex102_temperature_7_mean",
+        "mt_salindex102_temperature_7_stddev",
+        "mt_salindex102_temperature_7_min",
+        "mt_salindex102_temperature_7_max",
+        "mt_salindex103_temperature_0_mean",
+        "mt_salindex103_temperature_0_stddev",
+        "mt_salindex103_temperature_0_min",
+        "mt_salindex103_temperature_1_mean",
+        "mt_salindex103_temperature_0_max",
+        "mt_salindex103_temperature_1_stddev",
+        "mt_salindex103_temperature_1_min",
+        "mt_salindex103_temperature_1_max",
+        "mt_salindex103_temperature_2_mean",
+        "mt_salindex103_temperature_2_stddev",
+        "mt_salindex103_temperature_2_min",
+        "mt_salindex103_temperature_2_max",
+        "mt_salindex103_temperature_3_mean",
+        "mt_salindex103_temperature_3_stddev",
+        "mt_salindex103_temperature_3_min",
+        "mt_salindex103_temperature_3_max",
+        "mt_salindex103_temperature_4_mean",
+        "mt_salindex103_temperature_4_stddev",
+        "mt_salindex103_temperature_4_min",
+        "mt_salindex103_temperature_4_max",
+        "mt_salindex103_temperature_5_mean",
+        "mt_salindex103_temperature_5_stddev",
+        "mt_salindex103_temperature_5_min",
+        "mt_salindex103_temperature_5_max",
+        "mt_salindex103_temperature_6_mean",
+        "mt_salindex103_temperature_6_stddev",
+        "mt_salindex103_temperature_6_min",
+        "mt_salindex103_temperature_6_max",
+        "mt_salindex103_temperature_7_mean",
+        "mt_salindex103_temperature_7_stddev",
+        "mt_salindex103_temperature_7_min",
+        "mt_salindex103_temperature_7_max",
+    ]
+
+    ssql = f"""
+        SELECT exposure_id, created_at, {", ".join(temperatures)}
+        FROM f"efd_{telescope}.exposure_efd" e
+        WHERE {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
+            AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
+    """
 
     sql = " ".join(ssql.split())
     exposures = cons_db.query(sql)
@@ -77,4 +226,5 @@ def get_exposures(
     if cons_db.verbose and len(exposures) > 0:
         logger.debug(f"Debug cdb.get_exposures {telescope=} {sql=}")
         logger.debug(f"Debug cdb.get_exposures: {exposures[0]=}")
+
     return exposures
