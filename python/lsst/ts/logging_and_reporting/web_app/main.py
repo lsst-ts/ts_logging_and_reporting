@@ -46,11 +46,8 @@ async def health():
 
 @app.get("/mock-exposures")
 async def read_exposures_from_mock_data(
-    request: Request,
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str
-    ):
+    request: Request, dayObsStart: int, dayObsEnd: int, instrument: str
+):
 
     logger.info("Getting exposures from mock data")
     exposures = get_mock_exposures(dayObsStart, dayObsEnd, instrument)
@@ -65,16 +62,20 @@ async def read_exposures(
     instrument: str,
     auth_token: str = Depends(get_access_token),
 ):
-    logger.info(f"Getting exposures for start: "
-                    f"{dayObsStart}, end: {dayObsEnd} "
-                    f"and instrument: {instrument}")
+    logger.info(
+        f"Getting exposures for start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+        f"and instrument: {instrument}"
+    )
     try:
-        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        exposures = get_exposures(
+            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
+        )
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         return {
             "exposures": exposures,
             "exposures_count": len(exposures),
-            "sum_exposure_time": total_exposure_time
+            "sum_exposure_time": total_exposure_time,
         }
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /exposures: {ce}")
@@ -86,15 +87,14 @@ async def read_exposures(
 
 @app.get("/jira-tickets")
 async def read_jira_tickets(
-    request: Request,
-    dayObsStart:int,
-    dayObsEnd: int,
-    instrument: str
+    request: Request, dayObsStart: int, dayObsEnd: int, instrument: str
 ):
 
-    logger.info(f"Getting jira tickets for start: "
-                    f"{dayObsStart}, end: {dayObsEnd} "
-                    f"and instrument: {instrument}")
+    logger.info(
+        f"Getting jira tickets for start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+        f"and instrument: {instrument}"
+    )
     try:
         tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
         return {"issues": tickets}
@@ -108,7 +108,9 @@ async def read_jira_tickets(
 
 @app.get("/almanac")
 async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
-    logger.info(f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    logger.info(
+        f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
+    )
     try:
         night_hours = get_almanac_night_hours(dayObsStart, dayObsEnd)
         return {"night_hours": night_hours}
@@ -125,20 +127,29 @@ async def read_narrative_log(
     instrument: str,
     auth_token: str = Depends(get_access_token),
 ):
-    logger.info(f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
-                f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
+    logger.info(
+        f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
+        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+    )
     try:
-        records = get_messages(dayObsStart, dayObsEnd, "LSSTComCam", auth_token=auth_token)
-        time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'weather')
-        time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == 'fault')
+        records = get_messages(
+            dayObsStart, dayObsEnd, "LSSTComCam", auth_token=auth_token
+        )
+        time_lost_to_weather = sum(
+            msg["time_lost"] for msg in records if msg["time_lost_type"] == "weather"
+        )
+        time_lost_to_faults = sum(
+            msg["time_lost"] for msg in records if msg["time_lost_type"] == "fault"
+        )
         return {
             "narrative_log": records,
             "time_lost_to_weather": time_lost_to_weather,
-            "time_lost_to_faults": time_lost_to_faults
+            "time_lost_to_faults": time_lost_to_faults,
         }
     except Exception as e:
         logger.error(f"Error in /narrative-log: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/exposure-flags")
 async def read_exposure_flags(
@@ -148,10 +159,14 @@ async def read_exposure_flags(
     instrument: str,
     auth_token: str = Depends(get_access_token),
 ):
-    logger.info(f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
-                f"dayObsEnd: {dayObsEnd} and instrument: {instrument}")
+    logger.info(
+        f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
+        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+    )
     try:
-        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        flags = get_exposure_flags(
+            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
+        )
         return {
             "exposure_flags": flags,
         }

@@ -327,6 +327,7 @@ def get_access_token(request: Request = None):
     """
     try:
         import lsst.rsp.utils
+
         return lsst.rsp.utils.get_info()
     except ImportError:
         env_token = os.getenv("ACCESS_TOKEN")
@@ -340,7 +341,7 @@ def get_access_token(request: Request = None):
 
     raise HTTPException(
         status_code=401,
-        detail="RSP authentication token could not be retrieved by any method."
+        detail="RSP authentication token could not be retrieved by any method.",
     )
 
 
