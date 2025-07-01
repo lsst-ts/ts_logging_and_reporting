@@ -1,1 +1,0 @@
-Change creation and updated date formats for tickets returned by the Jira adapter and add a flag to indicate if the ticket was created within the selected dayobs range.

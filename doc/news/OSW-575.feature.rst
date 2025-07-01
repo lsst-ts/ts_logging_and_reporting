@@ -1,1 +1,0 @@
-Add FastAPI dependency for retrieving auth token from requests headers.
