@@ -1,1 +1,0 @@
-Update JQL in the Jira adapter to retrieve tickets created or updated within the selected dayobs range.

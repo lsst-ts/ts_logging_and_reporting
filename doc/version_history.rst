@@ -1,3 +1,20 @@
+v0.5.0 (2025-07-01)
+===================
+
+New Features
+------------
+
+- Update JQL in the Jira adapter to retrieve tickets created or updated within the selected dayobs range. (`OSW-556 <https://rubinobs.atlassian.net//browse/OSW-556>`_)
+- Change creation and updated date formats for tickets returned by the Jira adapter and add a flag to indicate if the ticket was created within the selected dayobs range. (`OSW-556 <https://rubinobs.atlassian.net//browse/OSW-556>`_)
+- Add FastAPI dependency for retrieving auth token from requests headers. (`OSW-575 <https://rubinobs.atlassian.net//browse/OSW-575>`_)
+
+
+Bug Fixes
+---------
+
+- Make sure the status dict isn't overwritten in ExposurelogAdapter.get_records when there is an exception. This ensures the status remains accurate and errors are reported correctly to the frontend. (`OSW-576 <https://rubinobs.atlassian.net//browse/OSW-576>`_)
+
+
 v0.4.0 (2025-06-17)
 ===================
 
