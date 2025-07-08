@@ -1,0 +1,1 @@
+Fix efficiency calculation by removing the extra loop in calculating night hours
