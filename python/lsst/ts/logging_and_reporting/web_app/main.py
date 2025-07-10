@@ -70,11 +70,15 @@ async def read_exposures(
                     f"and instrument: {instrument}")
     try:
         exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky", False)]
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
+        total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
         return {
             "exposures": exposures,
             "exposures_count": len(exposures),
-            "sum_exposure_time": total_exposure_time
+            "sum_exposure_time": total_exposure_time,
+            "on_sky_exposures_count": len(on_sky_exposures),
+            "total_on_sky_exposure_time": total_on_sky_exposure_time,
         }
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /exposures: {ce}")
