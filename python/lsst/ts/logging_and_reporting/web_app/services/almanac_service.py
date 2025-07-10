@@ -16,7 +16,7 @@ def get_almanac_night_hours(dayobs_start: int, dayobs_end: int) -> list:
         # calculate night hours for each day in the range
         current = start
         total_night_hours = 0.0
-        while current <= end:
+        while current < end:
             dayobs = int(current.strftime('%Y%m%d'))
             almanac = Almanac(min_dayobs=dayobs_start, max_dayobs=dayobs)
             total_night_hours += almanac.night_hours
