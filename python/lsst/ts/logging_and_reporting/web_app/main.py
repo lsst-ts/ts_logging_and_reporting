@@ -70,7 +70,7 @@ async def read_exposures(
                     f"and instrument: {instrument}")
     try:
         exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky", False)]
+        on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky")]
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
         return {
