@@ -1,0 +1,1 @@
+Add 'can_see_sky' to consdb exposures query and return no of on-sky exposures and total on-sky exposure time in the /exposures endpoint response
