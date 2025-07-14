@@ -6,7 +6,6 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
 from lsst.ts.logging_and_reporting.utils import get_access_token
-# import numpy as np
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import get_mock_exposures, get_exposures, get_data_log
