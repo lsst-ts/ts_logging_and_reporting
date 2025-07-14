@@ -13,6 +13,19 @@ def convert_row(row):
     return {key: (row[key].item() if isinstance(row[key], np.generic) else row[key]) for key in row.keys()}
 
 
+# Required to jasonify pandas DataFrame with special float values
+# To ensure JSON serialisation does not fail
+def stringify_special_floats(val):
+    if isinstance(val, float):
+        if np.isnan(val):
+            return "NaN"
+        elif np.isposinf(val):
+            return "Infinity"
+        elif np.isneginf(val):
+            return "-Infinity"
+    return val
+
+
 def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> list:
     exposure_table = Table.read("data/exposures-lsstcam0413.ecsv")
     exposures = [convert_row(exp) for exp in exposure_table]
@@ -107,10 +120,16 @@ def get_data_log(
         f"min_dayobs: {cons_db.min_dayobs}, "
         f"telescope: {telescope}"
     )
+    # Returns a pandas DataFrame
     data_log = cons_db.get_exposures(instrument=telescope)
+
+    # Convert special floats (nans and infs) to strings
+    # This ensures that JSON serialisation does not fail
+    df_safe = data_log.applymap(stringify_special_floats)
+    records = df_safe.to_dict(orient="records")
 
     if cons_db.verbose and len(data_log) > 0:
         logger.debug(f"Debug cdb.get_data_log {telescope=} {dayobs_start=} {dayobs_end=}")
         logger.debug(f"Debug cdb.get_data_log: {data_log[0]=}")
 
-    return data_log
+    return records
