@@ -32,29 +32,6 @@ def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> li
     return exposures
 
 
-# Used by MVP?
-def get_exposures_from_adapter(dayobs_start: int, dayobs_end: int, telescope: str) :
-    """
-    Get exposures from the ConsDB for a given time range and telescope.
-    """
-    try:
-        logger.info(f"Getting exposures for start: "
-              f"{dayobs_start}, end: {dayobs_end} "
-              f"and telescope: {telescope}")
-        cons_db = ConsdbAdapter(
-            server_url=nd_utils.Server.get_url(),
-            max_dayobs=dayobs_end,
-            min_dayobs=dayobs_start,
-        )
-        logger.debug(f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}")
-        exposures = cons_db.get_exposures(instrument=telescope)
-        return exposures
-
-    except Exception as e:
-        logger.error(f"Error getting exposures: {e}")
-        return {}
-
-
 def get_exposures(
     dayobs_start: int,
     dayobs_end: int,
