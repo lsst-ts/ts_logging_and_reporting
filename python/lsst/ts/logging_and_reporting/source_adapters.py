@@ -987,7 +987,7 @@ class ExposurelogAdapter(SourceAdapter):
                 new_rec = copy.copy(rec)
                 mrec = self.messages_lut.get(rec["obs_id"])
                 if mrec is None:
-                    new_rec["exposure_flag"] = "unknown"
+                    new_rec["exposure_flag"] = "no flag"
                 else:
                     count += 1
                     new_rec["exposure_flag"] = mrec["exposure_flag"]
@@ -1275,7 +1275,9 @@ class ExposurelogAdapter(SourceAdapter):
         # Change exposure_flag to avoid confusion with python None type
         for rec in recs:
             if rec.get("exposure_flag") == "none":
-                rec["exposure_flag"] = "good"
+                # Does not have a flag, but may have had one in the past
+                # Or may just have a message.
+                rec["exposure_flag"] = "unknown"
 
         self.records = recs
         # messages[instrument] => [rec, ...]

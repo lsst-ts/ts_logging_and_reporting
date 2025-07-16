@@ -69,3 +69,34 @@ def get_exposure_flags(
         logger.debug(f"Retrieved {len(flagged)} flagged records")
 
     return flagged
+
+
+def get_exposurelog_entries(
+    min_dayobs: str,
+    max_dayobs: str,
+    instrument: str,
+    verbose: bool = False,
+    limit: int = 2500,
+) -> list[dict]:
+    """
+    Fetch all Exposure Log entries for an instrument and dayobs range.
+    """
+    adapter = ExposurelogAdapter(
+        min_dayobs=min_dayobs,
+        max_dayobs=max_dayobs,
+        limit=limit,
+        verbose=verbose,
+    )
+
+    # Get records
+    records = adapter.exposures.get(instrument, [])
+
+    # Add message text to each record
+    for rec in records:
+        msg = adapter.messages_lut.get(rec["obs_id"])
+        rec["message_text"] = msg["message_text"] if msg else "na"
+
+    if verbose:
+        logger.debug(f"Fetched {len(records)} Exposure Log records for {instrument}")
+
+    return records

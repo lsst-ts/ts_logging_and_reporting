@@ -13,32 +13,23 @@ def convert_row(row):
     return {key: (row[key].item() if isinstance(row[key], np.generic) else row[key]) for key in row.keys()}
 
 
+# Required to jasonify pandas DataFrame with special float values
+# To ensure JSON serialisation does not fail
+def stringify_special_floats(val):
+    if isinstance(val, float):
+        if np.isnan(val):
+            return "NaN"
+        elif np.isposinf(val):
+            return "Infinity"
+        elif np.isneginf(val):
+            return "-Infinity"
+    return val
+
+
 def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> list:
     exposure_table = Table.read("data/exposures-lsstcam0413.ecsv")
     exposures = [convert_row(exp) for exp in exposure_table]
     return exposures
-
-
-def get_exposures_from_adapter(dayobs_start: int, dayobs_end: int, telescope: str) :
-    """
-    Get exposures from the ConsDB for a given time range and telescope.
-    """
-    try:
-        logger.info(f"Getting exposures for start: "
-              f"{dayobs_start}, end: {dayobs_end} "
-              f"and telescope: {telescope}")
-        cons_db = ConsdbAdapter(
-            server_url=nd_utils.Server.get_url(),
-            max_dayobs=dayobs_end,
-            min_dayobs=dayobs_start,
-        )
-        logger.debug(f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}")
-        exposures = cons_db.get_exposures(instrument=telescope)
-        return exposures
-
-    except Exception as e:
-        logger.error(f"Error getting exposures: {e}")
-        return {}
 
 
 def get_exposures(
@@ -79,3 +70,43 @@ def get_exposures(
         logger.debug(f"Debug cdb.get_exposures {telescope=} {sql=}")
         logger.debug(f"Debug cdb.get_exposures: {exposures[0]=}")
     return exposures
+
+
+def get_data_log(
+    dayobs_start: int,
+    dayobs_end: int,
+    telescope: str,
+    auth_token: str = None,
+    ) -> dict:
+    """
+    Get Data Log fields from the ConsDB for a given time range and telescope.
+    """
+
+    data_log = {}
+    logger.info(f"Getting data log for start: "
+            f"{dayobs_start}, end: {dayobs_end} "
+            f"and telescope: {telescope}")
+    cons_db = ConsdbAdapter(
+        server_url=nd_utils.Server.get_url(),
+        max_dayobs=dayobs_end,
+        min_dayobs=dayobs_start,
+        auth_token=auth_token,
+    )
+    logger.debug(
+        f"max_dayobs: {cons_db.max_dayobs}, "
+        f"min_dayobs: {cons_db.min_dayobs}, "
+        f"telescope: {telescope}"
+    )
+    # Returns a pandas DataFrame
+    data_log = cons_db.get_exposures(instrument=telescope)
+
+    # Convert special floats (nans and infs) to strings
+    # This ensures that JSON serialisation does not fail
+    df_safe = data_log.applymap(stringify_special_floats)
+    records = df_safe.to_dict(orient="records")
+
+    if cons_db.verbose and len(data_log) > 0:
+        logger.debug(f"Debug cdb.get_data_log {telescope=} {dayobs_start=} {dayobs_end=}")
+        logger.debug(f"Debug cdb.get_data_log: {data_log[0]=}")
+
+    return records
