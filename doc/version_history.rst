@@ -1,3 +1,20 @@
+v0.6.0 (2025-07-16)
+===================
+
+New Features
+------------
+
+- Add 'can_see_sky' to consdb exposures query and return no of on-sky exposures and total on-sky exposure time in the /exposures endpoint response (`OSW-541 <https://rubinobs.atlassian.net//browse/OSW-541>`_)
+- Create backend services for Data Log page. (`OSW-572 <https://rubinobs.atlassian.net//browse/OSW-572>`_)
+
+
+Bug Fixes
+---------
+
+- Count for multiple nights when returning night hours in the almanac service to correct telescope efficiency calculation in frontend. The service now iterates over the dayobs range and sums night hours for each day. (`OSW-579 <https://rubinobs.atlassian.net//browse/OSW-579>`_)
+- Fix efficiency calculation by removing the extra loop in calculating night hours (`OSW-655 <https://rubinobs.atlassian.net//browse/OSW-655>`_)
+
+
 v0.5.0 (2025-07-01)
 ===================
 
