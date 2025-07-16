@@ -77,6 +77,7 @@ def get_exposurelog_entries(
     instrument: str,
     verbose: bool = False,
     limit: int = 2500,
+    auth_token: str = None,
 ) -> list[dict]:
     """
     Fetch all Exposure Log entries for an instrument and dayobs range.
@@ -86,6 +87,7 @@ def get_exposurelog_entries(
         max_dayobs=max_dayobs,
         limit=limit,
         verbose=verbose,
+        auth_token=auth_token,
     )
 
     # Get records

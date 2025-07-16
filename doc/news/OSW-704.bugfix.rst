@@ -1,0 +1,1 @@
+Add auth token to exposure log service get_exposurelog_entries
