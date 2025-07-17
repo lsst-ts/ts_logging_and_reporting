@@ -112,13 +112,13 @@ def test_get_data_log(mock_adapter_cls, mock_get_url, mock_get_auth_header, mock
     assert isinstance(result, list)
     assert len(result) == 3
 
-    row1 = result[1]
-    assert row1["dimm seeing"] is None
-    assert row1["zero point median"] == "NaN"
-    assert row1["psf sigma median"] == 3.576219103584274
-    assert row1["img type"] == "acq"
-    assert row1["test_inf_field"] == "inf"
-    assert row1["test_neg_inf_field"] == "-inf"
+    row0 = result[0]
+    assert row0["dimm seeing"] is None
+    assert row0["zero point median"] == "NaN"
+    assert row0["psf sigma median"] == 3.576219103584274
+    assert row0["img type"] == "acq"
+    assert row0["test_inf_field"] == "inf"
+    assert row0["test_neg_inf_field"] == "-inf"
 
     mock_adapter_cls.assert_called_once()
     mock_adapter.get_exposures.assert_called_once_with(instrument="LSSTcam")
