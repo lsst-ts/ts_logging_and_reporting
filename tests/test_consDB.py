@@ -95,23 +95,19 @@ def mock_dataframe():
 @patch("lsst.ts.logging_and_reporting.web_app.services.consdb_service.nd_utils.Server.get_url", return_value="mock://url")
 @patch("lsst.ts.logging_and_reporting.web_app.services.consdb_service.ConsdbAdapter")
 def test_get_data_log(mock_adapter_cls, mock_get_url, mock_get_auth_header, mock_dataframe):
-    # Arrange
     mock_adapter = MagicMock()
     mock_adapter.get_exposures.return_value = mock_dataframe
     mock_adapter.verbose = False
     mock_adapter_cls.return_value = mock_adapter
 
-    # Act
     result = get_data_log(
         dayobs_start=20250601,
         dayobs_end=20250601,
         telescope="LSSTcam"
     )
 
-    # Assert
     assert isinstance(result, list)
     assert len(result) == 3
-
     row0 = result[0]
     assert row0["dimm seeing"] == "NaN"
     assert row0["zero point median"] == "NaN"
