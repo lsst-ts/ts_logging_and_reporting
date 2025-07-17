@@ -88,10 +88,10 @@ def mock_dataframe():
         },
     ])
 
-
+@patch("lsst.ts.logging_and_reporting.utils.get_auth_header", return_value="Bearer mocktoken")
 @patch("lsst.ts.logging_and_reporting.utils.Server.get_url", return_value="mock://server.url")
 @patch("lsst.ts.logging_and_reporting.consdb.ConsdbAdapter")
-def test_get_data_log(mock_adapter_cls, mock_get_url, mock_dataframe):
+def test_get_data_log(mock_adapter_cls, mock_get_url, mock_get_auth_header, mock_dataframe):
     # Arrange
     mock_adapter = MagicMock()
     mock_adapter.get_exposures.return_value = mock_dataframe
