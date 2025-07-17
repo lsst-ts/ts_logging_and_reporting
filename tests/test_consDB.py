@@ -89,7 +89,7 @@ def mock_dataframe():
     ])
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.nd_utils.Server.get_url", return_value="mock://server.url")
+@patch("lsst.ts.logging_and_reporting.utils.Server.get_url", return_value="mock://server.url")
 @patch("lsst.ts.logging_and_reporting.consdb.ConsdbAdapter")
 def test_get_data_log(mock_adapter_cls, mock_get_url, mock_dataframe):
     # Arrange
