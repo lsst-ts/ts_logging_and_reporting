@@ -113,7 +113,7 @@ def test_get_data_log(mock_adapter_cls, mock_get_url, mock_get_auth_header, mock
     assert len(result) == 3
 
     row0 = result[0]
-    assert row0["dimm seeing"] is None
+    assert row0["dimm seeing"] == "NaN"
     assert row0["zero point median"] == "NaN"
     assert row0["psf sigma median"] == 3.576219103584274
     assert row0["img type"] == "acq"
