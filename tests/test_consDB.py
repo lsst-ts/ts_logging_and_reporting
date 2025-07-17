@@ -89,10 +89,10 @@ def mock_dataframe():
     ])
 
 @patch(
-        "lsst.ts.logging_and_reporting.utils.get_auth_header",
+        "lsst.ts.logging_and_reporting.ut.get_auth_header",
         return_value={"Authorization": "Bearer mocktoken"}
     )
-@patch("lsst.ts.logging_and_reporting.utils.Server.get_url", return_value="mock://server.url")
+@patch("lsst.ts.logging_and_reporting.web_app.services.consdb_service.nd_utils.Server.get_url", return_value="mock://url")
 @patch("lsst.ts.logging_and_reporting.consdb.ConsdbAdapter")
 def test_get_data_log(mock_adapter_cls, mock_get_url, mock_get_auth_header, mock_dataframe):
     # Arrange
