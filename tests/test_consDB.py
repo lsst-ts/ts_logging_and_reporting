@@ -93,7 +93,7 @@ def mock_dataframe():
         return_value={"Authorization": "Bearer mocktoken"}
     )
 @patch("lsst.ts.logging_and_reporting.web_app.services.consdb_service.nd_utils.Server.get_url", return_value="mock://url")
-@patch("lsst.ts.logging_and_reporting.consdb.ConsdbAdapter")
+@patch("lsst.ts.logging_and_reporting.web_app.services.consdb_service.ConsdbAdapter")
 def test_get_data_log(mock_adapter_cls, mock_get_url, mock_get_auth_header, mock_dataframe):
     # Arrange
     mock_adapter = MagicMock()
