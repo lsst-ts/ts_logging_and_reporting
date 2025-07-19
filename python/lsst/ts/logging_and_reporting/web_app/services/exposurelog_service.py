@@ -18,16 +18,18 @@ def get_exposure_flags(
 
     Parameters
     ----------
-    min_dayobs : str
+    min_dayobs : `str`
         Inclusive lower bound for day_obs (e.g., "2025-06-01").
-    max_dayobs : str
+    max_dayobs : `str`
         Exclusive upper bound for day_obs (e.g., "2025-06-03").
-    instrument : str
+    instrument : `str`
         Instrument to filter by (e.g., "LSSTComCam").
-    verbose : bool
+    verbose : `bool`
         Enable verbose logging/debugging.
-    limit : int
+    limit : `int`
         Maximum number of records to request per page (default 2500).
+    auth_token: `str`
+        Authorization token to be passed to the ExposurelogAdapter.
 
     Returns
     -------
@@ -77,15 +79,37 @@ def get_exposurelog_entries(
     instrument: str,
     verbose: bool = False,
     limit: int = 2500,
+    auth_token: str = None,
 ) -> list[dict]:
     """
     Fetch all Exposure Log entries for an instrument and dayobs range.
+
+    Parameters
+    ----------
+    min_dayobs : `str`
+        Inclusive lower bound for day_obs (e.g., "2025-06-01").
+    max_dayobs : `str`
+        Exclusive upper bound for day_obs (e.g., "2025-06-03").
+    instrument : `str`
+        Instrument to filter by (e.g., "LSSTComCam").
+    verbose : `bool`
+        Enable verbose logging/debugging.
+    limit : `int`
+        Maximum number of records to request per page (default 2500).
+    auth_token: `str`
+        Authorization token to be passed to the ExposurelogAdapter.
+
+    Returns
+    -------
+    List[dict]
+        List of each Exposure Log entry, each a dict.
     """
     adapter = ExposurelogAdapter(
         min_dayobs=min_dayobs,
         max_dayobs=max_dayobs,
         limit=limit,
         verbose=verbose,
+        auth_token=auth_token,
     )
 
     # Get records
