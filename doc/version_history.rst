@@ -1,3 +1,12 @@
+v0.6.1 (2025-07-19)
+===================
+
+Bug Fixes
+---------
+
+- Add auth token to exposure log service get_exposurelog_entries (`OSW-704 <https://rubinobs.atlassian.net//browse/OSW-704>`_)
+
+
 v0.6.0 (2025-07-16)
 ===================
 
