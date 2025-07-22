@@ -1,0 +1,1 @@
+Pass auth as dependency through FastAPI endpoint.
