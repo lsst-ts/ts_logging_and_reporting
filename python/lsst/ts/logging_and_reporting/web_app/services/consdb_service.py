@@ -102,7 +102,7 @@ def get_data_log(
 
     # Convert special floats (nans and infs) to strings
     # This ensures that JSON serialisation does not fail
-    df_safe = data_log.applymap(stringify_special_floats)
+    df_safe = data_log.map(stringify_special_floats)
     records = df_safe.to_dict(orient="records")
 
     if cons_db.verbose and len(data_log) > 0:
