@@ -8,7 +8,12 @@ from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogre
 from lsst.ts.logging_and_reporting.utils import get_access_token
 
 from .services.jira_service import get_jira_tickets
-from .services.consdb_service import get_mock_exposures, get_exposures, get_data_log
+from .services.consdb_service import (
+    get_mock_exposures,
+    get_exposures,
+    get_data_log,
+    get_transformed_efd,
+)
 from .services.almanac_service import get_almanac_night_hours
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
@@ -226,4 +231,26 @@ async def read_exposure_entries(
         }
     except Exception as e:
         logger.error(f"Error in /exposure-entries: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/transformed_efd")
+async def get_transformed_data(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
+    logger.info(
+        f"Query transformed_efd table from ConsDB for dayObsStart: {dayObsStart}, "
+        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+    )
+    try:
+        rows = get_transformed_efd(dayObsStart, dayObsEnd, instrument, auth_token)
+        return {
+            "rows": rows,
+        }
+    except Exception as e:
+        logger.error(f"Error in /transformed_efd: {e}")
         raise HTTPException(status_code=500, detail=str(e))
