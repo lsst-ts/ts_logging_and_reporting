@@ -14,7 +14,7 @@ from .services.consdb_service import (
     get_data_log,
     get_transformed_efd,
 )
-from .services.almanac_service import get_almanac_night_hours
+from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 
@@ -147,8 +147,8 @@ async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
         f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
     )
     try:
-        night_hours = get_almanac_night_hours(dayObsStart, dayObsEnd)
-        return {"night_hours": night_hours}
+        almanac_info = get_almanac(dayObsStart, dayObsEnd)
+        return {"almanac_info": almanac_info}
     except Exception as e:
         logger.error(f"Error in /almanac: {e}")
         raise HTTPException(status_code=500, detail=str(e))
