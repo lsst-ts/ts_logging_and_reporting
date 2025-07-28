@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 def get_almanac(dayobs_start: int, dayobs_end: int) -> list:
     logger.info(f"Getting almanac for start: {dayobs_start}, end: {dayobs_end}")
     try:
-        start = datetime.strptime(str(dayobs_start), '%Y%m%d')
-        end = datetime.strptime(str(dayobs_end), '%Y%m%d')
+        start = datetime.strptime(str(dayobs_start), '%Y%m%d') + timedelta(days=1)
+        end = datetime.strptime(str(dayobs_end), '%Y%m%d') + timedelta(days=1)
         almanac_info = []
         current = start
         while current < end:
