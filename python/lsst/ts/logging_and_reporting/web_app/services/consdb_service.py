@@ -61,7 +61,8 @@ def get_exposures(
     ssql = f"""
         SELECT e.exposure_id, e.exposure_name, e.exp_time, e.img_type,
               e.observation_reason, e.science_program, e.target_name,
-              e.can_see_sky, e.band, e.dimm_seeing, e.obs_start, e.physical_filter,
+              e.can_see_sky, e.band, e.dimm_seeing, e.obs_start,
+              e.physical_filter, e.day_obs,
               q.zero_point_median, q.visit_id
         FROM cdb_{telescope}.exposure e, cdb_{telescope}.visit1_quicklook q
         WHERE e.exposure_id = q.visit_id
