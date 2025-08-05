@@ -59,12 +59,15 @@ def get_exposures(
         f"telescope: {telescope}"
     )
     ssql = f"""
-        SELECT exposure_id, exposure_name, exp_time, img_type,
-              observation_reason, science_program, target_name,
-              can_see_sky
-        FROM cdb_{telescope}.exposure e
-        WHERE {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
-            AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
+        SELECT e.exposure_id, e.exposure_name, e.exp_time, e.img_type,
+              e.observation_reason, e.science_program, e.target_name,
+              e.can_see_sky, e.band, e.obs_start, e.physical_filter,
+              e.day_obs, q.zero_point_median, q.visit_id,
+              q.pixel_scale_median, q.psf_sigma_median
+        FROM cdb_{telescope}.exposure e, cdb_{telescope}.visit1_quicklook q
+        WHERE e.exposure_id = q.visit_id
+        AND {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
+        AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
     """
 
     sql = " ".join(ssql.split())
