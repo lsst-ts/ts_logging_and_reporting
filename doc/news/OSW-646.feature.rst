@@ -1,1 +1,0 @@
-Update ConsDB and Almanac services to support Observing Conditions Applet

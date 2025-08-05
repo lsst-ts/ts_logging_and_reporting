@@ -1,3 +1,20 @@
+v0.7.0 (2025-08-05)
+===================
+
+New Features
+------------
+
+- Add function to query ConsDb's transformed efd tables. (`OSW-629 <https://rubinobs.atlassian.net//browse/OSW-629>`_)
+- Update ConsDB and Almanac services to support Observing Conditions Applet (`OSW-646 <https://rubinobs.atlassian.net//browse/OSW-646>`_)
+
+
+Bug Fixes
+---------
+
+- Swap out deprecated applymap method. (`OSW-703 <https://rubinobs.atlassian.net//browse/OSW-703>`_)
+- Pass auth as dependency through FastAPI endpoint. (`OSW-704 <https://rubinobs.atlassian.net//browse/OSW-704>`_)
+
+
 v0.6.1 (2025-07-19)
 ===================
 
