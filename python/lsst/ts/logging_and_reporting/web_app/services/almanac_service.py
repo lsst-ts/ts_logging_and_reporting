@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 def get_almanac(dayobs_start: int, dayobs_end: int) -> list:
     logger.info(f"Getting almanac for start: {dayobs_start}, end: {dayobs_end}")
     try:
+        # adding one day to the start and end dates as the Almanac adapter
+        # considers only max_dayobs, which is exclused from the dayobs range
         start = datetime.strptime(str(dayobs_start), '%Y%m%d') + timedelta(days=1)
         end = datetime.strptime(str(dayobs_end), '%Y%m%d') + timedelta(days=1)
         almanac_info = []
