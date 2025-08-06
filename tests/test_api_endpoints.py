@@ -1,4 +1,5 @@
 import os
+import pytest
 import requests
 
 import lsst.ts.logging_and_reporting.utils as ut
@@ -581,11 +582,25 @@ def _test_endpoint_authentication(endpoint):
     _test_endpoint_no_auth(endpoint)
 
 
-def test_exposure_entries_endpoint():
-    mock_requests_get_patcher = patch("requests.get")
-    mock_requests_get = mock_requests_get_patcher.start()
-    mock_requests_get.side_effect = mock_get_response_generator()
+@pytest.fixture
+def mock_requests_get():
+    patcher = patch("requests.get")
+    mock_get = patcher.start()
+    mock_get.side_effect = mock_get_response_generator()
+    yield mock_get
+    patcher.stop()
 
+
+@pytest.fixture
+def mock_requests_post():
+    patcher = patch("requests.post")
+    mock_post = patcher.start()
+    mock_post.side_effect = mock_post_response_generator()
+    yield mock_post
+    patcher.stop()
+
+
+def test_exposure_entries_endpoint(mock_requests_get):
     endpoint = (
         "/exposure-entries?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     )
@@ -621,18 +636,8 @@ def test_exposure_entries_endpoint():
             assert param in entry, f"Missing {param} in exposure entry: {entry}"
     app.dependency_overrides.pop(get_access_token, None)
 
-    mock_requests_get_patcher.stop()
 
-
-def test_exposures_endpoint():
-    mock_requests_get_patcher = patch("requests.get")
-    mock_requests_get = mock_requests_get_patcher.start()
-    mock_requests_get.side_effect = mock_get_response_generator()
-
-    mock_requests_post_patcher = patch("requests.post")
-    mock_requests_post = mock_requests_post_patcher.start()
-    mock_requests_post.side_effect = mock_post_response_generator()
-
+def test_exposures_endpoint(mock_requests_get, mock_requests_post):
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     _test_endpoint_authentication(endpoint)
 
@@ -647,8 +652,6 @@ def test_exposures_endpoint():
     assert data["total_on_sky_exposure_time"] == 30
 
     app.dependency_overrides.pop(get_access_token, None)
-    mock_requests_get_patcher.stop()
-    mock_requests_post_patcher.stop()
 
 
 def test_almanac_endpoint(monkeypatch):
