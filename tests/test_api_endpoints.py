@@ -541,20 +541,20 @@ def mock_post_response_generator():
         yield response_post
 
 
-def test_endpoint_auth_header(endpoint):
+def _test_endpoint_auth_header(endpoint):
     headers = {"Authorization": "Bearer header-token"}
     response = client.get(endpoint, headers=headers)
     assert response.status_code == 200
 
 
-def test_endpoint_auth_env_var(endpoint):
+def _test_endpoint_auth_env_var(endpoint):
     os.environ["ACCESS_TOKEN"] = "env-token"
     response = client.get(endpoint)
     assert response.status_code == 200
     del os.environ["ACCESS_TOKEN"]
 
 
-def test_endpoint_auth_rsp_utils(endpoint):
+def _test_endpoint_auth_rsp_utils(endpoint):
     mock_lsst = Mock()
     mock_lsst.rsp.utils.get_info.return_value = "mocked-token"
 
@@ -569,16 +569,16 @@ def test_endpoint_auth_rsp_utils(endpoint):
         assert response.status_code == 200
 
 
-def test_endpoint_no_auth(endpoint):
+def _test_endpoint_no_auth(endpoint):
     response = client.get(endpoint)
     assert response.status_code == 401
 
 
-def test_endpoint_authentication(endpoint):
-    test_endpoint_auth_header(endpoint)
-    test_endpoint_auth_env_var(endpoint)
-    test_endpoint_auth_rsp_utils(endpoint)
-    test_endpoint_no_auth(endpoint)
+def _test_endpoint_authentication(endpoint):
+    _test_endpoint_auth_header(endpoint)
+    _test_endpoint_auth_env_var(endpoint)
+    _test_endpoint_auth_rsp_utils(endpoint)
+    _test_endpoint_no_auth(endpoint)
 
 
 def test_exposure_entries_endpoint():
@@ -589,7 +589,7 @@ def test_exposure_entries_endpoint():
     endpoint = (
         "/exposure-entries?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     )
-    test_endpoint_authentication(endpoint)
+    _test_endpoint_authentication(endpoint)
 
     app.dependency_overrides[get_access_token] = lambda: "dummy-token"
     response = client.get(endpoint)
@@ -634,7 +634,7 @@ def test_exposures_endpoint():
     mock_requests_post.side_effect = mock_post_response_generator()
 
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    test_endpoint_authentication(endpoint)
+    _test_endpoint_authentication(endpoint)
 
     app.dependency_overrides[get_access_token] = lambda: "dummy-token"
     response = client.get(endpoint)
