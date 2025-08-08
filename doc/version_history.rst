@@ -1,3 +1,12 @@
+v0.7.1 (2025-08-07)
+===================
+
+Bug Fixes
+---------
+
+- Fix exposurelog-entries authorization setting and improve endpoints testing. (`OSW-808 <https://rubinobs.atlassian.net//browse/OSW-808>`_)
+
+
 v0.7.0 (2025-08-05)
 ===================
 
