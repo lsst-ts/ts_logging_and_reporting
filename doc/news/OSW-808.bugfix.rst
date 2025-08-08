@@ -1,1 +1,0 @@
-Fix exposurelog-entries authorization setting and improve endpoints testing.
