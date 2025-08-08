@@ -109,7 +109,7 @@ async def read_data_log(
         f"and instrument: {instrument}"
     )
     try:
-        records = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token)
+        records = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         return jsonable_encoder({"data_log": records})
 
     except ConsdbQueryError as ce:
@@ -224,7 +224,7 @@ async def read_exposure_entries(
     )
     try:
         entries = get_exposurelog_entries(
-            dayObsStart, dayObsEnd, instrument, auth_token
+            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
         )
         return {
             "exposure_entries": entries,
@@ -247,7 +247,7 @@ async def get_transformed_data(
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
     try:
-        rows = get_transformed_efd(dayObsStart, dayObsEnd, instrument, auth_token)
+        rows = get_transformed_efd(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         return {
             "rows": rows,
         }
