@@ -841,7 +841,7 @@ class NarrativelogAdapter(SourceAdapter):
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
-            order_by="-date_added",
+            order_by="-date_begin",
             offset=0,
             limit=self.limit,
         )
@@ -850,11 +850,11 @@ class NarrativelogAdapter(SourceAdapter):
         if message_text:
             qparams["message_text"] = message_text
         if self.min_date:
-            qparams["min_date_added"] = dt.datetime.combine(
+            qparams["min_date_begin"] = dt.datetime.combine(
                 self.min_date, dt.time(12, 0)
             ).isoformat()
         if self.max_date:
-            qparams["max_date_added"] = dt.datetime.combine(
+            qparams["max_date_begin"] = dt.datetime.combine(
                 self.max_date, dt.time(11, 59, 59)
             ).isoformat()
 
