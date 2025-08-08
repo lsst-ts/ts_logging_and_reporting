@@ -793,7 +793,7 @@ class NarrativelogAdapter(SourceAdapter):
 
         LSST_DAYOBS = 20250120
         for rec in records:
-            dayobs = int(rec["date_added"][:8].replace("-", ""))
+            dayobs = int(rec["date_added"][:10].replace("-", ""))
             if rec["components_json"] is None:
                 instrument = None
             elif rec["components_json"].get("name") == "AuxTel":
@@ -851,11 +851,11 @@ class NarrativelogAdapter(SourceAdapter):
             qparams["message_text"] = message_text
         if self.min_date:
             qparams["min_date_added"] = dt.datetime.combine(
-                self.min_date, dt.time()
+                self.min_date, dt.time(12, 0)
             ).isoformat()
         if self.max_date:
             qparams["max_date_added"] = dt.datetime.combine(
-                self.max_date, dt.time()
+                self.max_date, dt.time(11, 59, 59)
             ).isoformat()
 
         error = None
