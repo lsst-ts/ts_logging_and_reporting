@@ -458,25 +458,25 @@ SERVICE_ENDPOINT_MOCK_RESPONSES = {
 }
 
 
-def mock_get_response_generator():
-    """Generator function that yields
+def mock_get_response():
+    """Function that returns
     a mocked `requests.Response` object for simulating HTTP GET requests.
 
-    The yielded response object has a status code of 200 and
+    The returned response object has a status code of 200 and
     a custom `.json()` method that returns a mock payload
     based on the requested endpoint. The endpoint is determined
     by extracting the URL from the most recent call to `requests.get`
     and mapping it to a predefined mock response.
 
-    A generator is used to allow for multiple calls to the
-    `requests.get` method by using mock.side_effect.
+    Intended to be used with `unittest.mock.patch` to mock
+    the `requests.get` method in tests.
 
     Examples
     --------
     ```python
     mock_requests_get_patcher = patch("requests.get")
     mock_requests_get = mock_requests_get_patcher.start()
-    mock_requests_get.side_effect = mock_get_response_generator()
+    mock_requests_get.return_value = mock_get_response()
     ... calls to requests.get ...
     mock_requests_get_patcher.stop()
     ```
@@ -496,29 +496,28 @@ def mock_get_response_generator():
         return SERVICE_ENDPOINT_MOCK_RESPONSES[endpoint]
 
     response_get.json = response_json_payload
-    while True:
-        yield response_get
+    return response_get
 
 
-def mock_post_response_generator():
-    """Generator function that yields
+def mock_post_response():
+    """Function that returns
     a mocked `requests.Response` object for simulating HTTP POST requests.
 
-    The yielded response object has a status code of 200 and
+    The returned response object has a status code of 200 and
     a custom `.json()` method that returns a mock payload
     based on the requested endpoint. The endpoint is determined
     by extracting the URL from the most recent call to `requests.post`
     and mapping it to a predefined mock response.
 
-    A generator is used to allow for multiple calls to the
-    `requests.post` method by using mock.side_effect.
+    Intended to be used with `unittest.mock.patch` to mock
+    the `requests.post` method in tests.
 
     Examples
     --------
     ```python
     mock_requests_post_patcher = patch("requests.post")
     mock_requests_post = mock_requests_post_patcher.start()
-    mock_requests_post.side_effect = mock_post_response_generator()
+    mock_requests_post.return_value = mock_post_response()
     ... calls to requests.post ...
     mock_requests_post_patcher.stop()
     ```
@@ -538,8 +537,7 @@ def mock_post_response_generator():
         return SERVICE_ENDPOINT_MOCK_RESPONSES[endpoint]
 
     response_post.json = response_json_payload
-    while True:
-        yield response_post
+    return response_post
 
 
 def _test_endpoint_auth_header(endpoint):
@@ -586,7 +584,7 @@ def _test_endpoint_authentication(endpoint):
 def mock_requests_get():
     patcher = patch("requests.get")
     mock_get = patcher.start()
-    mock_get.side_effect = mock_get_response_generator()
+    mock_get.return_value = mock_get_response()
     yield mock_get
     patcher.stop()
 
@@ -595,7 +593,7 @@ def mock_requests_get():
 def mock_requests_post():
     patcher = patch("requests.post")
     mock_post = patcher.start()
-    mock_post.side_effect = mock_post_response_generator()
+    mock_post.return_value = mock_post_response()
     yield mock_post
     patcher.stop()
 
