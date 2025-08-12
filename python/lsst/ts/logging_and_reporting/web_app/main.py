@@ -17,6 +17,7 @@ from .services.consdb_service import (
 from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
+from .services.nightreport_service import get_night_reports
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -253,4 +254,23 @@ async def get_transformed_data(
         }
     except Exception as e:
         logger.error(f"Error in /transformed_efd: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/night-reports")
+async def read_nightreport(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    auth_token: str = Depends(get_access_token),
+):
+    try:
+        records = get_night_reports(
+            dayObsStart, dayObsEnd, auth_token=auth_token
+        )
+        return {
+            "reports": records,
+        }
+    except Exception as e:
+        logger.error(f"Error in /night-reports: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -436,7 +436,6 @@ class SourceAdapter(ABC):
 # END: class SourceAdapter
 
 
-# Not available on SLAC (usdf) as of 9/9/2024.
 class NightReportAdapter(SourceAdapter):
     abbrev = "NIG"
     outfields = {
@@ -451,8 +450,9 @@ class NightReportAdapter(SourceAdapter):
         "parent_id",
         "site_id",
         "summary",
-        "telescope",
-        "telescope_status",
+        "weather",
+        "maintel_summary",
+        "auxtel_summary",
         "user_agent",
         "user_id",
     }
@@ -494,7 +494,9 @@ class NightReportAdapter(SourceAdapter):
     @property
     def sources(self):
         return {
-            "Nightreport API": f"{self.server}/{self.service}/{self.primary_endpoint}"
+            "Nightreport API": (
+                f"{self.server}/{self.service}/{self.primary_endpoint}"
+            )
         }
 
     @property

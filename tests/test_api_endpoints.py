@@ -67,6 +67,103 @@ SERVICE_ENDPOINT_MOCK_RESPONSES = {
             "parent_id": None,
         },
     ],
+    "/nightreport/reports": [
+        {
+            "id": "10753873-f651-4e3b-9832-f7c42661aea6",
+            "site_id": "summit",
+            "day_obs": 20250730,
+            "summary": (
+                "In terms of the checkout and procedures, AuxTel and Simonyi"
+                " passed without major issues. \nAlarm for Chiller.2 and "
+                "Chiller.3, were triggered; they seemed not to be real,"
+                " it was more likely a software issue. This problem is"
+                " still under investigation.\n\nA couple of AOS test were"
+                " completed during the Simonyi night, together with SV FBS"
+                " observations. AuxTel was up most of the night with only"
+                " one recurrent issue that was temporarily solved."
+            ),
+            "weather": (
+                "Warm and clear sky. The evening outside temperature "
+                "reported was around 12°C. The air temperature at sunset"
+                " is 11.7°C, and the wind speed ~3.5 m/s. At around 02:00"
+                " UT the sky covered by clouds for about 30 minutes."
+                " The rest of the night was clear."
+            ),
+            "maintel_summary": (
+                "Operational activities Hardpoint and Bump Test for M1M3,"
+                " were conducted successfully, and the MTCamera completed"
+                " its warm-up without issues. Today, the M2 hexapod warm-up"
+                " was run in the calibration position. During the initial"
+                " attempt, using max_iteration value of 700, the script"
+                " published many TimeOut errors until it eventually failed."
+                " We cycled the Hexapod CSC, changed the max_iter value to"
+                " 500, and the script completed, even though it was clear"
+                " that \"y\" and \"x\" were struggling to complete movements"
+                " even at 22 degrees elevation. \nThe HVAC chiller triggered"
+                " the system's alarms, reporting pressure-related alarms"
+                " likely caused by a temporary software communication glitch."
+                " This was resolved on its own; the telemetry was recovered,"
+                " and the system was working at 100% (OBS-1171).  \n\nOnce"
+                " on-sky, we started with the Initial alignment block"
+                " (BLOCK-T539). Afterwards we moved to BLOCK-T579 LUT Update"
+                " Test with one dome fault (OBS-696) instance. At 02:00 "
+                "clouds covered the sky, after 30 minutes they sky cleared"
+                " up and we were able to continue. Once the LUT Update Test"
+                " was finished we moved to SV FBS observations. At the end "
+                "of the night we completed the remaining bending modes of "
+                "the BLOCK-T598 Sensitivity Matrix Repeatability "
+                "(m2_b10, m2_b11, m2_dz). \n\nDuring SV FBS, we had a "
+                "recurrent fault in the scheduler reporting to fail to update"
+                " telemetry (OBS-1160). The issue seems related with the "
+                "lfa files from DREAM. A change in the scheduler "
+                "configuration was deployed avoiding the issue for the rest"
+                " of SV FBS observations.\n\nThe \"water drop noise\" was"
+                " heard several instances. The timestamps are recorder "
+                "on OBS-1158.\n"
+            ),
+            "auxtel_summary": (
+                "AuxTel Weekend Calibrations have been performed. The "
+                "ATQueue was fulfilled with the procedure prepared to"
+                " go on sky, and fulffiled with a re-enabling of "
+                "the Scheduler2 after the venting procedure."
+                " The venting stops at 22.13 UTC, and the Scheduler"
+                " waits until 22:49 UTC before populating the observing"
+                " queue (Sun elevation -8 degrees).\n\nThe procedure to"
+                " switch off the ATWhiteLight, after calibrations, did"
+                " not work properly. The problem was that the "
+                "MTWhileLight CSC was not connected to the lamp "
+                "controller, we executed the \"power_on_atcalsys\" "
+                "script, and the CSC went to fault, turned off the light"
+                " (OBS-1172).\n\nOnce we went to sky, we were not able"
+                " to correct for pointing and LATISS images were not"
+                " properly transferred, it was found that the DIMM set"
+                " the SEEING header value to .nan making that the"
+                " rapid analysis failed (OBS-1174), User 1. and "
+                "User 2. provided support to help find the solution."
+                " \n\nAuxTel correct_pointing recurrent issues (OBS-1169)"
+                " has been temporary solved by User 3. who identify that "
+                "the ATPtg.mountPositions topic stopped publishing on the"
+                " night of Aug 9th. Possibly related with the power glitch"
+                " suffered that night. The ATMCS cRIO/ATMCS CSC in argoCD"
+                " were restarted without success in the telemetry return."
+                " Since the topic was only informative, it was removed "
+                "from the info statement on the run branch. \n"
+            ),
+            "confluence_url": "https://rubinobs.atlassian.net/projects/BLOCK?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/testPlayer/BLOCK-R341",
+            "user_id": "test@localhost",
+            "user_agent": "nightreport-service",
+            "date_added": "2025-07-30T22:06:14.003952",
+            "date_sent": "2025-07-31T09:59:14.156767",
+            "is_valid": True,
+            "date_invalidated": None,
+            "parent_id": "7b4881c2-aed9-45f3-8710-513c368b2338",
+            "observers_crew": [
+                "User 1",
+                "User 2",
+                "User 3",
+            ],
+        }
+    ],
     "/consdb/schema": {
         "schema": [],
     },
@@ -596,6 +693,40 @@ def mock_requests_post():
     mock_post.return_value = mock_post_response()
     yield mock_post
     patcher.stop()
+
+
+def test_nightreport_endpoint(mock_requests_get):
+    endpoint = "/night-reports?dayObsStart=20250730&dayObsEnd=20250731"
+    _test_endpoint_authentication(endpoint)
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    data = response.json()
+    assert "reports" in data
+    assert len(data["reports"]) == 1
+    report = data["reports"][0]
+    expected_params = [
+        "id",
+        "site_id",
+        "day_obs",
+        "summary",
+        "weather",
+        "maintel_summary",
+        "auxtel_summary",
+        "confluence_url",
+        "user_id",
+        "user_agent",
+        "date_added",
+        "date_sent",
+        "is_valid",
+        "date_invalidated",
+        "parent_id",
+        "observers_crew",
+    ]
+    for param in expected_params:
+        assert param in report, f"Missing {param} in night report: {report}"
+    app.dependency_overrides.pop(get_access_token, None)
 
 
 def test_exposure_entries_endpoint(mock_requests_get):
