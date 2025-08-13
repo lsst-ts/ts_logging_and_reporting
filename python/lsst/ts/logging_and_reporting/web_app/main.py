@@ -168,7 +168,7 @@ async def read_narrative_log(
     )
     try:
         records = get_messages(
-            dayObsStart, dayObsEnd, "LSSTComCam", auth_token=auth_token
+            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
         )
         time_lost_to_weather = sum(
             msg["time_lost"] for msg in records if msg["time_lost_type"] == "weather"

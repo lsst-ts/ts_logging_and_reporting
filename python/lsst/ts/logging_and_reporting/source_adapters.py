@@ -782,18 +782,28 @@ class NarrativelogAdapter(SourceAdapter):
         exposures.
         Therefore, we must map Telescope to the Instrument that is assumed to
         be on the Telescope.
-        We always assume Telescope=AuxTel means Instrument=LATISS
+        We always assume Telescope=AuxTel means Instrument=LATISS.
         For Telescope=MainTel (aka Simonyi) the Instrument assumed is different
-        depending on the dayobs.
-        Prior to dayobs=2025-01-19 we assume Instrument=LSSTComCam
-          from then on we assume Instrument=LSSTCam.
+        depending on the date when the log was added.
+        Prior to 2025-01-19 we assume Instrument=LSSTComCam
+        from then on we assume Instrument=LSSTCam.
         For any Telescope value other than AuxTel or MainTel we ignore the data
-          (but warn about what Telescope we are ignoring).
+        (but warn about what Telescope we are ignoring).
+
+        Parameters
+        ----------
+        records : `list` [`dict`]
+            List of records to process.
+
+        Returns
+        -------
+        updated_records : `list` [`dict`]
+            List of records with 'instrument' field added.
         """
 
-        LSST_DAYOBS = 20250120
+        LSST_DAY = 20250120
         for rec in records:
-            dayobs = int(rec["date_added"][:8].replace("-", ""))
+            day_added = int(rec["date_added"][:10].replace("-", ""))
             if rec["components_json"] is None:
                 instrument = None
             elif rec["components_json"].get("name") == "AuxTel":
@@ -815,12 +825,14 @@ class NarrativelogAdapter(SourceAdapter):
                     "Expected one of {AuxTel, MainTel, Simonyi} "
                     f"got {components=}. "
                 )
-                warnings.warn(msg, category=ex.UnknownTelescopeWarning, stacklevel=2)
+                warnings.warn(
+                    msg, category=ex.UnknownTelescopeWarning, stacklevel=2
+                )
 
             if instrument == "lsst":
-                if dayobs >= LSST_DAYOBS:
+                if day_added >= LSST_DAY:
                     rec["instrument"] = "LSSTCam"
-                else:  # dayobs < LSST_DAYOBS
+                else:
                     rec["instrument"] = "LSSTComCam"
             else:
                 rec["instrument"] = instrument
@@ -841,7 +853,7 @@ class NarrativelogAdapter(SourceAdapter):
         qparams = dict(
             is_human=is_human,
             is_valid=is_valid,
-            order_by="-date_added",
+            order_by="-date_begin",
             offset=0,
             limit=self.limit,
         )
@@ -850,12 +862,12 @@ class NarrativelogAdapter(SourceAdapter):
         if message_text:
             qparams["message_text"] = message_text
         if self.min_date:
-            qparams["min_date_added"] = dt.datetime.combine(
-                self.min_date, dt.time()
+            qparams["min_date_begin"] = dt.datetime.combine(
+                self.min_date, dt.time(12, 0)
             ).isoformat()
         if self.max_date:
-            qparams["max_date_added"] = dt.datetime.combine(
-                self.max_date, dt.time()
+            qparams["max_date_begin"] = dt.datetime.combine(
+                self.max_date, dt.time(11, 59, 59)
             ).isoformat()
 
         error = None
