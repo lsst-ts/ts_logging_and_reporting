@@ -1,0 +1,1 @@
+query exposure `seq_num` from consdb to be used in obsering consitions applet tooltip
