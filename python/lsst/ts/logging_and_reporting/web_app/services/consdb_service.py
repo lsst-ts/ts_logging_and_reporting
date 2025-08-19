@@ -1,10 +1,10 @@
 import logging
 import numpy as np
 from astropy.table import Table
+import pandas as pd
 
 from lsst.ts.logging_and_reporting.consdb import ConsdbAdapter
 import lsst.ts.logging_and_reporting.utils as nd_utils
-
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,12 @@ def get_data_log(
     )
     # Returns a pandas DataFrame
     data_log = cons_db.get_exposures(instrument=telescope)
+    transformed_efd_data = cons_db.get_transformed_efd_data(instrument=telescope)
+    if len(data_log) > 0 and len(transformed_efd_data) > 0:
+        # Add transformed efd dataframe to data_log dataframe
+        data_log = pd.merge(
+            data_log, transformed_efd_data, on="exposure id", how="inner"
+        )
 
     # Convert special floats (nans and infs) to strings
     # This ensures that JSON serialisation does not fail
@@ -122,59 +128,3 @@ def get_data_log(
         logger.debug(f"Debug cdb.get_data_log: {data_log[0]=}")
 
     return records
-
-
-def get_transformed_efd(
-    dayobs_start: int,
-    dayobs_end: int,
-    telescope: str,
-    auth_token: str = None,
-) -> dict:
-
-    exposures = {}
-    logger.info(
-        f"Getting transformed efd data for start: {dayobs_start}, "
-        f"end: {dayobs_end} and telescope: {telescope}"
-    )
-
-    cons_db = ConsdbAdapter(
-        server_url=nd_utils.Server.get_url(),
-        max_dayobs=dayobs_end,
-        min_dayobs=dayobs_start,
-        auth_token=auth_token,
-    )
-
-    logger.debug(
-        f"max_dayobs: {cons_db.max_dayobs}, "
-        f"min_dayobs: {cons_db.min_dayobs}, "
-        f"telescope: {telescope}"
-    )
-    # TODO: These temperatures return None, follow up with OSW-779
-    temperatures = [
-        "mt_salindex102_temperature_0_mean",
-        "mt_salindex102_temperature_0_stddev",
-        "mt_salindex102_temperature_0_min",
-        "mt_salindex102_temperature_0_max",
-    ]
-
-    ssql = f"""
-        SELECT
-            exposure_id,
-            created_at,
-            {", ".join(temperatures)}
-        FROM
-            efd_{telescope}.exposure_efd e
-        WHERE
-            exposure_id
-            BETWEEN {nd_utils.dayobs_int(cons_db.min_dayobs)}00000
-            AND {nd_utils.dayobs_int(cons_db.max_dayobs)}99999;
-        """
-
-    sql = " ".join(ssql.split())
-    exposures = cons_db.query(sql)
-
-    if cons_db.verbose and len(exposures) > 0:
-        logger.debug(f"Debug cdb.get_exposures {telescope=} {sql=}")
-        logger.debug(f"Debug cdb.get_exposures: {exposures[0]=}")
-
-    return exposures

@@ -12,7 +12,6 @@ from .services.consdb_service import (
     get_mock_exposures,
     get_exposures,
     get_data_log,
-    get_transformed_efd,
 )
 from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
@@ -110,14 +109,16 @@ async def read_data_log(
         f"and instrument: {instrument}"
     )
     try:
-        records = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        records = get_data_log(
+            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
+        )
         return jsonable_encoder({"data_log": records})
 
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /data-log: {ce}")
         raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
-        logger.error(f"Error in /data-log: {e}")
+        logger.error(f"Error in /data-log: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -145,7 +146,7 @@ async def read_jira_tickets(
 @app.get("/almanac")
 async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
     logger.info(
-        f"Getting alamanc for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
+        f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
     )
     try:
         almanac_info = get_almanac(dayObsStart, dayObsEnd)
@@ -235,28 +236,6 @@ async def read_exposure_entries(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/transformed_efd")
-async def get_transformed_data(
-    request: Request,
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
-    auth_token: str = Depends(get_access_token),
-):
-    logger.info(
-        f"Query transformed_efd table from ConsDB for dayObsStart: {dayObsStart}, "
-        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
-    )
-    try:
-        rows = get_transformed_efd(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        return {
-            "rows": rows,
-        }
-    except Exception as e:
-        logger.error(f"Error in /transformed_efd: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/night-reports")
 async def read_nightreport(
     request: Request,
@@ -265,9 +244,7 @@ async def read_nightreport(
     auth_token: str = Depends(get_access_token),
 ):
     try:
-        records = get_night_reports(
-            dayObsStart, dayObsEnd, auth_token=auth_token
-        )
+        records = get_night_reports(dayObsStart, dayObsEnd, auth_token=auth_token)
         return {
             "reports": records,
         }

@@ -68,7 +68,6 @@ class ConsdbAdapter(SourceAdapter):
         # Load the data (records) we need from relevant endpoints
         # in dependency order.
         #  self.hack_reconnect_after_idle()   # Need for some sources
-        self.status["instruments"] = self.get_instruments()
         if self.verbose:
             print(f"Debug ConsdbAdapter: {self.instruments=}")
         for instrument in self.instruments:
@@ -156,7 +155,7 @@ class ConsdbAdapter(SourceAdapter):
     # "500 Internal Server Error"
     # if there is something wrong the SQL.
     # Not a "400 Bad Request" as it should.
-    # It will then put the Postgres error in the resonse body as json
+    # It will then put the Postgres error in the response body as json
     # under the key "message".  Seems convoluted, so codify handling of it
     # here.
     def query(self, sql):
@@ -168,7 +167,10 @@ class ConsdbAdapter(SourceAdapter):
         records = []
         try:
             response = requests.post(
-                url, json=jsondata, timeout=timeout, headers=ut.get_auth_header(self.token)
+                url,
+                json=jsondata,
+                timeout=timeout,
+                headers=ut.get_auth_header(self.token),
             )
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
@@ -254,11 +256,15 @@ class ConsdbAdapter(SourceAdapter):
         # Would like to select just exposure_columns, quicklook_columns
         # except that for some instruments they aren't all there
         # (LATISS missing q.sky_bg_median).
-        ssql = f"""SELECT *
-          FROM cdb_{instrument}.exposure e, cdb_{instrument}.visit1_quicklook q
-          WHERE e.exposure_id = q.visit_id
-              AND {ut.dayobs_int(self.min_dayobs)} <= e.day_obs
-              AND e.day_obs < {ut.dayobs_int(self.max_dayobs)}
+        ssql = f"""
+            SELECT *
+            FROM
+                cdb_{instrument}.exposure e,
+                cdb_{instrument}.visit1_quicklook q
+            WHERE
+                e.exposure_id = q.visit_id
+                AND {ut.dayobs_int(self.min_dayobs)} <= e.day_obs
+                AND e.day_obs < {ut.dayobs_int(self.max_dayobs)}
         """
         sql = " ".join(ssql.split())  # remove redundant whitespace
         records = self.query(sql)
@@ -276,6 +282,43 @@ class ConsdbAdapter(SourceAdapter):
                 msg = f"No records found for ConsDB for {instrument=}."
                 warnings.warn(msg, category=ex.NoRecordsWarning, stacklevel=2)
             return pd.DataFrame()  # empty
+
+    def get_transformed_efd_data(self, instrument: str) -> pd.DataFrame:
+        """Query transformed EFD table for columns associated with exposures"""
+
+        # If further columns are needed, add those attributes to this list
+        temperatures = ["mt_salindex112_temperature_0_mean"]
+
+        table_name = f"efd2_{instrument}"
+
+        def make_sql(table_name):
+            ssql = f"""
+                SELECT
+                    exposure_id,
+                    {", ".join(temperatures)}
+                FROM
+                    {table_name}.exposure_efd e
+                WHERE
+                    day_obs
+                    BETWEEN {ut.dayobs_int(self.min_dayobs)}
+                    AND {ut.dayobs_int(self.max_dayobs)};
+                """
+            return " ".join(ssql.split())
+
+        sql = make_sql(table_name)
+
+        try:
+            exposures = self.query(sql)
+        except ex.ConsdbQueryError as ce:
+            # TODO OSW-890 Update tablename when ConsDB's transformed efd
+            # table replaces 'production'
+            if ce.error_code == "BADQUERY":
+                sql = make_sql("efd_{instrument}")
+                exposures = self.query(sql)
+
+        df = pd.DataFrame(exposures)
+        # TODO OSW-889 Don't remove the underscores from the column names.
+        return ut.wrap_dataframe_columns(df)
 
     # TODO Remove if this is still here after Feb 2025
     # This is here just to validate data.
