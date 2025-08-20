@@ -20,15 +20,9 @@ def get_almanac(dayobs_start: int, dayobs_end: int) -> list:
             dayobs = int(current.strftime('%Y%m%d'))
             almanac = Almanac(min_dayobs=dayobs_start, max_dayobs=dayobs)
             night_events = almanac.as_dict[0]
-            evening_twilight = datetime.fromisoformat(night_events['Evening Nautical Twilight'])
-            morning_twilight = datetime.fromisoformat(night_events['Morning Nautical Twilight'])
-            night_hours = (
-                morning_twilight - evening_twilight
-            ).total_seconds() / 3600
-
             almanac_info.append({
                 'dayobs': dayobs,
-                'night_hours': night_hours,
+                'night_hours': almanac.night_hours,
                 'twilight_evening': night_events['Evening Nautical Twilight'],
                 'twilight_morning': night_events['Morning Nautical Twilight'],
                 'moon_rise_time': night_events['Moon Rise'],

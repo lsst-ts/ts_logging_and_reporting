@@ -112,7 +112,7 @@ class Almanac(SourceAdapter):
 
     @property
     def night_hours(self):
-        day_delta = self.ast_twilight_morning - self.ast_twilight_evening
+        day_delta = self.nau_twilight_morning - self.nau_twilight_evening
         return day_delta.to_value("hr")
 
     def events(self, localize=False, iso=False):

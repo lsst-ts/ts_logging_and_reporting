@@ -28,6 +28,7 @@ def test_get_exposures(monkeypatch):
 def test_get_almanac(monkeypatch):
     class DummyAlmanac:
         def __init__(self, min_dayobs, max_dayobs):
+            self.night_hours = 11
             self.as_dict = [{
                 'Evening Nautical Twilight': '2024-01-01 19:00:00',
                 'Morning Nautical Twilight': '2024-01-02 06:00:00',
