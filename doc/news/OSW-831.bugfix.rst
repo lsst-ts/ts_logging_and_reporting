@@ -1,1 +1,0 @@
-Fix narrative-log endpoint to follow observing day definition.
