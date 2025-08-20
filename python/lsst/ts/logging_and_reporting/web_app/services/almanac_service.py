@@ -23,8 +23,8 @@ def get_almanac(dayobs_start: int, dayobs_end: int) -> list:
             almanac_info.append({
                 'dayobs': dayobs,
                 'night_hours': almanac.night_hours,
-                'twilight_evening': night_events['Evening Astronomical Twilight'],
-                'twilight_morning': night_events['Morning Astronomical Twilight'],
+                'twilight_evening': night_events['Evening Nautical Twilight'],
+                'twilight_morning': night_events['Morning Nautical Twilight'],
                 'moon_rise_time': night_events['Moon Rise'],
                 'moon_set_time': night_events['Moon Set'],
                 'moon_illumination': night_events['Moon Illumination'],

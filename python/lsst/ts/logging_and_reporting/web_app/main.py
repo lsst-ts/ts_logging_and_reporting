@@ -91,7 +91,7 @@ async def read_exposures(
         logger.error(f"ConsdbQueryError in /exposures: {ce}")
         raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
-        logger.error(f"Error in /exposures: {e}")
+        logger.error(f"Error in /exposures: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -139,7 +139,7 @@ async def read_jira_tickets(
         logger.error(f"Jira API error in /jira-tickets: {ble}")
         raise HTTPException(status_code=502, detail="Jira API query failed")
     except Exception as e:
-        logger.error(f"Error in /jira-tickets: {e}")
+        logger.error(f"Error in /jira-tickets: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -152,7 +152,7 @@ async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
         almanac_info = get_almanac(dayObsStart, dayObsEnd)
         return {"almanac_info": almanac_info}
     except Exception as e:
-        logger.error(f"Error in /almanac: {e}")
+        logger.error(f"Error in /almanac: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -184,7 +184,7 @@ async def read_narrative_log(
             "time_lost_to_faults": time_lost_to_faults,
         }
     except Exception as e:
-        logger.error(f"Error in /narrative-log: {e}")
+        logger.error(f"Error in /narrative-log: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -208,7 +208,7 @@ async def read_exposure_flags(
             "exposure_flags": flags,
         }
     except Exception as e:
-        logger.error(f"Error in /exposure-flags: {e}")
+        logger.error(f"Error in /exposure-flags: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -232,7 +232,7 @@ async def read_exposure_entries(
             "exposure_entries": entries,
         }
     except Exception as e:
-        logger.error(f"Error in /exposure-entries: {e}")
+        logger.error(f"Error in /exposure-entries: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
