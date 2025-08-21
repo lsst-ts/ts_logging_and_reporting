@@ -1,3 +1,26 @@
+v0.7.2 (2025-08-20)
+===================
+
+New Features
+------------
+
+- Add night-reports endpoint. (`OSW-667 <https://rubinobs.atlassian.net//browse/OSW-667>`_)
+- Update transformed efd query to reflect column changes. (`OSW-780 <https://rubinobs.atlassian.net//browse/OSW-780>`_)
+- Fetch nautical twilight times rather than astronomical and calculate night hours accordingly (`OSW-832 <https://rubinobs.atlassian.net//browse/OSW-832>`_)
+
+
+Bug Fixes
+---------
+
+- Fix narrative-log endpoint to follow observing day definition. (`OSW-831 <https://rubinobs.atlassian.net//browse/OSW-831>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Query exposure `seq_num` from consdb to be used in observing conditions applet tooltip (`OSW-853 <https://rubinobs.atlassian.net//browse/OSW-853>`_)
+
+
 v0.7.1 (2025-08-07)
 ===================
 

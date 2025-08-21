@@ -1,1 +1,0 @@
-Fetch nautical twilight times rather than astronomical and caluclate night hours accordingly

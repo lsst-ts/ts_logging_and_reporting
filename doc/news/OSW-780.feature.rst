@@ -1,1 +1,0 @@
-Update transformed efd query to reflect column changes.
