@@ -1,0 +1,1 @@
+Match dayobs query in get_transformed_efd to be exclusive of end day.

@@ -299,9 +299,8 @@ class ConsdbAdapter(SourceAdapter):
                 FROM
                     {table_name}.exposure_efd e
                 WHERE
-                    day_obs
-                    BETWEEN {ut.dayobs_int(self.min_dayobs)}
-                    AND {ut.dayobs_int(self.max_dayobs)};
+                    {ut.dayobs_int(self.min_dayobs)} <= e.day_obs
+                    AND e.day_obs < {ut.dayobs_int(self.max_dayobs)};
                 """
             return " ".join(ssql.split())
 
