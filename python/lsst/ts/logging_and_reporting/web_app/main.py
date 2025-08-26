@@ -16,6 +16,7 @@ from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 from .services.nightreport_service import get_night_reports
+from .services.context_feed_service import get_context_feed
 
 from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, make_json_safe
 from rubin_nights.connections import get_clients
@@ -285,4 +286,30 @@ async def read_nightreport(
         }
     except Exception as e:
         logger.error(f"Error in /night-reports: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/context-feed")
+async def read_context_feed(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    auth_token: str = Depends(get_access_token),
+):
+    try:
+        print(f"CONTEXT FEED read begins.")
+        (efd_and_messages, cols) = get_context_feed(dayObsStart, dayObsEnd, auth_token=auth_token)
+        # print(f"CONTEXT FEED cols: ", cols)
+        # print(f"CONTEXT FEED DATA: ", efd_and_messages)
+        print(f"CONTEXT FEED read completed.")
+
+        print(f"TYPE efd_and_messages: ", type(efd_and_messages)) # Now encoded as list?
+
+        #  This is where the error is coming from, from the dataframe/list? ------------------------ <--- ERROR
+        return {
+            # "data": efd_and_messages,
+            "cols": cols,
+        }
+    except Exception as e:
+        logger.error(f"Error in /context-feed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
