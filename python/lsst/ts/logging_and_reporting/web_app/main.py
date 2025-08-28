@@ -297,17 +297,9 @@ async def read_context_feed(
     auth_token: str = Depends(get_access_token),
 ):
     try:
-        print(f"CONTEXT FEED read begins.")
         (efd_and_messages, cols) = get_context_feed(dayObsStart, dayObsEnd, auth_token=auth_token)
-        # print(f"CONTEXT FEED cols: ", cols)
-        # print(f"CONTEXT FEED DATA: ", efd_and_messages)
-        print(f"CONTEXT FEED read completed.")
-
-        print(f"TYPE efd_and_messages: ", type(efd_and_messages)) # Now encoded as list?
-
-        #  This is where the error is coming from, from the dataframe/list? ------------------------ <--- ERROR
         return {
-            # "data": efd_and_messages,
+            "data": efd_and_messages,
             "cols": cols,
         }
     except Exception as e:
