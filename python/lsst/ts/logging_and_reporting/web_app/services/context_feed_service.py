@@ -105,8 +105,10 @@ def get_context_feed(
     # Convert dayobs_start and dayobs_end to t_start and t_end
     t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayobs_start)}T12:00:00", format='isot', scale='utc')
     t_end = Time(
-                 f"{rn_dayobs.day_obs_int_to_str(dayobs_end)}T12:00:00", format='isot', scale='utc'
-                ) + TimeDelta(1, format='jd')
+        f"{rn_dayobs.day_obs_int_to_str(dayobs_end)}T12:00:00",
+        format="isot",
+        scale="utc",
+    ) + TimeDelta(1, format="jd")
 
     # Returns pandas dataframe and list
     df, cols = scriptqueue.get_consolidated_messages(t_start, t_end, endpoints)
