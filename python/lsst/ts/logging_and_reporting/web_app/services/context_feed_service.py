@@ -113,6 +113,16 @@ def get_context_feed(
     # Returns pandas dataframe and list
     df, cols = scriptqueue.get_consolidated_messages(t_start, t_end, endpoints)
 
+    # For now, we drop all data not in columns=cols.
+    # The dropped columns contain the raw data.
+
+    # If we end up needing the raw data, we will need to handle
+    # the non-serialisable types or bypass the default JSON
+    # encoding and return a Response directly, e.g.
+    # records = df.to_dict(orient="records") # list of row dicts
+    # json_ready = jsonable_encoder(records) # fixes problem types
+    # return JSONResponse(content=json_ready)
+
     # Discard all columns that are not listed in cols
     df_cols_only = df[df.columns.intersection(cols)]
 
