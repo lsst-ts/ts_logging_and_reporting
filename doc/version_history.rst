@@ -1,3 +1,18 @@
+v0.8.0 (2025-09-02)
+===================
+
+New Features
+------------
+
+- Backend updates to get data for the Time Accounting applet. (`OSW-665 <https://rubinobs.atlassian.net//browse/OSW-665>`_)
+
+
+Bug Fixes
+---------
+
+- Match dayobs query in get_transformed_efd to be exclusive of end day. (`OSW-903 <https://rubinobs.atlassian.net//browse/OSW-903>`_)
+
+
 v0.7.2 (2025-08-20)
 ===================
 
