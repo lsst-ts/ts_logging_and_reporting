@@ -1,6 +1,5 @@
 import logging
 from astropy.time import Time
-import os
 import numpy as np
 
 from fastapi import FastAPI, Request, HTTPException, Depends
@@ -20,9 +19,10 @@ from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 from .services.nightreport_service import get_night_reports
-from .services.rubin_nights_service import get_clients
+from rubin_nights import get_clients
 import rubin_nights.dayobs_utils as rn_dayobs
 import rubin_nights.rubin_scheduler_addons as rn_sch
+import rubin_nights.augment_visits as rn_aug
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -273,13 +273,13 @@ async def read_visits_with_valid_overhead(
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
     try:
-        os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
+        # os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
         clients = get_clients(auth_token=auth_token)
         consdb = clients['consdb']
         day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format='isot', scale='utc')
         day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00", format='isot', scale='utc')
-        visits = consdb.get_visits(instrument, day_min, day_max)
-
+        visits = consdb.get_visits(instrument, day_min, day_max, augment=False)
+        visits = rn_aug.augment_visits(visits, "lsstcam", skip_rs_columns=True)
         wait_before_slew = 1.45
         settle = 2.0
         visits, slewing = rn_sch.add_model_slew_times(
