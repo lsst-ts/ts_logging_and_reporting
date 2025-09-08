@@ -1,7 +1,8 @@
 import logging
 from astropy.time import Time
 import numpy as np
-
+import pandas as pd
+from pydantic import BaseModel
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -19,10 +20,14 @@ from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 from .services.nightreport_service import get_night_reports
-from rubin_nights import get_clients
+
+from .services.rubin_nights_service import read_time_accounting
+
+from rubin_nights.connections import get_clients
 import rubin_nights.dayobs_utils as rn_dayobs
 import rubin_nights.rubin_scheduler_addons as rn_sch
 import rubin_nights.augment_visits as rn_aug
+from rubin_nights.observatory_status import get_dome_open_close
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -87,12 +92,24 @@ async def read_exposures(
         on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky")]
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
+        # print(type(exposures))
+        exposures_dict, dome_open_hours = read_time_accounting(
+            dayObsStart,
+            dayObsEnd,
+            instrument,
+            exposures,
+            auth_token=auth_token,
+        )
+
+        # print(f"eman")
+
         return {
-            "exposures": exposures,
+            "exposures": jsonable_encoder(exposures_dict),
             "exposures_count": len(exposures),
             "sum_exposure_time": total_exposure_time,
             "on_sky_exposures_count": len(on_sky_exposures),
             "total_on_sky_exposure_time": total_on_sky_exposure_time,
+            "open_dome_hours": dome_open_hours,
         }
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /exposures: {ce}")
@@ -276,8 +293,10 @@ async def read_visits_with_valid_overhead(
         # os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
         clients = get_clients(auth_token=auth_token)
         consdb = clients['consdb']
-        day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format='isot', scale='utc')
-        day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00", format='isot', scale='utc')
+        day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00",
+              format='isot', scale='utc')
+        day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00",
+                      format='isot', scale='utc')
         visits = consdb.get_visits(instrument, day_min, day_max, augment=False)
         visits = rn_aug.augment_visits(visits, "lsstcam", skip_rs_columns=True)
         wait_before_slew = 1.45
@@ -298,3 +317,95 @@ async def read_visits_with_valid_overhead(
     except Exception as e:
         logger.error(f"Error getting visits from rubin-nights: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error retrieving visits from consdb")
+
+
+
+class TimeAccountingPayload(BaseModel):
+    dayObsStart: int
+    dayObsEnd: int
+    instrument: str
+    exposures: list
+
+@app.post("/time-accounting")
+async def read_time_accounting_data(
+    payload: TimeAccountingPayload,
+    auth_token: str = Depends(get_access_token),
+):
+    logger.info(
+        f"Getting time accounting for dayObsStart: {payload.dayObsStart}, "
+        f"dayObsEnd: {payload.dayObsEnd} "
+             "and instrument: {payload.instrument}"
+    )
+
+    try:
+        print(f"Received {len(payload.exposures)} exposures in payload")
+        exposures_df = pd.DataFrame(payload.exposures)
+        print(f"Received {len(exposures_df)} exposures in payload")
+        clients = get_clients(auth_token=auth_token)
+
+        day_min = Time(f"{rn_dayobs.day_obs_int_to_str(payload.dayObsStart)}T12:00:00",
+              format='isot', scale='utc')
+        day_max = Time(f"{rn_dayobs.day_obs_int_to_str(payload.dayObsEnd)}T12:00:00",
+              format='isot', scale='utc')
+        dome_open = get_dome_open_close(day_min, day_max, clients['efd'])
+        print(f"Dome open/close times: {dome_open}")
+
+        if exposures_df.empty:
+            return {
+                "visits": [],
+                "open_dome_hours": dome_open['open_hours'].sum()
+            }
+
+        visits = rn_aug.augment_visits(exposures_df, "lsstcam", skip_rs_columns=True)
+        wait_before_slew = 1.45
+        settle = 2.0
+        visits, slewing = rn_sch.add_model_slew_times(
+            visits, clients['efd'], model_settle=wait_before_slew + settle,
+              dome_crawl=False)
+        max_scatter = 6
+        valid_overhead = np.min([np.where(np.isnan(visits.slew_model.values),
+                      0, visits.slew_model.values)
+                                 + max_scatter, visits.visit_gap.values], axis=0)
+        visits['overhead'] = valid_overhead
+
+        visits_dict = visits[['visit_id', 'day_obs', 'obs_start',
+                              'obs_end', 'exp_time', 'overhead',
+                              'can_see_sky', 'band']].to_dict(orient="records")
+        return {
+            "visits": visits_dict,
+            "open_dome_hours": dome_open['open_hours'].sum()
+            }
+
+    except Exception as e:
+        logger.error(f"Error in /time-accounting: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# @app.get("/dome-open")
+# async def read_open_dome(
+#     dayObsStart: int,
+#     dayObsEnd: int,
+#     instrument: str,
+#     auth_token: str = Depends(get_access_token),
+# ):
+#     logger.info(
+#         f"Getting dome open times for dayObsStart: {dayObsStart}, "
+#         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+#     )
+
+#     try:
+#         clients = get_clients(auth_token=auth_token)
+#         day_min =
+#           Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00",
+#               format='isot', scale='utc')
+#         day_max =
+#              Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00",
+#               format='isot', scale='utc')
+#         dome_open = get_dome_open_close(day_min, day_max, clients['efd'])
+#         logger.info(f"day_min: {day_min}, day_max: {day_max}")
+#         print(f"Dome open/close times: {dome_open}")
+#         return({ "columns": dome_open.columns.to_list(),
+#                 "open_dome_hours": dome_open['open_hours'].sum()})
+#     except Exception as e:
+#         logger.error(f"Error in /time-accounting: {e}", exc_info=True)
+#         raise HTTPException(status_code=500, detail=str(e))

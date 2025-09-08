@@ -1,58 +1,84 @@
 import logging
-import os
+import pandas as pd
+import numpy as np
+from astropy.time import Time
 
-from rubin_nights.consdb_query import ConsDbFastAPI
-from rubin_nights.influx_query import InfluxQueryClient
+from rubin_nights.connections import get_clients
+import rubin_nights.dayobs_utils as rn_dayobs
+import rubin_nights.rubin_scheduler_addons as rn_sch
+import rubin_nights.augment_visits as rn_aug
+from rubin_nights.observatory_status import get_dome_open_close
+
 
 logger = logging.getLogger(__name__)
 
-# Copied from Context Feed work currently in progress
-# Modified version of connections.get_clients to allow passing of auth_token
-# Remove and use connections.get_clients once PR merged
-def get_clients(auth_token: str | None = None, site: str | None = None) -> dict:
-
-    auth = ("user", auth_token)
-
-    api_endpoints = {
-        "usdf": "https://usdf-rsp.slac.stanford.edu",
-        "usdf-dev": "https://usdf-rsp-dev.slac.stanford.edu",
-        "summit": "https://summit-lsp.lsst.codes",
-    }
-
-    if site is None:
-        # Guess site from EXTERNAL_INSTANCE_URL (set for RSPs)
-        location = os.getenv("EXTERNAL_INSTANCE_URL", "")
-        if "summit-lsp" in location:
-            site = "summit"
-        elif "usdf-rsp-dev" in location:
-            site = "usdf-dev"
-        elif "usdf-rsp" in location:
-            site = "usdf"
-        # Otherwise, use the USDF resources, outside of the RSP
-        if site is None:
-            site = "usdf"
+def make_json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_safe(v) for v in obj]
+    elif isinstance(obj, float):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
     else:
-        site = site
+        return obj
 
-    api_base = api_endpoints[site]
-    consdb_query = ConsDbFastAPI(api_base, auth)
-    efd_client = InfluxQueryClient(site, db_name="efd")
-    # Be extra helpful with environment variables if using USDF for LFA
-    if "usdf" in site:
-        # And some env variables for S3 through USDF
-        os.environ["LSST_DISABLE_BUCKET_VALIDATION"] = "1"
-        os.environ["S3_ENDPOINT_URL"] = "https://s3dfrgw.slac.stanford.edu/"
-    # Or if you're actually using one of the USDF RSPs (or kubernetes)
-    if "usdf" in os.getenv("EXTERNAL_INSTANCE_URL", ""):
-        if os.getenv("RUBIN_SIM_DATA_DIR") is None:
-            # Use shared RUBIN_SIM_DATA_DIR
-            os.environ["RUBIN_SIM_DATA_DIR"] = "/sdf/data/rubin/shared/rubin_sim_data"
 
-    endpoints = {
-        "api_base": api_base,
-        "efd": efd_client,
-        "consdb": consdb_query,
-    }
-    logger.info(f"Endpoint base url: {endpoints['api_base']}")
+def read_time_accounting(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    exposures: list,
+    auth_token: str = None,
+):
+    logger.info(
+        f"Getting time accounting for dayObsStart: {dayObsStart}, "
+        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+    )
 
-    return endpoints
+    # print(f"Received {len(exposures)} exposures in payload")
+
+    # print(exposures_df["zero_point_median"])
+    # print(f"Received {len(exposures_df)} exposures in payload")
+    clients = get_clients(auth_token=auth_token)
+
+    day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format='isot', scale='utc')
+    day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00", format='isot', scale='utc')
+    dome_open = get_dome_open_close(day_min, day_max, clients['efd'])
+    # print(f"Dome open/close times: {dome_open}")
+    # print("eman")
+    if len(exposures) == 0:
+        return [], dome_open['open_hours'].sum()
+    exposures_df = pd.DataFrame(exposures)
+    # print(f"Exposures before cleaning: {exposures_df}")
+    # exp_df = exposures_df.replace([np.inf, -np.inf], np.nan)  # handle inf
+    # exp_df = exp_df.where(pd.notnull(exp_df), None)  # en
+    # logger.debug(f"Exposures after cleaning: {exp_df}")
+    visits = rn_aug.augment_visits(exposures_df, "lsstcam", skip_rs_columns=True)
+    # print(f"Visits after augmentation: {visits}")
+    wait_before_slew = 1.45
+    settle = 2.0
+    visits, slewing = rn_sch.add_model_slew_times(
+        visits, clients['efd'], model_settle=wait_before_slew + settle, dome_crawl=False)
+    max_scatter = 6
+    valid_overhead = np.min([np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values)
+                                + max_scatter, visits.visit_gap.values], axis=0)
+    visits['overhead'] = valid_overhead
+
+    visits = visits.replace([np.inf, -np.inf], np.nan)  # handle inf
+    visits = visits.where(pd.notnull(visits), None)  # en
+    # print(f"Visits after cleaning: {visits}")
+    visits_dict = visits[["exposure_id", "exposure_name", "exp_time", "img_type",
+              "observation_reason", "science_program", "target_name", "can_see_sky",
+              "band", "obs_start", "physical_filter", "day_obs", "seq_num",
+              "obs_end", "overhead", "zero_point_median", "visit_id", "overhead",
+              "pixel_scale_median", "psf_sigma_median"]].to_dict(orient="records")
+
+    # print(f"Visits to be returned: {visits_dict}")
+    final_dict = make_json_safe(visits_dict)
+    return final_dict, dome_open['open_hours'].sum()
