@@ -17,7 +17,7 @@ from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 from .services.nightreport_service import get_night_reports
 
-from .services.rubin_nights_service import read_time_accounting
+from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, make_json_safe
 from rubin_nights.connections import get_clients
 
 
@@ -87,7 +87,13 @@ async def read_exposures(
         on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky")]
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
-        exposures_dict, dome_open_hours = read_time_accounting(
+
+        open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, clients['efd'])
+        open_dome_hours = 0
+        if not open_dome_times.empty:
+            open_dome_hours = open_dome_times['open_hours'].sum()
+
+        exposures_df = get_time_accounting(
             dayObsStart,
             dayObsEnd,
             instrument,
@@ -95,14 +101,27 @@ async def read_exposures(
             clients["efd"],
         )
 
+        if not exposures_df.empty:
+
+            exposures_dict = exposures_df[["exposure_id", "exposure_name", "exp_time", "img_type",
+                "observation_reason", "science_program", "target_name", "can_see_sky",
+                "band", "obs_start", "physical_filter", "day_obs", "seq_num",
+                "obs_end", "overhead", "zero_point_median", "visit_id", "overhead",
+                "pixel_scale_median", "psf_sigma_median"]].to_dict(orient="records")
+
+            exposures_safe_dict = make_json_safe(exposures_dict)
+
+            exposures = jsonable_encoder(exposures_safe_dict)
+
         return {
-            "exposures": jsonable_encoder(exposures_dict),
+            "exposures": exposures,
             "exposures_count": len(exposures),
             "sum_exposure_time": total_exposure_time,
             "on_sky_exposures_count": len(on_sky_exposures),
             "total_on_sky_exposure_time": total_on_sky_exposure_time,
-            "open_dome_hours": dome_open_hours,
+            "open_dome_hours": open_dome_hours,
         }
+
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /exposures: {ce}")
         raise HTTPException(status_code=502, detail="ConsDB query failed")
