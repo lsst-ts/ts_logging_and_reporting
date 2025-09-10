@@ -5,7 +5,7 @@ import requests
 import lsst.ts.logging_and_reporting.utils as ut
 
 from fastapi.testclient import TestClient
-from lsst.ts.logging_and_reporting.web_app.main import app
+from lsst.ts.logging_and_reporting.web_app.main import app, get_rubin_nights_clients
 from lsst.ts.logging_and_reporting.utils import get_access_token
 from unittest.mock import patch, Mock
 
@@ -766,7 +766,7 @@ def test_exposure_entries_endpoint(mock_requests_get):
     app.dependency_overrides.pop(get_access_token, None)
 
 
-def test_exposures_endpoint(mock_requests_get, mock_requests_post, mock_rubin_nights):
+def test_exposures_endpoint(mock_requests_get, mock_requests_post):
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     _test_endpoint_authentication(endpoint)
 
@@ -798,7 +798,6 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post, mock_rubin_ni
             "pixel_scale_median": [0.2],
             "psf_sigma_median": [1.1],
         })
-        from lsst.ts.logging_and_reporting.web_app.main import get_rubin_nights_clients
         app.dependency_overrides[get_access_token] = lambda: "dummy-token"
         app.dependency_overrides[get_rubin_nights_clients] = lambda: {"efd": Mock()}
 
@@ -813,6 +812,17 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post, mock_rubin_ni
         assert data["open_dome_hours"] == 2.5
         mock_time_accounting.assert_called_once()
         mock_open_close.assert_called_once()
+
+        # test that the request succeeds if the
+        # rubin_nights data wasn't available
+        mock_open_close.return_value = pd.DataFrame()
+        mock_time_accounting.return_value = pd.DataFrame()
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        data = response.json()
+        assert "exposures" in data
+        assert data["exposures_count"] == 1
+        assert data["open_dome_hours"] == 0
 
         app.dependency_overrides.pop(get_access_token, None)
         app.dependency_overrides.pop(get_rubin_nights_clients, None)
