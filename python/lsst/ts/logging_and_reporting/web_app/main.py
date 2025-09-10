@@ -44,7 +44,7 @@ app.add_middleware(
 
 logger.info("Starting FastAPI app")
 
-def get_clients_dep(auth_token: str = Depends(get_access_token)):
+def get_rubin_nights_clients(auth_token: str = Depends(get_access_token)):
     return get_clients(auth_token=auth_token)
 
 
@@ -73,7 +73,7 @@ async def read_exposures(
     dayObsEnd: int,
     instrument: str,
     auth_token: str = Depends(get_access_token),
-    clients: dict = Depends(get_clients_dep),
+    clients: dict = Depends(get_rubin_nights_clients),
 ):
     logger.info(
         f"Getting exposures for start: "

@@ -12,6 +12,9 @@ from rubin_nights.influx_query import InfluxQueryClient
 
 logger = logging.getLogger(__name__)
 
+WAIT_BEFORE_SLEW = 1.45
+SETTLE = 2.0
+
 def make_json_safe(obj):
     """
     Recursively converts objects to be JSON serializable.
@@ -93,10 +96,9 @@ def get_time_accounting(
 
         exposures_df = pd.DataFrame(exposures)
         visits = rn_aug.augment_visits(exposures_df, "lsstcam", skip_rs_columns=True)
-        wait_before_slew = 1.45
-        settle = 2.0
+
         visits, _ = rn_sch.add_model_slew_times(
-            visits, efd_client, model_settle=wait_before_slew + settle, dome_crawl=False)
+            visits, efd_client, model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False)
         max_scatter = 6
         valid_overhead = np.min([np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values)
                                     + max_scatter, visits.visit_gap.values], axis=0)
@@ -109,7 +111,7 @@ def get_time_accounting(
 
     except Exception as e:
         logger.error(
-            f"Error in getting time accounting data from rubin_nights through efd: {e}",
+            f"Error in getting time accounting data from rubin_nights through EFD: {e}",
             exc_info=True)
         return pd.DataFrame()
 
@@ -151,5 +153,5 @@ def get_open_close_dome(
         dome_open = get_dome_open_close(day_min, day_max, efd_client)
         return dome_open
     except Exception as e:
-        logger.error(f"Error getting open/close dome times from rubin_nights through efd: {e}", exc_info=True)
+        logger.error(f"Error getting open/close dome times from rubin_nights through EFD: {e}", exc_info=True)
         return pd.DataFrame()
