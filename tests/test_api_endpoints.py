@@ -5,9 +5,9 @@ import requests
 import lsst.ts.logging_and_reporting.utils as ut
 
 from fastapi.testclient import TestClient
-from lsst.ts.logging_and_reporting.web_app.main import app, get_rubin_nights_clients
+from lsst.ts.logging_and_reporting.web_app.main import app
 from lsst.ts.logging_and_reporting.utils import get_access_token
-from unittest.mock import patch, Mock, MagicMock
+from unittest.mock import patch, Mock
 
 client = TestClient(app)
 
@@ -766,15 +766,7 @@ def test_exposure_entries_endpoint(mock_requests_get):
     app.dependency_overrides.pop(get_access_token, None)
 
 
-rubin_nights_connections_mock = MagicMock()
-
-    # If the module has specific attributes or functions your code uses,
-    # you can define their mock behavior here.
-    # For example:
-    # mock_non_installed_module.some_function.return_value = "mocked_value"
-
-@patch.dict("sys.modules", {'rubin_nights.connections': rubin_nights_connections_mock})
-def test_exposures_endpoint(mock_requests_get, mock_requests_post):
+def test_exposures_endpoint(mock_requests_get, mock_requests_post, mock_rubin_nights):
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     _test_endpoint_authentication(endpoint)
 
@@ -783,7 +775,6 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
     ) as mock_open_close, patch(
         "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting"
     ) as mock_time_accounting:
-        # Mock return values
         import pandas as pd
         mock_open_close.return_value = pd.DataFrame({"open_hours": [2.5]})
         mock_time_accounting.return_value = pd.DataFrame({
@@ -807,7 +798,7 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
             "pixel_scale_median": [0.2],
             "psf_sigma_median": [1.1],
         })
-
+        from lsst.ts.logging_and_reporting.web_app.main import get_rubin_nights_clients
         app.dependency_overrides[get_access_token] = lambda: "dummy-token"
         app.dependency_overrides[get_rubin_nights_clients] = lambda: {"efd": Mock()}
 
