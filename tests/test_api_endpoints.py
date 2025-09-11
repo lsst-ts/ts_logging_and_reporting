@@ -5,7 +5,7 @@ import requests
 import lsst.ts.logging_and_reporting.utils as ut
 
 from fastapi.testclient import TestClient
-from lsst.ts.logging_and_reporting.web_app.main import app
+from lsst.ts.logging_and_reporting.web_app.main import app, get_rubin_nights_clients
 from lsst.ts.logging_and_reporting.utils import get_access_token
 from unittest.mock import patch, Mock
 
@@ -770,17 +770,62 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     _test_endpoint_authentication(endpoint)
 
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
-    response = client.get(endpoint)
-    assert response.status_code == 200
-    data = response.json()
-    assert "exposures" in data
-    assert data["exposures_count"] == 1
-    assert data["sum_exposure_time"] == 30
-    assert data["on_sky_exposures_count"] == 1
-    assert data["total_on_sky_exposure_time"] == 30
+    with patch(
+        "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome"
+    ) as mock_open_close, patch(
+        "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting"
+    ) as mock_time_accounting:
+        import pandas as pd
+        mock_open_close.return_value = pd.DataFrame({"open_hours": [2.5]})
+        mock_time_accounting.return_value = pd.DataFrame({
+            "exposure_id": [2025073000001],
+            "exposure_name": ["MC_O_20250730_000001"],
+            "exp_time": [30],
+            "img_type": ["science"],
+            "observation_reason": ["BLOCK-365"],
+            "science_program": ["field_survey_science"],
+            "target_name": ["Rubin_SV_225_-40"],
+            "can_see_sky": [True],
+            "band": ["r"],
+            "obs_start": ["2025-07-30T23:33:43.069000"],
+            "physical_filter": ["r_57"],
+            "day_obs": [20250730],
+            "seq_num": [1],
+            "obs_end": ["2025-07-30T23:34:13.999000"],
+            "overhead": [9.0],
+            "zero_point_median": [32.1],
+            "visit_id": [2025071600135],
+            "pixel_scale_median": [0.2],
+            "psf_sigma_median": [1.1],
+        })
+        app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+        app.dependency_overrides[get_rubin_nights_clients] = lambda: {"efd": Mock()}
 
-    app.dependency_overrides.pop(get_access_token, None)
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        data = response.json()
+        assert "exposures" in data
+        assert data["exposures_count"] == 1
+        assert data["sum_exposure_time"] == 30
+        assert data["on_sky_exposures_count"] == 1
+        assert data["total_on_sky_exposure_time"] == 30
+        assert data["open_dome_hours"] == 2.5
+        mock_time_accounting.assert_called_once()
+        mock_open_close.assert_called_once()
+
+        # test that the request succeeds if the
+        # rubin_nights data wasn't available
+        mock_open_close.return_value = pd.DataFrame()
+        mock_time_accounting.return_value = pd.DataFrame()
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        data = response.json()
+        assert "exposures" in data
+        assert data["exposures_count"] == 1
+        assert data["open_dome_hours"] == 0
+
+        app.dependency_overrides.pop(get_access_token, None)
+        app.dependency_overrides.pop(get_rubin_nights_clients, None)
 
 
 def test_almanac_endpoint(monkeypatch):

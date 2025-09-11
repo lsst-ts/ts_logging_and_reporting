@@ -63,6 +63,8 @@ def get_exposures(
               e.observation_reason, e.science_program, e.target_name,
               e.can_see_sky, e.band, e.obs_start, e.physical_filter,
               e.day_obs, e.seq_num, e.obs_end,
+              e.exp_midpt_mjd, e.obs_start_mjd, e.obs_end_mjd,
+              e.s_dec, e.s_ra, e.sky_rotation,
               q.zero_point_median, q.visit_id,
               q.pixel_scale_median, q.psf_sigma_median
         FROM cdb_{telescope}.exposure e, cdb_{telescope}.visit1_quicklook q
