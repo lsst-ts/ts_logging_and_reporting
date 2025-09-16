@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
-from lsst.ts.logging_and_reporting.utils import get_access_token
+from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe
 
 from .services.jira_service import get_jira_tickets
 from .services.consdb_service import (
@@ -16,10 +16,7 @@ from .services.almanac_service import get_almanac
 from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 from .services.nightreport_service import get_night_reports
-from .services.context_feed_service import get_context_feed
-
-from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, make_json_safe
-from rubin_nights.connections import get_clients
+from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, get_context_feed
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -44,10 +41,6 @@ app.add_middleware(
 
 
 logger.info("Starting FastAPI app")
-
-def get_rubin_nights_clients(auth_token: str = Depends(get_access_token)):
-    return get_clients(auth_token=auth_token)
-
 
 @app.get("/health")
 async def health():
@@ -74,7 +67,6 @@ async def read_exposures(
     dayObsEnd: int,
     instrument: str,
     auth_token: str = Depends(get_access_token),
-    clients: dict = Depends(get_rubin_nights_clients),
 ):
     logger.info(
         f"Getting exposures for start: "
@@ -89,7 +81,7 @@ async def read_exposures(
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
 
-        open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, clients['efd'])
+        open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, auth_token)
         open_dome_hours = 0
         if not open_dome_times.empty:
             open_dome_hours = open_dome_times['open_hours'].sum()
@@ -99,7 +91,7 @@ async def read_exposures(
             dayObsEnd,
             instrument,
             exposures,
-            clients["efd"],
+            auth_token,
         )
 
         if not exposures_df.empty:

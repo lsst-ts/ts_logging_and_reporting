@@ -1,13 +1,16 @@
 import logging
 import pandas as pd
 import numpy as np
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 
 import rubin_nights.dayobs_utils as rn_dayobs
 import rubin_nights.rubin_scheduler_addons as rn_sch
 import rubin_nights.augment_visits as rn_aug
 from rubin_nights.observatory_status import get_dome_open_close
-from rubin_nights.influx_query import InfluxQueryClient
+from rubin_nights.connections import get_clients
+from rubin_nights.scriptqueue import get_consolidated_messages
+
+from lsst.ts.logging_and_reporting.utils import stringify_special_floats
 
 
 logger = logging.getLogger(__name__)
@@ -15,49 +18,13 @@ logger = logging.getLogger(__name__)
 WAIT_BEFORE_SLEW = 1.45
 SETTLE = 2.0
 
-def make_json_safe(obj):
-    """
-    Recursively converts objects to be JSON serializable.
-
-    This function traverses the input object, converting
-    any non-JSON-serializable types (such as NumPy integers,
-    floats, NaN, or infinity) into types that can be safely serialized.
-    Dictionaries and lists are processed recursively.
-    NumPy integer and floating types are converted to their native Python
-    counterparts. NaN and infinity values are replaced with None.
-
-    Parameters
-    ----------
-    obj : any
-        The object to convert. Can be a dict, list, or any value.
-
-    Returns
-    -------
-    any
-        The converted object, safe for JSON serialization.
-    """
-    if isinstance(obj, dict):
-        return {k: make_json_safe(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [make_json_safe(v) for v in obj]
-    elif isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
-            return None
-        return float(obj)
-    elif isinstance(obj, (np.integer, np.int64, np.int32)):
-        return int(obj)
-    elif isinstance(obj, (np.floating, np.float64, np.float32)):
-        return float(obj)
-    else:
-        return obj
-
 
 def get_time_accounting(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
     exposures: list,
-    efd_client: InfluxQueryClient,
+    auth_token: str = None,
 ) -> pd.DataFrame:
     """
     Retrieve and process time accounting data for a given instrument
@@ -76,8 +43,10 @@ def get_time_accounting(
         The name of the instrument for which to retrieve time accounting data.
     exposures : list
         A list of exposure dictionaries or objects to be processed.
-    efd_client : InfluxQueryClient
-        An EFD client instance used for retrieving additional data.
+    auth_token : str, optional
+        Authentication token used when connecting to Rubin Observatory
+        services.
+
     Returns
     -------
     pd.DataFrame
@@ -94,11 +63,14 @@ def get_time_accounting(
         if len(exposures) == 0:
             return pd.DataFrame()
 
+        # Get connections to rubin_nights services
+        clients = get_clients(auth_token=auth_token)
+
         exposures_df = pd.DataFrame(exposures)
         visits = rn_aug.augment_visits(exposures_df, "lsstcam", skip_rs_columns=True)
 
         visits, _ = rn_sch.add_model_slew_times(
-            visits, efd_client, model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False)
+            visits, clients["efd"], model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False)
         max_scatter = 6
         valid_overhead = np.min([np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values)
                                     + max_scatter, visits.visit_gap.values], axis=0)
@@ -120,7 +92,7 @@ def get_open_close_dome(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    efd_client: InfluxQueryClient,
+    auth_token: str = None,
  ) -> dict:
     """
     Retrieve the dome open and close times for a specified
@@ -135,9 +107,10 @@ def get_open_close_dome(
         The ending observation day (as an integer, e.g., YYYYMMDD).
     instrument : str
         The name of the instrument for which to retrieve dome open/close times.
-    efd_client : InfluxQueryClient
-        An EFD client instance to use for data retrieval.
-        If None, a default client may be used.
+    auth_token : str, optional
+        Authentication token used when connecting to Rubin Observatory
+        services.
+
     Returns
     -------
     dict
@@ -148,10 +121,94 @@ def get_open_close_dome(
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
     try:
+        # Get connections to rubin_nights services
+        clients = get_clients(auth_token=auth_token)
+
         day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format='isot', scale='utc')
         day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00", format='isot', scale='utc')
-        dome_open = get_dome_open_close(day_min, day_max, efd_client)
+        dome_open = get_dome_open_close(day_min, day_max, clients["efd"])
         return dome_open
     except Exception as e:
         logger.error(f"Error getting open/close dome times from rubin_nights through EFD: {e}", exc_info=True)
         return pd.DataFrame()
+
+
+def get_context_feed(
+    dayobs_start: int,
+    dayobs_end: int,
+    auth_token: str = None,
+) -> list:
+    """
+    Retrieve consolidated context feed messages for a given range of
+    observation days.
+
+    This function queries the Rubin Observatory services via the
+    consolidated ScriptQueue messages, within the specified dayObs
+    range. It processes the results into JSON-safe records, ensuring
+    special float values (NaN, Infinity) are handled correctly for
+    serialization. Only the relevant context feed columns are retained
+    from the raw data.
+
+    Parameters
+    ----------
+    dayobs_start : int
+        The starting observation day (as an integer, e.g., YYYYMMDD).
+    dayobs_end : int
+        The ending observation day (as an integer, e.g., YYYYMMDD).
+    auth_token : str, optional
+        Authentication token used when connecting to external
+        services.
+
+    Returns
+    -------
+    list
+        A list containing two elements:
+        - records : list of dict
+            JSON-safe context feed records, one per row.
+        - cols : list of str
+            The column names included in the context feed.
+        Returns an empty list if an error occurs.
+    """
+    logger.info(
+        f"Getting context feed data for start: {dayobs_start}, end: {dayobs_end}"
+    )
+    try:
+        # Get connections to rubin_nights services
+        endpoints = get_clients(auth_token=auth_token)
+
+        # Convert dayobs_start and dayobs_end to t_start and t_end
+        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayobs_start)}T12:00:00", format='isot', scale='utc')
+        t_end = Time(
+            f"{rn_dayobs.day_obs_int_to_str(dayobs_end)}T12:00:00",
+            format="isot",
+            scale="utc",
+        ) + TimeDelta(1, format="jd")
+
+        # Returns pandas dataframe and list
+        df, cols = get_consolidated_messages(t_start, t_end, endpoints)
+
+        # For now, we drop all data not in columns=cols.
+        # The dropped columns contain the raw data.
+
+        # If we end up needing the raw data, we will need to handle
+        # the non-serialisable types or bypass the default JSON
+        # encoding and return a Response directly, e.g.
+        # records = df.to_dict(orient="records") # list of row dicts
+        # json_ready = jsonable_encoder(records) # fixes problem types
+        # return JSONResponse(content=json_ready)
+
+        # Discard all columns that are not listed in cols
+        df_cols_only = df[df.columns.intersection(cols)]
+
+        # Convert special floats (nans and infs) to strings
+        # This ensures that JSON serialisation does not fail
+        df_safe = df_cols_only.map(stringify_special_floats)
+        records = df_safe.to_dict(orient="records")
+
+        return [records, cols]
+
+    except Exception as e:
+        logger.error(
+            f"Error retrieving Context Feed data from rubin_nights: {e}",
+            exc_info=True)
+        return []
