@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 import os
 import pytest
 import requests
-from rubin_nights.connections import get_clients
 from unittest.mock import patch, Mock
 
 
@@ -731,6 +730,7 @@ def test_nightreport_endpoint(mock_requests_get):
 
 
 def test_exposure_entries_endpoint(mock_requests_get):
+
     endpoint = (
         "/exposure-entries?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     )
@@ -767,7 +767,10 @@ def test_exposure_entries_endpoint(mock_requests_get):
     app.dependency_overrides.pop(get_access_token, None)
 
 
+@pytest.mark.skip(reason="awaiting rubin-nights packaging")
 def test_exposures_endpoint(mock_requests_get, mock_requests_post):
+    from rubin_nights.connections import get_clients
+
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     _test_endpoint_authentication(endpoint)
 
