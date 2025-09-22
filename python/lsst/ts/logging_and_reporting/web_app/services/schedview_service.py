@@ -262,7 +262,7 @@ def plot_visit_skymaps(
 
     # Night selector (dropdown instead of slider)
     day_obs_labels = [str(n) for n in unique_nights]
-    selector = bokeh.models.Select(title="Night", value=day_obs_labels[0], options=day_obs_labels)
+    selector = bokeh.models.Select(title="Night", value=day_obs_labels[0], options=day_obs_labels, width=300)
 
     mjd_starts = {str(day_obs): cond.sun_n12_setting for day_obs, cond in zip(unique_nights, conditions_list)}
     mjd_ends   = {str(day_obs): cond.sun_n12_rising  for day_obs, cond in zip(unique_nights, conditions_list)}
@@ -310,7 +310,7 @@ def plot_visit_skymaps(
         sm.decorate()
 
     # return bokeh.layouts.column(spheremap.figure, slider)
-    return bokeh.layouts.column(spheremap.figure, selector)
+    return bokeh.layouts.column(bokeh.layouts.row([sm.figure for sm in spheremaps]), selector)
 
 
 def create_visit_skymaps(
