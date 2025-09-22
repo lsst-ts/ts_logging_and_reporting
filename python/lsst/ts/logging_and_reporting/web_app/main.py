@@ -529,7 +529,7 @@ async def multi_night_visit_maps(
         visits = read_visits(
             dayobs_start_dt.date(),
             instrument.lower(),
-            stackers = NIGHT_STACKERS, num_nights=3)
+            stackers = NIGHT_STACKERS, num_nights=diff.days)
         # visits['filter'] = visits['band']
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
