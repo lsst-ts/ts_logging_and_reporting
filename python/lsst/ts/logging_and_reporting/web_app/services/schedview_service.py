@@ -84,6 +84,7 @@ def plot_visit_skymaps(
     import bokeh
 
     reference_conditions = conditions_list[0]
+    # print(reference_conditions)
     spheremaps = [mc(mjd=reference_conditions.mjd) for mc in map_classes]
 
     if camera_perimeter == "LSST":
@@ -134,7 +135,7 @@ def plot_visit_skymaps(
 
     # Group visits per night
     unique_nights = sorted(visits["day_obs"].unique())
-    print(unique_nights)
+    # print(unique_nights)
     night_renderers = []
 
     for night_idx, day_obs in enumerate(unique_nights):
@@ -217,33 +218,11 @@ def plot_visit_skymaps(
     spheremap.add_horizon()
     spheremap.add_horizon(zd=70, line_kwargs={"color":"red", "line_width":2})
 
-    # Night slider
-    slider = bokeh.models.Slider(start=0, end=len(unique_nights)-1, value=0, step=1, title="Night")
+    # # Night slider
+    # slider = bokeh.models.Slider(start=0, end=len(unique_nights)-1,
+    # value=0, step=1, title="Night")
 
-    night_mjds = [cond.mjd for cond in conditions_list]
-
-    callback_code = """
-    for (let i = 0; i < sources.length; i++){
-        let band_renderers = sources[i];
-        for (let j = 0; j < band_renderers.length; j++){
-            band_renderers[j].visible = (i == slider.value)
-        }
-    }
-    // update the mjd slider to the selected night's MJD
-    mjd_slider.value = night_mjds[slider.value]
-    """
-    slider.js_on_change(
-        "value",
-        bokeh.models.CustomJS(
-            args=dict(
-                sources=night_renderers,
-                slider=slider,
-                mjd_slider=spheremaps[0].sliders["mjd"],
-                night_mjds=night_mjds,
-            ),
-            code=callback_code,
-        )
-    )
+    # night_mjds = [cond.mjd for cond in conditions_list]
 
     # callback_code = """
     # for (let i = 0; i < sources.length; i++){
@@ -252,10 +231,73 @@ def plot_visit_skymaps(
     #         band_renderers[j].visible = (i == slider.value)
     #     }
     # }
+    # // update the mjd slider to the selected night's MJD
+    # mjd_slider.value = night_mjds[slider.value]
     # """
-    # slider.js_on_change("value",
-    # bokeh.models.CustomJS(args=dict(sources=night_renderers, slider=slider),
-    # code=callback_code))
+    # slider.js_on_change(
+    #     "value",
+    #     bokeh.models.CustomJS(
+    #         args=dict(
+    #             sources=night_renderers,
+    #             slider=slider,
+    #             mjd_slider=spheremaps[0].sliders["mjd"],
+    #             night_mjds=night_mjds,
+    #         ),
+    #         code=callback_code,
+    #     )
+    # )
+
+    # # callback_code = """
+    # # for (let i = 0; i < sources.length; i++){
+    # #     let band_renderers = sources[i];
+    # #     for (let j = 0; j < band_renderers.length; j++){
+    # #         band_renderers[j].visible = (i == slider.value)
+    # #     }
+    # # }
+    # # """
+    # # slider.js_on_change("value",
+    # # bokeh.models.CustomJS(args=dict(sources=night_renderers,
+    # slider=slider),
+    # # code=callback_code))
+
+    # Night selector (dropdown instead of slider)
+    day_obs_labels = [str(n) for n in unique_nights]
+    selector = bokeh.models.Select(title="Night", value=day_obs_labels[0], options=day_obs_labels)
+
+    mjd_starts = {str(day_obs): cond.sun_n12_setting for day_obs, cond in zip(unique_nights, conditions_list)}
+    mjd_ends   = {str(day_obs): cond.sun_n12_rising  for day_obs, cond in zip(unique_nights, conditions_list)}
+
+    callback_code = """
+    const selected = selector.value;
+    for (let i = 0; i < sources.length; i++) {
+        const visible = (day_obs_list[i] === selected);
+        let band_sources = sources[i];
+        for (let j = 0; j < band_sources.length; j++) {
+            band_sources[j].visible = visible;
+        }
+    }
+    // update MJD slider bounds for the selected night
+    if (mjd_starts[selected] !== undefined && mjd_ends[selected] !== undefined) {
+        mjd_slider.start = mjd_starts[selected];
+        mjd_slider.end = mjd_ends[selected];
+        mjd_slider.value = mjd_starts[selected];
+    }
+    """
+
+    selector.js_on_change(
+        "value",
+        bokeh.models.CustomJS(
+            args=dict(
+                sources=night_renderers,
+                selector=selector,
+                day_obs_list=day_obs_labels,
+                mjd_slider=spheremaps[0].sliders["mjd"],
+                mjd_starts=mjd_starts,
+                mjd_ends=mjd_ends,
+            ),
+            code=callback_code,
+        ),
+    )
 
     # Set initial visibility
     for i, band_renderers in enumerate(night_renderers):
@@ -267,7 +309,8 @@ def plot_visit_skymaps(
     for sm in spheremaps:
         sm.decorate()
 
-    return bokeh.layouts.column(spheremap.figure, slider)
+    # return bokeh.layouts.column(spheremap.figure, slider)
+    return bokeh.layouts.column(spheremap.figure, selector)
 
 
 def create_visit_skymaps(
@@ -295,7 +338,7 @@ def create_visit_skymaps(
         observatory.sky_model.load_length = 1
 
     unique_nights = sorted(visits["day_obs"].unique())
-    print(unique_nights)
+    # print(unique_nights)
     conditions_list = []
     for day_obs in unique_nights:
         night_date = datetime.strptime(str(day_obs), '%Y%m%d').date()
