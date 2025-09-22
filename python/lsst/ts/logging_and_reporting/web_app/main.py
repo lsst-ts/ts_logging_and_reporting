@@ -292,4 +292,274 @@ async def read_context_feed(
         }
     except Exception as e:
         logger.error(f"Error in /context-feed: {e}")
+
+@app.get("/visit-maps")
+async def get_visit_maps(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+):
+    logger.info(
+        f"Getting visit maps for start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+        f"and instrument: {instrument}"
+    )
+    try:
+        import os
+        import time
+        # import pandas as pd
+        import numpy as np
+        from datetime import datetime, timedelta
+        # from astropy.time import Time
+        from schedview.compute.visits import add_coords_tuple
+        from schedview.collect.visits import read_visits, NIGHT_STACKERS
+        from schedview.plot.visitmap import create_visit_skymaps
+        from schedview.plot.survey import create_metric_visit_map_grid
+        from rubin_scheduler.scheduler.model_observatory import ModelObservatory
+        from rubin_sim import maf
+        from bokeh.embed import json_item
+
+        import io
+        import base64
+
+        def fig_to_base64(fig):
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight")
+            buf.seek(0)
+            return base64.b64encode(buf.read()).decode("utf-8")
+        # import rubin_nights.augment_visits as rn_aug
+        # import rubin_nights.dayobs_utils as rn_dayobs
+
+        # visits : `pandas.DataFrame` or `str`
+        # If a `pandas.DataFrame`, it needs at least the following columns:
+
+        # ``"fieldRA"``
+        #     The visit R.A. in degrees (`float`).
+        # ``"fieldDec"``
+        #     The visit declination in degrees (`float`).
+        # ``"observationStartMJD"``
+        #     The visit start MJD (`float`).
+        # ``"band"``
+        #     The visit filter (`str`)
+
+
+        # consdb = clients['consdb']
+        os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
+
+        observatory = ModelObservatory(init_load_length=1)
+        # # timezone = "Chile/Continental"
+
+        # day_min = Time(
+        # f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00",
+        # format='isot', scale='utc')
+        # day_max = Time(
+        # f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00",
+        # format='isot', scale='utc')
+        # visits = consdb.get_visits(instrument,
+        # day_min, day_max, augment=False)
+        # visits = rn_aug.augment_visits(visits,
+        # "lsstcam", skip_rs_columns=True)
+        # pandas.errors.UndefinedVariableError:
+        # name 'observationStartMJD' is not defined
+
+        dayobs_start_dt = datetime.strptime(str(dayObsStart), '%Y%m%d')
+        # dayobs_end_dt = datetime.strptime(str(dayObsEnd), '%Y%m%d')
+        start_time = time.perf_counter()
+        visits = read_visits(dayobs_start_dt.date(),
+                             instrument.lower(),
+                             stackers = NIGHT_STACKERS,
+                             num_nights=2)
+        visits['filter'] = visits['band']
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        print(f"read_visits() executed in {elapsed_time:.6f} seconds")
+
+        dayobs_visits = visits[visits['day_obs'] == dayObsStart]
+
+        v_map = None
+        s_map = None
+
+        if len(dayobs_visits):
+        #     coord_column = max(tuple(visits.columns).
+        # index("s_ra"), tuple(visits.columns).index("s_dec")) + 1
+        #     visits.insert(coord_column, "coords",
+        # list(zip(visits["s_ra"], visits["s_dec"])))
+            dayobs_visits = add_coords_tuple(dayobs_visits)
+
+            start_time = time.perf_counter()
+            # print(visits["day_obs"].unique())
+            v_map, vmap_data = create_visit_skymaps(
+                visits=dayobs_visits,
+                night_date=datetime.strptime(str(dayObsStart), '%Y%m%d').date(),
+                timezone="UTC",
+                observatory=observatory,
+            )
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            print(f"create_visit_skymaps() executed in {elapsed_time:.6f} seconds")
+
+            # conditions = observatory.return_conditions()
+
+            start_time = time.perf_counter()
+
+            previous_day_obs_dt = dayobs_start_dt - timedelta(days=1)
+            previous_day_obs = previous_day_obs_dt.strftime('%Y%m%d')
+            # print(previous_day_obs)
+            previous_visits = visits[visits['day_obs'] == int(previous_day_obs)]
+            # print(len(previous_visits))
+
+            # previous_visits = read_visits(
+            # previous_day_obs_dt.date(), instrument.lower(),
+            # stackers = NIGHT_STACKERS, num_nights="2")
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            print(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
+
+            if len(dayobs_visits) and len(previous_visits) \
+                    and not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])) \
+                    and not np.all(np.isnan(previous_visits['fiveSigmaDepth'])):
+                start_time = time.perf_counter()
+                # print(previous_visits.columns)
+                # previous_visits['filter'] = previous_visits['band']
+                # dayobs_visits['filter'] = dayobs_visits['band']
+                # print(visits.columns)
+                s_map = create_metric_visit_map_grid(
+                    maf.CountMetric(col='fiveSigmaDepth', metric_name="Numbers of visits"),
+                    previous_visits.loc[np.isfinite(previous_visits['fiveSigmaDepth']), :],
+                    dayobs_visits.loc[np.isfinite(dayobs_visits['fiveSigmaDepth']), :],
+                    observatory,
+                    nside=32,
+                    use_matplotlib=False
+                )
+                end_time = time.perf_counter()
+                elapsed_time = end_time - start_time
+                print(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+
+            return {
+                "interactive": json_item(v_map) if v_map is not None else {},
+                "static": json_item(s_map) if s_map is not None  else {}
+                }
+
+    except ConsdbQueryError as ce:
+        logger.error(f"ConsdbQueryError in /visit-maps: {ce}")
+        raise HTTPException(status_code=502, detail="ConsDB query failed")
+    except Exception as e:
+        logger.error(f"Error in /visit-maps: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/new-visit-maps")
+async def new_visit_maps(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
+    logger.info(
+        f"Getting visit maps for start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+        f"and instrument: {instrument}"
+    )
+
+    import os
+    import time
+    from datetime import datetime
+    from schedview.collect.visits import read_visits, NIGHT_STACKERS
+    from .services.schedview_service import query_visits_between_twilights
+
+
+    os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
+
+    almanac_info = get_almanac(dayObsStart, dayObsEnd)
+
+    dayobs_start_dt = datetime.strptime(str(dayObsStart), '%Y%m%d')
+    dayobs_end_dt = datetime.strptime(str(dayObsEnd), '%Y%m%d')
+    diff = dayobs_end_dt - dayobs_start_dt
+
+    logger.debug(f"Number of nights: {diff.days}")
+
+    start_time = time.perf_counter()
+    visits = read_visits(
+        dayobs_start_dt.date(),
+        instrument.lower(),
+        stackers = NIGHT_STACKERS,
+        num_nights=diff.days)
+    logger.debug(f"Number of visits: {len(visits)}")
+
+    end_time = time.perf_counter()
+    elapsed_time = end_time - start_time
+    logger.debug(f"fetching visits executed in {elapsed_time:.6f} seconds")
+
+    filtered_visits, first_twilight, last_twilight = query_visits_between_twilights(visits, almanac_info)
+    logger.debug(f"Number of visits between twilights: {len(filtered_visits)}")
+
+
+@app.get("/multi-night-visit-maps")
+async def multi_night_visit_maps(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
+    try:
+        import os
+        import time
+        from datetime import datetime
+        from schedview.compute.visits import add_coords_tuple
+        from schedview.collect.visits import read_visits, NIGHT_STACKERS
+        from .services.schedview_service import create_visit_skymaps
+        from rubin_scheduler.scheduler.model_observatory import ModelObservatory
+        from bokeh.embed import json_item
+
+        os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
+
+        observatory = ModelObservatory(init_load_length=1)
+        # timezone = "Chile/Continental"
+
+        dayobs_start_dt = datetime.strptime(str(dayObsStart), '%Y%m%d')
+        dayobs_end_dt = datetime.strptime(str(dayObsEnd), '%Y%m%d')
+        diff = dayobs_end_dt - dayobs_start_dt
+
+        logger.debug(f"Number of nights: {diff.days}")
+        start_time = time.perf_counter()
+
+        visits = read_visits(
+            dayobs_start_dt.date(),
+            instrument.lower(),
+            stackers = NIGHT_STACKERS, num_nights=3)
+        # visits['filter'] = visits['band']
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        print(f"read_visits() executed in {elapsed_time:.6f} seconds")
+        print(visits["day_obs"].unique())
+
+        v_map = None
+
+        if len(visits):
+            visits = add_coords_tuple(visits)
+            print(visits["day_obs"].unique())
+
+            start_time = time.perf_counter()
+            v_map, vmap_data = create_visit_skymaps(
+                visits=visits,
+                timezone="UTC",
+                observatory=observatory,
+            )
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            print(f"create_visit_skymaps() executed in {elapsed_time:.6f} seconds")
+
+        return {
+            "interactive": json_item(v_map) if v_map is not None else {},
+            "static": {}
+            }
+
+    except ConsdbQueryError as ce:
+        logger.error(f"ConsdbQueryError in /visit-maps: {ce}")
+        raise HTTPException(status_code=502, detail="ConsDB query failed")
+    except Exception as e:
+        logger.error(f"Error in /visit-maps: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
