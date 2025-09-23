@@ -508,15 +508,23 @@ async def multi_night_visit_maps(
     instrument: str,
     auth_token: str = Depends(get_access_token),
 ):
+    logger.info(
+        f"Getting multi night visit maps for start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+        f"and instrument: {instrument}"
+    )
     try:
         import os
         import time
-        from datetime import datetime
+        import numpy as np
+        from datetime import datetime, timedelta
         from schedview.compute.visits import add_coords_tuple
         from schedview.collect.visits import read_visits, NIGHT_STACKERS
         from .services.schedview_service import create_visit_skymaps
+        from schedview.plot.survey import create_metric_visit_map_grid
         from rubin_scheduler.scheduler.model_observatory import ModelObservatory
         from bokeh.embed import json_item
+        from rubin_sim import maf
 
         os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
 
@@ -531,16 +539,19 @@ async def multi_night_visit_maps(
         start_time = time.perf_counter()
 
         visits = read_visits(
-            dayobs_start_dt.date(),
+            dayobs_end_dt.date() - timedelta(days=1),
             instrument.lower(),
             stackers = NIGHT_STACKERS, num_nights=diff.days)
-        # visits['filter'] = visits['band']
+
+        visits['filter'] = visits['band']
+
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
         print(f"read_visits() executed in {elapsed_time:.6f} seconds")
         print(visits["day_obs"].unique())
 
         v_map = None
+        s_map = None
 
         if len(visits):
             visits = add_coords_tuple(visits)
@@ -556,9 +567,38 @@ async def multi_night_visit_maps(
             elapsed_time = end_time - start_time
             print(f"create_visit_skymaps() executed in {elapsed_time:.6f} seconds")
 
+            # static maps
+            # Questions:
+            # what if one night doesn't have visits but the previous night has
+            # what if one night have visits but the previous night doesn't
+            # causes problem when generating the static skymaps
+            visits = visits.drop(columns=['coords'], errors='ignore')
+            last_dayobs = 20250723
+            previous_dayobs = 20250722
+            dayobs_visits = visits[visits['day_obs'] == last_dayobs]
+            previous_visits = visits[visits['day_obs'] == previous_dayobs]
+            print(len(previous_visits))
+            print(len(dayobs_visits))
+
+            if len(dayobs_visits) and len(previous_visits) \
+                    and not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])) \
+                    and not np.all(np.isnan(previous_visits['fiveSigmaDepth'])):
+                start_time = time.perf_counter()
+                s_map = create_metric_visit_map_grid(
+                    maf.CountMetric(col='fiveSigmaDepth', metric_name="Numbers of visits"),
+                    previous_visits.loc[np.isfinite(previous_visits['fiveSigmaDepth']), :],
+                    dayobs_visits.loc[np.isfinite(dayobs_visits['fiveSigmaDepth']), :],
+                    observatory,
+                    nside=32,
+                )
+                end_time = time.perf_counter()
+                elapsed_time = end_time - start_time
+                print(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+
+
         return {
             "interactive": json_item(v_map) if v_map is not None else {},
-            "static": {}
+            "static": json_item(s_map) if s_map is not None else {},
             }
 
     except ConsdbQueryError as ce:
