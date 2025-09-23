@@ -551,7 +551,7 @@ async def multi_night_visit_maps(
         print(visits["day_obs"].unique())
 
         v_map = None
-        s_map = None
+        s_map_dict = {}
 
         if len(visits):
             visits = add_coords_tuple(visits)
@@ -568,37 +568,59 @@ async def multi_night_visit_maps(
             print(f"create_visit_skymaps() executed in {elapsed_time:.6f} seconds")
 
             # static maps
-            # Questions:
-            # what if one night doesn't have visits but the previous night has
-            # what if one night have visits but the previous night doesn't
-            # causes problem when generating the static skymaps
+
+            # drop coords tuple as it causes a problem
+            # when generating the static skymaps
             visits = visits.drop(columns=['coords'], errors='ignore')
-            last_dayobs = 20250723
-            previous_dayobs = 20250722
-            dayobs_visits = visits[visits['day_obs'] == last_dayobs]
-            previous_visits = visits[visits['day_obs'] == previous_dayobs]
-            print(len(previous_visits))
-            print(len(dayobs_visits))
 
-            if len(dayobs_visits) and len(previous_visits) \
-                    and not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])) \
-                    and not np.all(np.isnan(previous_visits['fiveSigmaDepth'])):
-                start_time = time.perf_counter()
-                s_map = create_metric_visit_map_grid(
-                    maf.CountMetric(col='fiveSigmaDepth', metric_name="Numbers of visits"),
-                    previous_visits.loc[np.isfinite(previous_visits['fiveSigmaDepth']), :],
-                    dayobs_visits.loc[np.isfinite(dayobs_visits['fiveSigmaDepth']), :],
-                    observatory,
-                    nside=32,
-                )
-                end_time = time.perf_counter()
-                elapsed_time = end_time - start_time
-                print(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+            unique_days = np.sort(visits['day_obs'].unique()).tolist()
 
+
+            # Iterate over consecutive night pairs
+            for i in range(1, len(unique_days)):
+                previous_dayobs = unique_days[i - 1]
+                last_dayobs = unique_days[i]
+
+                previous_dayobs_dt = datetime.strptime(str(previous_dayobs), '%Y%m%d')
+                last_dayobs_dt = datetime.strptime(str(last_dayobs), '%Y%m%d')
+                diff = last_dayobs_dt - previous_dayobs_dt
+                print(f"difference between nights: {diff}")
+
+                if diff.days != 1:
+                    print(f"Skipping non-consecutive nights: {previous_dayobs} -> {last_dayobs}")
+                    s_map_dict[last_dayobs] = None
+                    continue
+
+                previous_visits = visits[visits['day_obs'] == previous_dayobs].copy()
+                dayobs_visits = visits[visits['day_obs'] == last_dayobs].copy()
+
+                print(f"Previous night ({previous_dayobs}) visits: {len(previous_visits)}")
+                print(f"Current night ({last_dayobs}) visits: {len(dayobs_visits)}")
+
+                # Only proceed if both nights have valid fiveSigmaDepth
+                if len(previous_visits) and len(dayobs_visits) and \
+                not np.all(np.isnan(previous_visits['fiveSigmaDepth'])) and \
+                not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])):
+
+                    start_time = time.perf_counter()
+
+                    s_map = create_metric_visit_map_grid(
+                        maf.CountMetric(col='fiveSigmaDepth', metric_name="Numbers of visits"),
+                        previous_visits.loc[np.isfinite(previous_visits['fiveSigmaDepth']), :],
+                        dayobs_visits.loc[np.isfinite(dayobs_visits['fiveSigmaDepth']), :],
+                        observatory,
+                        nside=32,
+                    )
+
+                    end_time = time.perf_counter()
+                    elapsed_time = end_time - start_time
+                    print(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+
+                    s_map_dict[last_dayobs] = json_item(s_map, f"hpix_grid_{last_dayobs}")
 
         return {
             "interactive": json_item(v_map) if v_map is not None else {},
-            "static": json_item(s_map) if s_map is not None else {},
+            "static": s_map_dict,
             }
 
     except ConsdbQueryError as ce:
