@@ -11,6 +11,7 @@ USER saluser
 RUN source /home/saluser/.setup_dev.sh && \
 	pip install astroplan && \
 	pip install --upgrade git+https://github.com/lsst-sims/rubin_nights.git@v0.6.1 && \
+	conda install -c conda-forge schedview && \
 	pip install -e .
 
 CMD ["docker/startup.sh"]
