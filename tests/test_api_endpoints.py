@@ -1,13 +1,14 @@
+from fastapi.testclient import TestClient
 import os
 import pytest
 import requests
+from rubin_nights.connections import get_clients
+from unittest.mock import patch, Mock
 
+from lsst.ts.logging_and_reporting.web_app.main import app
+from lsst.ts.logging_and_reporting.utils import get_access_token
 import lsst.ts.logging_and_reporting.utils as ut
 
-from fastapi.testclient import TestClient
-from lsst.ts.logging_and_reporting.web_app.main import app, get_rubin_nights_clients
-from lsst.ts.logging_and_reporting.utils import get_access_token
-from unittest.mock import patch, Mock
 
 client = TestClient(app)
 
@@ -799,7 +800,7 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
             "psf_sigma_median": [1.1],
         })
         app.dependency_overrides[get_access_token] = lambda: "dummy-token"
-        app.dependency_overrides[get_rubin_nights_clients] = lambda: {"efd": Mock()}
+        app.dependency_overrides[get_clients] = lambda: {"efd": Mock()}
 
         response = client.get(endpoint)
         assert response.status_code == 200
@@ -825,7 +826,7 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
         assert data["open_dome_hours"] == 0
 
         app.dependency_overrides.pop(get_access_token, None)
-        app.dependency_overrides.pop(get_rubin_nights_clients, None)
+        app.dependency_overrides.pop(get_clients, None)
 
 
 def test_almanac_endpoint(monkeypatch):
@@ -838,3 +839,90 @@ def test_almanac_endpoint(monkeypatch):
     data = response.json()
     assert "almanac_info" in data
     assert data["almanac_info"] == {"sunset": 123, "sunrise": 456}
+
+
+def test_context_feed_endpoint(monkeypatch):
+    endpoint = "/context-feed?dayObsStart=20240101&dayObsEnd=20240102"
+
+    dummy_cols = [
+        "time",
+        "name",
+        "description",
+        "config",
+        "script_salIndex",
+        "salIndex",
+        "finalStatus",
+        "timestampProcessStart",
+        "timestampConfigureEnd",
+        "timestampRunStart",
+        "timestampProcessEnd",
+    ]
+    dummy_data = [
+        {
+            "time": "2024-01-01T01:23:45Z",
+            "name": "ScriptQueue",
+            "description": "Dummy run",
+            "config": "config-string",
+            "script_salIndex": 1,
+            "salIndex": 2,
+            "finalStatus": "SUCCESS",
+            "timestampProcessStart": "2024-01-01T01:00:00Z",
+            "timestampConfigureEnd": "2024-01-01T01:05:00Z",
+            "timestampRunStart": "2024-01-01T01:10:00Z",
+            "timestampProcessEnd": "2024-01-01T01:20:00Z",
+        }
+    ]
+
+    # Patch before auth check so real function never runs
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_context_feed",
+        lambda dayObsStart, dayObsEnd, auth_token: (dummy_data, dummy_cols),
+    )
+
+    # Authentication test --
+    _test_endpoint_authentication(endpoint)
+
+    # API test --
+    # Override token-fetching dependency
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    # Make request
+    response = client.get(endpoint)
+    assert response.status_code == 200
+
+    # Parse JSON response
+    data = response.json()
+    assert "data" in data
+    assert "cols" in data
+    assert data["cols"] == dummy_cols
+
+    # Verify cols match data cols
+    for record in data["data"]:
+        for col in dummy_cols:
+            assert col in record
+
+    # Remove override
+    app.dependency_overrides.pop(get_access_token, None)
+
+    # Error-path API test --
+    # Simulate a service failure by patching get_context_feed
+    # to raise an Exception
+    def raise_error(dayObsStart, dayObsEnd, auth_token):
+        raise Exception("failure")
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_context_feed",
+        raise_error,
+    )
+
+    # Override token again
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    # Expect API to return 500 with exception message
+    response = client.get(endpoint)
+    assert response.status_code == 500
+    assert response.json()["detail"] == "failure"
+
+    # Clean up override
+    app.dependency_overrides.pop(get_access_token, None)
+
