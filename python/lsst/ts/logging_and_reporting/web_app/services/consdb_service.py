@@ -4,6 +4,7 @@ from astropy.table import Table
 import pandas as pd
 
 from lsst.ts.logging_and_reporting.consdb import ConsdbAdapter
+from lsst.ts.logging_and_reporting.utils import stringify_special_floats
 import lsst.ts.logging_and_reporting.utils as nd_utils
 
 logger = logging.getLogger(__name__)
@@ -14,19 +15,6 @@ def convert_row(row):
         key: (row[key].item() if isinstance(row[key], np.generic) else row[key])
         for key in row.keys()
     }
-
-
-# Required to jasonify pandas DataFrame with special float values
-# To ensure JSON serialisation does not fail
-def stringify_special_floats(val):
-    if isinstance(val, float):
-        if np.isnan(val):
-            return "NaN"
-        elif np.isposinf(val):
-            return "Infinity"
-        elif np.isneginf(val):
-            return "-Infinity"
-    return val
 
 
 def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> list:
