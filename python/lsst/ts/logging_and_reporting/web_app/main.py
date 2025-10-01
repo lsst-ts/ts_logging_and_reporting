@@ -545,6 +545,7 @@ async def multi_night_visit_maps(
                 visits=visits,
                 timezone="UTC",
                 observatory=observatory,
+                # planisphere_only=True,
             )
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time
