@@ -378,7 +378,7 @@ async def get_visit_maps(
         dayobs_visits = visits[visits['day_obs'] == dayObsStart]
 
         v_map = None
-        s_map = None
+        # s_map = None
 
         if len(dayobs_visits):
         #     coord_column = max(tuple(visits.columns).
@@ -512,15 +512,12 @@ async def multi_night_visit_maps(
     try:
         import os
         import time
-        import numpy as np
         from datetime import datetime, timedelta
         from schedview.compute.visits import add_coords_tuple
         from schedview.collect.visits import read_visits, NIGHT_STACKERS
         from .services.schedview_service import create_visit_skymaps
-        from schedview.plot.survey import create_metric_visit_map_grid
         from rubin_scheduler.scheduler.model_observatory import ModelObservatory
         from bokeh.embed import json_item
-        from rubin_sim import maf
 
         os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
 
@@ -547,7 +544,6 @@ async def multi_night_visit_maps(
         print(visits["day_obs"].unique())
 
         v_map = None
-        s_map_dict = {}
 
         if len(visits):
             visits = add_coords_tuple(visits)
@@ -563,60 +559,99 @@ async def multi_night_visit_maps(
             elapsed_time = end_time - start_time
             print(f"create_visit_skymaps() executed in {elapsed_time:.6f} seconds")
 
-            # static maps
-
-            # drop coords tuple as it causes a problem
-            # when generating the static skymaps
-            visits = visits.drop(columns=['coords'], errors='ignore')
-
-            unique_days = np.sort(visits['day_obs'].unique()).tolist()
-
-
-            # Iterate over consecutive night pairs
-            for i in range(1, len(unique_days)):
-                previous_dayobs = unique_days[i - 1]
-                last_dayobs = unique_days[i]
-
-                previous_dayobs_dt = datetime.strptime(str(previous_dayobs), '%Y%m%d')
-                last_dayobs_dt = datetime.strptime(str(last_dayobs), '%Y%m%d')
-                diff = last_dayobs_dt - previous_dayobs_dt
-                print(f"difference between nights: {diff}")
-
-                if diff.days != 1:
-                    print(f"Skipping non-consecutive nights: {previous_dayobs} -> {last_dayobs}")
-                    s_map_dict[last_dayobs] = None
-                    continue
-
-                previous_visits = visits[visits['day_obs'] == previous_dayobs].copy()
-                dayobs_visits = visits[visits['day_obs'] == last_dayobs].copy()
-
-                print(f"Previous night ({previous_dayobs}) visits: {len(previous_visits)}")
-                print(f"Current night ({last_dayobs}) visits: {len(dayobs_visits)}")
-
-                # Only proceed if both nights have valid fiveSigmaDepth
-                if len(previous_visits) and len(dayobs_visits) and \
-                not np.all(np.isnan(previous_visits['fiveSigmaDepth'])) and \
-                not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])):
-
-                    start_time = time.perf_counter()
-
-                    s_map = create_metric_visit_map_grid(
-                        maf.CountMetric(col='fiveSigmaDepth', metric_name="Numbers of visits"),
-                        previous_visits.loc[np.isfinite(previous_visits['fiveSigmaDepth']), :],
-                        dayobs_visits.loc[np.isfinite(dayobs_visits['fiveSigmaDepth']), :],
-                        observatory,
-                        nside=32,
-                    )
-
-                    end_time = time.perf_counter()
-                    elapsed_time = end_time - start_time
-                    print(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
-
-                    s_map_dict[last_dayobs] = json_item(s_map, f"hpix_grid_{last_dayobs}")
-
         return {
             "interactive": json_item(v_map) if v_map is not None else {},
-            "static": s_map_dict,
+            }
+
+    except ConsdbQueryError as ce:
+        logger.error(f"ConsdbQueryError in /multi-night-visit-maps: {ce}")
+        raise HTTPException(status_code=502, detail="ConsDB query failed")
+    except Exception as e:
+        logger.error(f"Error in /multi-night-visit-maps: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/survey-progress-map")
+async def survey_progress_map(
+    request: Request,
+    dayObs: int,
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
+    logger.info(
+        f"Getting survey progress map for night: "
+        f"{dayObs} and instrument: {instrument}"
+    )
+    try:
+        import os
+        import time
+        import numpy as np
+        from datetime import datetime, timedelta
+        from schedview.collect.visits import read_visits, NIGHT_STACKERS
+        from schedview.plot.survey import create_metric_visit_map_grid
+        from rubin_scheduler.scheduler.model_observatory import ModelObservatory
+        from bokeh.embed import json_item
+        from rubin_sim import maf
+
+        os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
+
+        observatory = ModelObservatory(init_load_length=1)
+
+        dayobs_dt = datetime.strptime(str(dayObs), '%Y%m%d')
+        print(f"Processing dayObs: {dayObs} -> {dayobs_dt}")
+
+        start_time = time.perf_counter()
+
+        visits = read_visits(
+            dayobs_dt.date(),
+            instrument.lower(),
+            stackers = NIGHT_STACKERS, num_nights=100)
+
+        visits['filter'] = visits['band']
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        print(f"read_visits() executed in {elapsed_time:.6f} seconds")
+
+        s_map = None
+
+        if len(visits):
+
+            start_time = time.perf_counter()
+
+            dayobs_visits = visits[visits['day_obs'] == dayObs]
+            print(len(dayobs_visits))
+
+            previous_day_obs_dt = dayobs_dt - timedelta(days=1)
+            previous_day_obs = previous_day_obs_dt.strftime('%Y%m%d')
+
+            print(previous_day_obs)
+
+            previous_visits = visits[visits['day_obs'] == int(previous_day_obs)]
+            print(len(previous_visits))
+
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            print(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
+
+            if len(dayobs_visits) and len(previous_visits) \
+                    and not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])) \
+                    and not np.all(np.isnan(previous_visits['fiveSigmaDepth'])):
+                start_time = time.perf_counter()
+                s_map = create_metric_visit_map_grid(
+                    maf.CountMetric(col='fiveSigmaDepth', metric_name="Numbers of visits"),
+                    previous_visits.loc[np.isfinite(previous_visits['fiveSigmaDepth']), :],
+                    visits.loc[np.isfinite(visits['fiveSigmaDepth']), :],
+                    observatory,
+                    nside=32,
+                    use_matplotlib=False
+                )
+                end_time = time.perf_counter()
+                elapsed_time = end_time - start_time
+                print(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+
+        return {
+            "static": json_item(s_map) if s_map is not None  else {}
             }
 
     except ConsdbQueryError as ce:
