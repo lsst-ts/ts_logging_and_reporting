@@ -44,4 +44,4 @@ requirements:
         - ipython
         - pydantic
         - uvicorn
-
+        - rubin-scheduler =3
