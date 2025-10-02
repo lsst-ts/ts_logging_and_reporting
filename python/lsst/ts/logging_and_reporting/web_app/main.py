@@ -493,6 +493,7 @@ async def multi_night_visit_maps(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
+    planisphereOnly: bool,
     auth_token: str = Depends(get_access_token),
 ):
     logger.info(
@@ -545,7 +546,7 @@ async def multi_night_visit_maps(
                 visits=visits,
                 timezone="UTC",
                 observatory=observatory,
-                # planisphere_only=True,
+                planisphere_only=planisphereOnly,
             )
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time
@@ -597,7 +598,7 @@ async def survey_progress_map(
         visits = read_visits(
             dayobs_dt.date(),
             instrument.lower(),
-            stackers = NIGHT_STACKERS, num_nights=100)
+            stackers = NIGHT_STACKERS, num_nights=50)
 
         visits['filter'] = visits['band']
 
@@ -647,8 +648,8 @@ async def survey_progress_map(
             }
 
     except ConsdbQueryError as ce:
-        logger.error(f"ConsdbQueryError in /visit-maps: {ce}")
+        logger.error(f"ConsdbQueryError in /survey-progress-map: {ce}")
         raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
-        logger.error(f"Error in /visit-maps: {e}", exc_info=True)
+        logger.error(f"Error in /survey-progress-map: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
