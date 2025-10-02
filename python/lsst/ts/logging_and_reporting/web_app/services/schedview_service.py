@@ -89,11 +89,6 @@ def plot_visit_skymaps(
     reference_conditions = conditions_list[0]
     spheremaps = [mc(mjd=reference_conditions.mjd) for mc in map_classes]
 
-    # make figures responsive
-    for sm in spheremaps:
-        sm.figure.width = None
-        sm.figure.height = None
-        sm.figure.sizing_mode = "stretch_both"
 
     if camera_perimeter == "LSST":
         camera_perimeter = LsstCameraFootprintPerimeter()
@@ -107,7 +102,7 @@ def plot_visit_skymaps(
     mjd_slider = spheremaps[0].sliders["mjd"]
     mjd_slider.start = mjd_start
     mjd_slider.end   = mjd_end
-    mjd_slider.value = mjd_start
+    mjd_slider.value = mjd_end if len(spheremaps) == 1 else mjd_start
 
     for sm in spheremaps[1:]:
         sm.sliders["mjd"] = mjd_slider
@@ -219,7 +214,11 @@ def plot_visit_skymaps(
         sm.add_horizon(zd=70, line_kwargs={"color":"red","line_width":2})
 
     # Text label showing current night based on MJD
-    dayobs_label = bokeh.models.Div(text=f"Night: {unique_nights[0]}", width=150)
+    # Initial value is first night
+    if len(spheremaps) == 1:
+        dayobs_label = bokeh.models.Div(text=f"Night: {unique_nights[-1]}", width=150)
+    else:
+        dayobs_label = bokeh.models.Div(text=f"Night: {unique_nights[0]}", width=150)
 
     # Callback to update label on slider change
     callback_code = """
@@ -232,6 +231,7 @@ def plot_visit_skymaps(
     }
     day_label.text = "Night: " + current_day;
     """
+
     mjd_slider.js_on_change(
         "value",
         bokeh.models.CustomJS(
@@ -246,6 +246,41 @@ def plot_visit_skymaps(
         )
     )
 
+    # force_refresh = bokeh.models.CustomJS(
+    #     args=dict(plots=[sm.plot for sm in spheremaps]),
+    #     code="""
+    #     for (let i = 0; i < plots.length; i++) {
+    #         plots[i].change.emit();
+    #     }
+    #     """
+    # )
+    # mjd_slider.js_on_change("value", force_refresh)
+
+    update_alpha = bokeh.models.CustomJS(
+        args=dict(sources=[r.data_source for night in night_renderers for r in night],
+                mjd_slider=mjd_slider, scale=fade_scale),
+        code="""
+        const mjd = mjd_slider.value;
+        for (let s = 0; s < sources.length; s++) {
+            const data = sources[s].data;
+            const mjds = data['mjd'];
+            const fill = data['fill_alpha'];
+            const line = data['line_alpha'];
+            for (let i = 0; i < mjds.length; i++) {
+                if (mjd >= mjds[i]) {
+                    fill[i] = 0.5;
+                    line[i] = Math.max(0, 1.0 * (1 - (mjd - mjds[i]) / scale));
+                } else {
+                    fill[i] = 0.0;
+                    line[i] = 0.0;
+                }
+            }
+            sources[s].change.emit();
+        }
+        """
+    )
+    mjd_slider.js_on_change("value", update_alpha)
+
     # Set initial visibility
     for i, band_renderers in enumerate(night_renderers):
         visible = (i == 0)
@@ -258,9 +293,12 @@ def plot_visit_skymaps(
 
     # Layout: row of plots + MJD slider + dayobs label
     row_plots = bokeh.layouts.row([sm.figure for sm in spheremaps])
-    layout = bokeh.layouts.column(row_plots, dayobs_label)
-    return layout
+    if len(spheremaps) == 1:
+        row_plots.width = 350
+        row_plots.height = 250
+        # return bokeh.layouts.column(row_plots, mjd_slider, dayobs_label)
 
+    return bokeh.layouts.column(row_plots, dayobs_label)
 
 def create_visit_skymaps(
     visits,
