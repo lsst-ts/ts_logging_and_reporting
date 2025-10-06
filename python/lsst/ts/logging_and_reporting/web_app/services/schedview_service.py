@@ -73,6 +73,7 @@ def plot_visit_skymaps(
     show_stars=False,
     map_classes=[ArmillarySphere, Planisphere],
     footprint_outline=None,
+    applet_mode=False,
 ):
     """
     Multi-night visit plots with shared MJD slider.
@@ -98,18 +99,26 @@ def plot_visit_skymaps(
         List of spheremap classes to instantiate
     footprint_outline : object or None
         Footprint outline polygons
+    applet_mode : bool
+        If True, uses compact fixed sizing for dashboard (380x220).
+        If False, uses responsive full-size mode for both maps.
     """
     # Initialize spheremaps
     reference_conditions = conditions_list[0]
     spheremaps = [mc(mjd=reference_conditions.mjd) for mc in map_classes]
 
-    # Adjust figure size for single map
-    if len(spheremaps) == 1:
-        spheremaps[0].figure.width = 380
-        spheremaps[0].figure.height = 220
-
     if camera_perimeter == "LSST":
         camera_perimeter = LsstCameraFootprintPerimeter()
+
+    # Configure figure sizing based on mode
+    if applet_mode:
+        # Applet mode: small fixed size for dashboard
+        spheremaps[0].figure.width = 380
+        spheremaps[0].figure.height = 220
+    else:
+        # Full mode: responsive sizing with matched heights
+        for sm in spheremaps:
+            sm.figure.sizing_mode = "stretch_width"
 
     # Setup shared MJD slider
     if "mjd" not in spheremaps[0].sliders:
@@ -170,12 +179,34 @@ def plot_visit_skymaps(
         fade_scale
     )
 
-    # Layout plots
-    row_plots = bokeh.layouts.row([sm.figure for sm in spheremaps])
-    if len(spheremaps) == 1:
-        fig = bokeh.layouts.column(row_plots, mjd_slider, dayobs_label)
+    # Layout based on mode
+    if applet_mode:
+        # Applet mode: single map with slider and label below
+        # Use column layout with all controls below the map
+        fig = bokeh.layouts.column(
+            spheremaps[0].figure,
+            mjd_slider,
+            dayobs_label
+        )
     else:
-        fig = bokeh.layouts.column(row_plots, dayobs_label)
+        # Full mode: side-by-side maps with controls below
+        # Maps in a row, controls naturally appear below each map
+        if len(spheremaps) == 1:
+            # Single map in full mode (planisphere only)
+            fig = bokeh.layouts.column(
+                spheremaps[0].figure,
+                mjd_slider,
+                dayobs_label
+            )
+        else:
+            # Multiple maps side by side
+            # ArmillarySphere sliders will appear below its map automatically
+            # We only add the shared MJD slider and label for the whole layout
+            row_plots = bokeh.layouts.row([sm.figure for sm in spheremaps])
+            fig = bokeh.layouts.column(
+                row_plots,
+                dayobs_label
+            )
 
     # Decorate maps
     for sm in spheremaps:
@@ -426,6 +457,7 @@ def create_visit_skymaps(
     observatory=None,
     timezone="Chile/Continental",
     planisphere_only=False,
+    applet_mode=False,
 ):
     """
     Prepare data for multi-night SphereMap plotting.
@@ -438,7 +470,7 @@ def create_visit_skymaps(
         observatory.sky_model.load_length = 1
 
     unique_nights = sorted(visits["day_obs"].unique())
-    # print(unique_nights)
+
     conditions_list = []
     for day_obs in unique_nights:
         night_date = datetime.strptime(str(day_obs), '%Y%m%d').date()
@@ -464,13 +496,14 @@ def create_visit_skymaps(
         "footprint": None,
         "footprint_outline": footprint_outline,
         "conditions_list": conditions_list,
+        "applet_mode": applet_mode,
     }
 
     # Call plotting function
-    if planisphere_only:
+    if applet_mode or planisphere_only:
         vmap = plot_visit_skymaps(map_classes=[Planisphere], **data)
     else:
-        vmap = plot_visit_skymaps(**data)
+        vmap = plot_visit_skymaps(map_classes=[ArmillarySphere, Planisphere], **data)
 
     return vmap, data
 
