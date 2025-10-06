@@ -502,7 +502,8 @@ async def multi_night_visit_maps(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    planisphereOnly: bool,
+    planisphereOnly: bool = False,
+    appletMode: bool = False,
     auth_token: str = Depends(get_access_token),
 ):
     logger.info(
@@ -556,6 +557,7 @@ async def multi_night_visit_maps(
                 timezone="UTC",
                 observatory=observatory,
                 planisphere_only=planisphereOnly,
+                applet_mode=appletMode,
             )
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time
