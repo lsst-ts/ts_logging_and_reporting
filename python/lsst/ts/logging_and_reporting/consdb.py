@@ -200,9 +200,29 @@ class ConsdbAdapter(SourceAdapter):
             traceback.print_exc()
             raise ex.ConsdbQueryError(f"Connection error: {msg}") from err
         result = response.json()
-        records = [
-            {c: v for c, v in zip(result["columns"], row)} for row in result["data"]
-        ]
+        # The exposure and visit1_quicklook tables have some duplicate columns.
+        # The below code makes sure that any null values returned by
+        # visit1_quicklook do not overwrite valid values from exposure.
+        records = []
+        duplicate_columns = set()
+        for row in result["data"]:
+            record = {}
+            for col, val in zip(result["columns"], row):
+                if col in record:
+                    # Track duplicates
+                    duplicate_columns.add(col)
+                    # Merge logic: keep first non-null value
+                    if record[col] is None and val is not None:
+                        record[col] = val
+                else:
+                    record[col] = val
+            records.append(record)
+        if duplicate_columns and self.warning:
+            msg = (
+                "Duplicate ConsDB columns detected and merged safely: "
+                f"{', '.join(sorted(duplicate_columns))}"
+            )
+            warnings.warn(msg, category=ex.ConsdbQueryWarning, stacklevel=2)
         if len(records) == 0 and self.warning:
             msg = f"No results returned from {self.abbrev}.query().  "
             msg += f"{sql=!r} {url=}"
@@ -256,14 +276,14 @@ class ConsdbAdapter(SourceAdapter):
         # Would like to select just exposure_columns, quicklook_columns
         # except that for some instruments they aren't all there
         # (LATISS missing q.sky_bg_median).
+        # Using a left join here to return all exposures, decorated with
+        # quicklook data when available.
         ssql = f"""
             SELECT *
-            FROM
-                cdb_{instrument}.exposure e,
-                cdb_{instrument}.visit1_quicklook q
-            WHERE
-                e.exposure_id = q.visit_id
-                AND {ut.dayobs_int(self.min_dayobs)} <= e.day_obs
+            FROM cdb_{instrument}.exposure e
+            LEFT JOIN cdb_{instrument}.visit1_quicklook q
+                ON e.exposure_id = q.visit_id
+            WHERE {ut.dayobs_int(self.min_dayobs)} <= e.day_obs
                 AND e.day_obs < {ut.dayobs_int(self.max_dayobs)}
         """
         sql = " ".join(ssql.split())  # remove redundant whitespace
@@ -286,8 +306,16 @@ class ConsdbAdapter(SourceAdapter):
     def get_transformed_efd_data(self, instrument: str) -> pd.DataFrame:
         """Query transformed EFD table for columns associated with exposures"""
 
-        # If further columns are needed, add those attributes to this list
-        temperatures = ["mt_salindex112_temperature_0_mean"]
+        # If further columns are needed, add those attributes to these
+        # per-instrument channel lists
+        efd_fields = {
+            "LATISS": [],
+            "LSSTCam": ["mt_salindex112_temperature_0_mean"],
+        }
+        fields = efd_fields.get(instrument, [])
+
+        if not fields:
+            return pd.DataFrame()
 
         table_name = f"efd2_{instrument}"
 
@@ -295,7 +323,7 @@ class ConsdbAdapter(SourceAdapter):
             ssql = f"""
                 SELECT
                     exposure_id,
-                    {", ".join(temperatures)}
+                    {", ".join(fields)}
                 FROM
                     {table_name}.exposure_efd e
                 WHERE
