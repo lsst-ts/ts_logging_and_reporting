@@ -1,3 +1,30 @@
+v0.10.0 (2025-10-09)
+====================
+
+New Features
+------------
+
+- Use rubin-nights repo to get context feed data. (`OSW-666 <https://rubinobs.atlassian.net//browse/OSW-666>`_)
+- Use rubin-nights repo to get valid overhead for each exposure and dome open time (`OSW-992 <https://rubinobs.atlassian.net//browse/OSW-992>`_)
+
+
+Bug Fixes
+---------
+
+- Data Log now supports AuxTel data. (`OSW-764 <https://rubinobs.atlassian.net//browse/OSW-764>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Bump rubin_nights to v0.6.1. (`OSW-1177 <https://rubinobs.atlassian.net//browse/OSW-1177>`_)
+- Add rubin-scheduler to conda recipe. (`OSW-1178 <https://rubinobs.atlassian.net//browse/OSW-1178>`_)
+- Remove notebooks directory, no longer needed and causing issues with ruff. (`OSW-1219 <https://rubinobs.atlassian.net//browse/OSW-1219>`_)
+- Bump ts-conda-build to v0.5 in the conda recipe. (`OSW-1220 <https://rubinobs.atlassian.net//browse/OSW-1220>`_)
+- Add rubin-nights to conda recipe. (`OSW-1220 <https://rubinobs.atlassian.net//browse/OSW-1220>`_)
+- Change the build string in the conda recipe. (`OSW-1220 <https://rubinobs.atlassian.net//browse/OSW-1220>`_)
+
+
 v0.8.0 (2025-09-02)
 ===================
 

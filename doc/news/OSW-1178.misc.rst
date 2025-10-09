@@ -1,1 +1,0 @@
-Add rubin-scheduler to conda recipe.
