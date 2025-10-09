@@ -22,6 +22,7 @@
 import datetime as dt
 import os
 import pandas as pd
+import numpy as np
 import pytz
 import time
 
@@ -348,3 +349,71 @@ def get_auth_header(token=None):
     """return dict obj for request auth headers"""
     bearer_token = token if token is not None else get_access_token()
     return {"Authorization": f"Bearer {bearer_token}"}
+
+
+def stringify_special_floats(val):
+    """
+    Convert special float values into JSON-safe string representations.
+
+    This function ensures that pandas DataFrames containing NaN,
+    positive infinity, or negative infinity values can be safely
+    serialized to JSON without causing errors.
+
+    Parameters
+    ----------
+    val : any
+        The value to check and possibly convert.
+
+    Returns
+    -------
+    any
+        - "NaN" if the value is NaN
+        - "Infinity" if the value is positive infinity
+        - "-Infinity" if the value is negative infinity
+        - The original value otherwise
+    """
+    if isinstance(val, float):
+        if np.isnan(val):
+            return "NaN"
+        elif np.isposinf(val):
+            return "Infinity"
+        elif np.isneginf(val):
+            return "-Infinity"
+    return val
+
+
+def make_json_safe(obj):
+    """
+    Recursively converts objects to be JSON serializable.
+
+    This function traverses the input object, converting
+    any non-JSON-serializable types (such as NumPy integers,
+    floats, NaN, or infinity) into types that can be safely serialized.
+    Dictionaries and lists are processed recursively.
+    NumPy integer and floating types are converted to their native Python
+    counterparts. NaN and infinity values are replaced with None.
+
+    Parameters
+    ----------
+    obj : any
+        The object to convert. Can be a dict, list, or any value.
+
+    Returns
+    -------
+    any
+        The converted object, safe for JSON serialization.
+    """
+    if isinstance(obj, dict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_safe(v) for v in obj]
+    elif isinstance(obj, float):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    else:
+        return obj
