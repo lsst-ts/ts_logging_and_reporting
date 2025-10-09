@@ -1,0 +1,1 @@
+Bump ts-conda-build to v0.5 in the conda recipe.

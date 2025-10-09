@@ -10,10 +10,12 @@ source:
 build:
     noarch: python
     script: {{ PYTHON }} -m pip install --no-deps --ignore-installed .
+    string: "py{{ PY_VER | replace('.', '') }}{{ PKG_HASH }}_{{ PKG_BUILDNUM }}"
 
 test:
     requires:
-        - ts-conda-build =0.4
+        - ts-conda-build =0.5
+        - rubin-nights =0.6
     source_files:
         - pyproject.toml
         - python
@@ -45,3 +47,4 @@ requirements:
         - pydantic
         - uvicorn
         - rubin-scheduler =3
+        - rubin-nights =0.6
