@@ -1,1 +1,0 @@
-Bump rubin_nights to v0.6.1.

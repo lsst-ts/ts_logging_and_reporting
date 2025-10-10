@@ -1,1 +1,0 @@
-Use rubin-nights repo to get valid overhead for each exposure and dome open time

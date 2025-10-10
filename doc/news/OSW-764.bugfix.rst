@@ -1,1 +1,0 @@
-Data Log now supports AuxTel data.
