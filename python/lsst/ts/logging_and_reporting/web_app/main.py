@@ -562,6 +562,7 @@ async def multi_night_visit_maps(
                 observatory=observatory,
                 planisphere_only=planisphereOnly,
                 applet_mode=appletMode,
+                theme="DARK",
             )
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time
@@ -661,7 +662,6 @@ async def survey_progress_map(
         return {
             "static": json_item(s_map) if s_map is not None  else {}
             }
-
     except ConsdbQueryError as ce:
         logger.error(f"ConsdbQueryError in /survey-progress-map: {ce}")
         raise HTTPException(status_code=502, detail="ConsDB query failed")
