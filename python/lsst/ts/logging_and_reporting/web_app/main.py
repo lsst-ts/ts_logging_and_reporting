@@ -521,14 +521,13 @@ async def multi_night_visit_maps(
         from datetime import datetime, timedelta
         from schedview.compute.visits import add_coords_tuple
         from schedview.collect.visits import read_visits, NIGHT_STACKERS
-        from .services.schedview_service import create_visit_skymaps
+        from .services.scheduler_service import create_visit_skymaps
         from rubin_scheduler.scheduler.model_observatory import ModelObservatory
         from bokeh.embed import json_item
 
         os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
 
         observatory = ModelObservatory(init_load_length=1)
-        # timezone = "Chile/Continental"
 
         dayobs_start_dt = datetime.strptime(str(dayObsStart), '%Y%m%d')
         dayobs_end_dt = datetime.strptime(str(dayObsEnd), '%Y%m%d')
