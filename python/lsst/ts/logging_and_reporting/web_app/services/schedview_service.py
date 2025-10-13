@@ -19,11 +19,12 @@ from schedview import band_column
 from schedview.collect import load_bright_stars
 from schedview.compute.camera import LsstCameraFootprintPerimeter
 from schedview.compute.footprint import find_healpix_area_polygons
-from schedview.plot import PLOT_BAND_COLORS
+from schedview.plot import PLOT_BAND_COLORS as LIGHT_BAND_COLORS
 import bokeh
 import healpy as hp
 from schedview.compute.maf import compute_hpix_metric_in_bands
 from bokeh.models.ui.ui_element import UIElement
+from bokeh.plotting import figure
 from schedview.plot.footprint import add_footprint_outlines_to_skymaps, add_footprint_to_skymaps
 
 BAND_HATCH_PATTERNS = dict(
@@ -36,15 +37,17 @@ BAND_HATCH_PATTERNS = dict(
 )
 BAND_HATCH_SCALES = dict(u=6, g=6, r=6, i=6, z=12, y=12)
 VISIT_TOOLTIPS = (
-    "@observationId: @start_timestamp{%F %T} UTC (mjd=@observationStartMJD{00000.0000}, "
+    "@observationId: @start_timestamp{%F %T} UTC<br>"
+    + "(mjd=@observationStartMJD{00000.0000}, "
     + "LST=@observationStartLST\u00b0): "
-    + "@observation_reason (@science_program), "
-    + "in @band at \u03b1,\u03b4=@fieldRA\u00b0,@fieldDec\u00b0; "
+    + "@observation_reason (@science_program),<br>"
+    + "in @band at \u03b1,\u03b4=@fieldRA\u00b0,@fieldDec\u00b0;<br>"
     + "q=@paraAngle\u00b0; a,A=@azimuth\u00b0,@altitude\u00b0"
 )
 
 
 VISIT_COLUMNS = [
+    "day_obs",
     "observationId",
     "start_timestamp",
     "observationStartMJD",
@@ -63,6 +66,28 @@ VISIT_COLUMNS = [
 NSIDE_LOW = 8
 
 
+DARK_BAND_COLORS = {
+  "u": "#3eb7ff",
+  "g": "#30c39f",
+  "r": "#ff7e00",
+  "i": "#2af5ff",
+  "z": "#a7f9c1",
+  "y": "#fdc900",
+}
+
+THEMES = {
+    "LIGHT": {
+        "PLOT_BAND_COLORS": LIGHT_BAND_COLORS,
+        "BACKGROUND_COLOR": "#FFFFFF",
+        "HORIZON_COLOR": "#000000",
+    },
+    "DARK": {
+        "PLOT_BAND_COLORS": DARK_BAND_COLORS,
+        "BACKGROUND_COLOR": "#262626",
+        "HORIZON_COLOR": "#E5E5E5",
+    },
+}
+
 def plot_visit_skymaps(
     visits,
     footprint,
@@ -74,6 +99,7 @@ def plot_visit_skymaps(
     map_classes=[ArmillarySphere, Planisphere],
     footprint_outline=None,
     applet_mode=False,
+    theme="LIGHT",
 ):
     """
     Multi-night visit plots with shared MJD slider.
@@ -102,23 +128,29 @@ def plot_visit_skymaps(
     applet_mode : bool
         If True, uses compact fixed sizing for dashboard (380x220).
         If False, uses responsive full-size mode for both maps.
+    theme : str
+        Theme to use, either "LIGHT" or "DARK".
     """
+    visits = visits[VISIT_COLUMNS]
     # Initialize spheremaps
     reference_conditions = conditions_list[0]
-    spheremaps = [mc(mjd=reference_conditions.mjd) for mc in map_classes]
 
     if camera_perimeter == "LSST":
         camera_perimeter = LsstCameraFootprintPerimeter()
 
     # Configure figure sizing based on mode
     if applet_mode:
-        # Applet mode: small fixed size for dashboard
-        spheremaps[0].figure.width = 380
-        spheremaps[0].figure.height = 220
+        fig = figure(width=340, height=220, match_aspect=True)
+        fig.background_fill_color = THEMES[theme]["BACKGROUND_COLOR"]
+        fig.border_fill_color = THEMES[theme]["BACKGROUND_COLOR"]
+        spheremaps = [Planisphere(mjd=reference_conditions.mjd, plot=fig)]
     else:
-        # Full mode: responsive sizing with matched heights
-        for sm in spheremaps:
-            sm.figure.sizing_mode = "stretch_width"
+        spheremaps = []
+        for mc in map_classes:
+            fig = figure(match_aspect=True)
+            fig.background_fill_color =  THEMES[theme]["BACKGROUND_COLOR"]
+            fig.border_fill_color = THEMES[theme]["BACKGROUND_COLOR"]
+            spheremaps.append(mc(mjd=reference_conditions.mjd, plot=fig))
 
     # Setup shared MJD slider
     if "mjd" not in spheremaps[0].sliders:
@@ -154,14 +186,16 @@ def plot_visit_skymaps(
         unique_nights,
         spheremaps,
         camera_perimeter,
-        hatch
+        hatch,
+        theme=theme,
     )
 
     # Add sun, moon, stars, and horizon markers
     all_sun_markers, all_moon_markers = _add_celestial_objects(
         conditions_list,
         spheremaps,
-        show_stars
+        show_stars,
+        theme=theme,
     )
 
     # Create night label
@@ -185,7 +219,6 @@ def plot_visit_skymaps(
         # Use column layout with all controls below the map
         fig = bokeh.layouts.column(
             spheremaps[0].figure,
-            mjd_slider,
             dayobs_label
         )
     else:
@@ -196,7 +229,7 @@ def plot_visit_skymaps(
             fig = bokeh.layouts.column(
                 spheremaps[0].figure,
                 mjd_slider,
-                dayobs_label
+                dayobs_label,
             )
         else:
             # Multiple maps side by side
@@ -205,7 +238,7 @@ def plot_visit_skymaps(
             row_plots = bokeh.layouts.row([sm.figure for sm in spheremaps])
             fig = bokeh.layouts.column(
                 row_plots,
-                dayobs_label
+                dayobs_label,
             )
 
     # Decorate maps
@@ -215,7 +248,7 @@ def plot_visit_skymaps(
     return fig
 
 
-def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatch):
+def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatch, theme="LIGHT"):
     """Add visit patches for each night and band."""
     night_renderers = []
 
@@ -247,7 +280,7 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
             patches_kwargs = dict(
                 fill_alpha="fill_alpha",
                 line_alpha="line_alpha",
-                fill_color=None if hatch else PLOT_BAND_COLORS[band],
+                fill_color=None if hatch else THEMES[theme]["PLOT_BAND_COLORS"][band],
                 line_color="#ff00ff",
                 line_width=2,
                 name=f"visit_{night_idx}_{band}"
@@ -256,7 +289,7 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
             if hatch:
                 patches_kwargs.update(
                     hatch_alpha="fill_alpha",
-                    hatch_color=PLOT_BAND_COLORS[band],
+                    hatch_color=THEMES[theme]["PLOT_BAND_COLORS"][band],
                     hatch_pattern=BAND_HATCH_PATTERNS[band],
                     hatch_scale=BAND_HATCH_SCALES[band],
                 )
@@ -282,7 +315,7 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
     return night_renderers
 
 
-def _add_celestial_objects(conditions_list, spheremaps, show_stars):
+def _add_celestial_objects(conditions_list, spheremaps, show_stars, theme="LIGHT"):
     """Add sun, moon, stars, and horizon to spheremaps."""
     # Convert celestial coordinates to degrees
     sun_ras_deg = [np.degrees(c.sun_ra) for c in conditions_list]
@@ -341,7 +374,7 @@ def _add_celestial_objects(conditions_list, spheremaps, show_stars):
             )
 
         # Add horizon lines
-        sm.add_horizon()
+        sm.add_horizon(line_kwargs={"line_width": 6, "color": THEMES[theme]["HORIZON_COLOR"]})
         sm.add_horizon(zd=70, line_kwargs={"color": "red", "line_width": 2})
 
         all_sun_markers.append(sun_markers)
@@ -397,7 +430,7 @@ def _setup_slider_callback(
 
     // Update sun and moon visibility
     if (current_day === null) {
-        day_label.text = "No night";
+        day_label.text = "";
         _hide_all_celestial_markers(all_sun_markers, all_moon_markers);
     } else {
         const idx = day_obs_list.indexOf(current_day);
@@ -458,6 +491,7 @@ def create_visit_skymaps(
     timezone="Chile/Continental",
     planisphere_only=False,
     applet_mode=False,
+    theme="LIGHT",
 ):
     """
     Prepare data for multi-night SphereMap plotting.
@@ -497,6 +531,7 @@ def create_visit_skymaps(
         "footprint_outline": footprint_outline,
         "conditions_list": conditions_list,
         "applet_mode": applet_mode,
+        "theme": theme,
     }
 
     # Call plotting function
