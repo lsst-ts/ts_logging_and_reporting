@@ -20,7 +20,7 @@ from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, get_context_feed
-from .services.scheduler_service import create_visit_skymaps
+from .services.scheduler_service import create_visit_skymaps, get_expected_exposures
 
 from schedview.compute.visits import add_coords_tuple
 from schedview.collect.visits import read_visits, NIGHT_STACKERS
@@ -146,6 +146,37 @@ async def read_exposures(
         raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
         logger.error(f"Error in /exposures: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/expected-exposures")
+async def read_expected_exposures(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    # auth_token: str = Depends(get_access_token),
+):
+    logger.info(
+        f"Getting expected exposures for start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+    )
+    try:
+        expected_exposures = get_expected_exposures(
+            dayObsStart,
+            dayObsEnd,
+            # auth_token=auth_token
+        )
+
+        return {
+            "nightly_exposures": expected_exposures["nightly"],
+            "sum_exposures": expected_exposures["sum"],
+        }
+
+    except BaseLogrepError as ble:
+        logger.error(f"Rubin-sim error in /expected-exposures: {ble}")
+        raise HTTPException(status_code=502, detail="Rubin-sim API query failed")
+    except Exception as e:
+        logger.error(f"Error in /expected-exposures: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
