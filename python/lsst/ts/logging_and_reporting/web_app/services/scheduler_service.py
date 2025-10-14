@@ -22,6 +22,11 @@ from schedview.plot import PLOT_BAND_COLORS as LIGHT_BAND_COLORS
 from schedview.plot.footprint import add_footprint_outlines_to_skymaps, add_footprint_to_skymaps
 from uranography.api import ArmillarySphere, Planisphere, make_zscale_linear_cmap
 
+from rubin_sim.sim_archive import fetch_sim_stats_for_night
+
+
+logger = logging.getLogger(__name__)
+
 BAND_HATCH_PATTERNS = dict(
     u="dot",
     g="ring",
@@ -1030,3 +1035,73 @@ def my_create_metric_visit_map_grid(
         return map_grid
 
     return None
+
+
+def get_expected_exposures(
+    dayObsStart: int,
+    dayObsEnd: int,
+    # auth_token: str = None,
+) -> dict:
+    """
+    Retrieve the expected exposures for Simonyi for a specified range
+    of observation nights.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        The starting observation day (as an integer, e.g., YYYYMMDD).
+    dayObsEnd : int
+        The ending observation day (as an integer, e.g., YYYYMMDD).
+
+    Returns
+    -------
+    result : dict
+        "nightly": [int, ...],  # expected exposures per dayObs
+        "sum": int              # sum of all expected exposures in the range
+    """
+
+    logger.info(
+        f"Getting expected exposures for dayObsStart: {dayObsStart}, "
+        f"dayObsEnd: {dayObsEnd}."
+    )
+
+    expected_exposures_list = []
+
+    try:
+        # Convert to datetime objects
+        start_date = datetime.strptime(str(dayObsStart), "%Y%m%d")
+        end_date = datetime.strptime(str(dayObsEnd), "%Y%m%d")
+
+        # Loop through range of dayobs
+        current_date = start_date
+        while current_date <= end_date:
+            dayObs = int(current_date.strftime("%Y%m%d"))
+            try:
+                expected_exposures = fetch_sim_stats_for_night(dayObs)
+                visits = expected_exposures.get("nominal_visits", 0)
+                expected_exposures_list.append(visits)
+                logger.info(f"DayObs {dayObs}: {visits} expected exposures")
+            except Exception as e:
+                logger.warning(f"Failed to fetch expected exposures for {dayObs}: {e}")
+                expected_exposures_list.append(0)
+
+            current_date += timedelta(days=1)
+
+        # Sum expected values together for one total over queried range
+        sum_expected_exposures = sum(expected_exposures_list)
+        logger.info(f"Sum of expected exposures in range: {sum_expected_exposures}")
+
+        return {
+            "nightly": expected_exposures_list,
+            "sum": sum_expected_exposures,
+        }
+
+
+    except Exception as e:
+        logger.error(
+            f"Error in getting expected exposures from rubin_sim: {e}",
+            exc_info=True)
+        return {
+            "nightly": [],
+            "sum": 0,
+        }
