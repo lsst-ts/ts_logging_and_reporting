@@ -8,9 +8,7 @@ from functools import partial
 from datetime import datetime
 from astropy.time import Time
 from rubin_scheduler.scheduler.model_observatory.model_observatory import ModelObservatory
-from rubin_scheduler.scheduler.schedulers import CoreScheduler  # noqa F401
 
-# Imported to help sphinx make the link
 from rubin_scheduler.scheduler.utils import get_current_footprint
 from uranography.api import ArmillarySphere, Planisphere, make_zscale_linear_cmap
 
@@ -103,6 +101,9 @@ def plot_visit_skymaps(
 ):
     """
     Multi-night visit plots with shared MJD slider.
+    This is a modified version of schedview.plot.visitmap.plot_visit_skymaps
+    to support multi-night data with added support
+    for light/dark themes and applet mode.
 
     Parameters
     ----------
@@ -496,6 +497,7 @@ def create_visit_skymaps(
     """
     Prepare data for multi-night SphereMap plotting.
     Returns figure and data dict.
+    This is a modified version of schedview.plot.visitmap.create_visit_skymaps
     """
 
     # Prepare observatory and conditions per night
