@@ -25,7 +25,7 @@ from .services.jira_service import get_jira_tickets
 from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import get_context_feed, get_open_close_dome, get_time_accounting
-from .services.scheduler_service import create_visit_skymaps
+from .services.scheduler_service import create_visit_skymaps, get_expected_exposures
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -144,6 +144,26 @@ async def read_exposures(
         raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
         logger.error(f"Error in /exposures: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/expected-exposures")
+async def read_expected_exposures(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+):
+    logger.info(f"Getting expected exposures for start: {dayObsStart}, end: {dayObsEnd} ")
+    try:
+        expected_exposures = get_expected_exposures(
+            dayObsStart,
+            dayObsEnd,
+        )
+
+        return {"sum_exposures": expected_exposures["sum"]}
+
+    except Exception as e:
+        logger.error(f"Error in /expected-exposures: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

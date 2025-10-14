@@ -1158,3 +1158,57 @@ def test_visit_maps_read_visits_exception(
     assert "Database connection error" in response.json()["detail"]
 
     app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_expected_exposures_endpoint(monkeypatch):
+    endpoint = "/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102"
+
+    dummy_expected_exposures = {"sum": 220}
+
+    # Patch get_expected_exposures to return dummy data
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
+        lambda dayobs_start, dayobs_end: dummy_expected_exposures,
+    )
+
+    # Success path
+    response = client.get(endpoint)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "sum_exposures" in data
+    assert data["sum_exposures"] == dummy_expected_exposures["sum"]
+
+    # Error path (generic exception)
+    def raise_error(dayobs_start, dayobs_end):
+        raise Exception("failure")
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
+        raise_error,
+    )
+
+    response = client.get(endpoint)
+    assert response.status_code == 500
+    assert response.json()["detail"] == "failure"
+
+
+def test_expected_exposures_endpoint_passes_correct_params(monkeypatch):
+    endpoint = "/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102"
+
+    called = {}
+
+    def fake_service(dayobs_start, dayobs_end):
+        called["start"] = dayobs_start
+        called["end"] = dayobs_end
+        return {"sum": 10}
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
+        fake_service,
+    )
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 200
+    assert called == {"start": 20240101, "end": 20240102}
