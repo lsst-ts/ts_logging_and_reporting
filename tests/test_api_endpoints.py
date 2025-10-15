@@ -1160,3 +1160,42 @@ def test_visit_maps_read_visits_exception(
     assert "Database connection error" in response.json()["detail"]
 
     app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_expected_exposures_endpoint(monkeypatch):
+    endpoint = "/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102"
+
+    dummy_expected_exposures = {
+        "nightly": [100, 120],
+        "sum": 220,
+    }
+
+    # Patch get_expected_exposures to return dummy data
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
+        lambda dayObsStart, dayObsEnd: dummy_expected_exposures,
+    )
+
+    # Success path --
+    response = client.get(endpoint)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "nightly_exposures" in data
+    assert "sum_exposures" in data
+    assert data["nightly_exposures"] == dummy_expected_exposures["nightly"]
+    assert data["sum_exposures"] == dummy_expected_exposures["sum"]
+    assert sum(data["nightly_exposures"]) == data["sum_exposures"]
+
+    # Error path (generic exception) --
+    def raise_error(dayObsStart, dayObsEnd):
+        raise Exception("failure")
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
+        raise_error,
+    )
+
+    response = client.get(endpoint)
+    assert response.status_code == 500
+    assert response.json()["detail"] == "failure"
