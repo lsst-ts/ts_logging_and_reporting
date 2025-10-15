@@ -1,0 +1,1 @@
+Get expected number of exposures for Simonyi from rubin_sim.
