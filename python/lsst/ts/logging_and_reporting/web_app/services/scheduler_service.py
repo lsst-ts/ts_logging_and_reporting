@@ -63,7 +63,7 @@ VISIT_COLUMNS = [
 
 NSIDE_LOW = 8
 
-
+# Dark theme band colors
 DARK_BAND_COLORS = {
   "u": "#3eb7ff",
   "g": "#30c39f",
@@ -99,39 +99,44 @@ def plot_visit_skymaps(
     applet_mode=False,
     theme="LIGHT",
 ):
-    """
-    Multi-night visit plots with shared MJD slider.
-    This is a modified version of schedview.plot.visitmap.plot_visit_skymaps
+    """Multi-night visit plots with shared MJD slider.
+    This is a modified version of `schedview.plot.visitmap.plot_visit_skymaps`
     to support multi-night data with added support
     for light/dark themes and applet mode.
 
     Parameters
     ----------
-    visits : pd.DataFrame
+    visits : `pd.DataFrame`
         Must contain 'day_obs', 'observationStartMJD',
-        'fieldRA', 'fieldDec', 'band'
-    footprint : np.array or None
-        Healpix footprint
-    conditions_list : list
-        List of nightly Conditions objects, one per night to plot
-    hatch : bool
-        Use hatching patterns for bands instead of solid colors
-    fade_scale : float
-        Time scale for fading visit markers
-    camera_perimeter : str or callable
-        Camera footprint perimeter function
-    show_stars : bool
-        Show bright stars on the map
-    map_classes : list
-        List of spheremap classes to instantiate
-    footprint_outline : object or None
-        Footprint outline polygons
-    applet_mode : bool
-        If True, uses compact fixed sizing for dashboard (380x220).
-        If False, uses responsive full-size mode for both maps.
-    theme : str
+        'fieldRA', 'fieldDec', 'band'.
+    footprint : `np.array` or `None`
+        Healpix footprint.
+    conditions_list : `list`
+        List of nightly Conditions objects, one per night to plot.
+    hatch : `bool`
+        Use hatching patterns for bands instead of solid colors.
+    fade_scale : `float`
+        Time scale for fading visit markers.
+    camera_perimeter : `str` or `callable`
+        Camera footprint perimeter function.
+    show_stars : `bool`
+        Show bright stars on the map.
+    map_classes : `list`
+        List of spheremap classes to instantiate.
+    footprint_outline : `object` or `None`
+        Footprint outline polygons.
+    applet_mode : `bool`
+        If `True`, uses compact fixed sizing for dashboard (380x220).
+        If `False`, uses responsive full-size mode for both maps.
+    theme : `str`
         Theme to use, either "LIGHT" or "DARK".
+
+    Returns
+    -------
+    figure : `bokeh.models.plots.Plot`
+        The plot with the map(s).
     """
+
     visits = visits[VISIT_COLUMNS]
     # Initialize spheremaps
     reference_conditions = conditions_list[0]
@@ -250,7 +255,32 @@ def plot_visit_skymaps(
 
 
 def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatch, theme="LIGHT"):
-    """Add visit patches for each night and band."""
+    """Add visit patches for each night and band.
+    Returns list of lists of ColumnDataSources, one list per night,
+    each containing one ColumnDataSource per band.
+
+    Parameters
+    ----------
+    visits : `pd.DataFrame`
+        Must contain 'day_obs', 'observationStartMJD',
+        'fieldRA', 'fieldDec', 'band'.
+    unique_nights : `list`
+        List of unique nights in visits.
+    spheremaps : `list`
+        List of spheremap instances to add patches to.
+    camera_perimeter : `callable`
+        Camera footprint perimeter function.
+    hatch : `bool`
+        Use hatching patterns for bands instead of solid colors.
+    theme : `str`
+        Theme to use, either "LIGHT" or "DARK".
+
+    Returns
+    -------
+    night_renderers : `list` of `list` of `ColumnDataSource`
+        List of lists of ColumnDataSources, one list per night,
+        each containing one ColumnDataSource per band.
+    """
     night_renderers = []
 
     for night_idx, day_obs in enumerate(unique_nights):
@@ -317,7 +347,31 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
 
 
 def _add_celestial_objects(conditions_list, spheremaps, show_stars, theme="LIGHT"):
-    """Add sun, moon, stars, and horizon to spheremaps."""
+    """Add sun, moon, stars, and horizon to spheremaps.
+    Returns lists of lists of sun and moon renderers, one list per spheremap,
+    each containing one renderer per night.
+
+    Parameters
+    ----------
+    conditions_list : `list`
+        List of nightly Conditions objects, one per night to plot.
+    spheremaps : `list`
+        List of spheremap instances to add markers to.
+    show_stars : `bool`
+        Show bright stars on the map.
+    theme : `str`
+        Theme to use, either "LIGHT" or "DARK".
+
+    Returns
+    -------
+    all_sun_markers : `list` of `list` of `GlyphRenderer`
+        List of lists of sun renderers, one list per spheremap,
+        each containing one renderer per night.
+    all_moon_markers : `list` of `list` of `GlyphRenderer`
+        List of lists of moon renderers, one list per spheremap,
+        each containing one renderer per night.
+    """
+
     # Convert celestial coordinates to degrees
     sun_ras_deg = [np.degrees(c.sun_ra) for c in conditions_list]
     sun_decs_deg = [np.degrees(c.sun_dec) for c in conditions_list]
@@ -394,7 +448,37 @@ def _setup_slider_callback(
     conditions_list,
     fade_scale
 ):
-    """Setup JavaScript callback for MJD slider interaction."""
+    """Setup JavaScript callback for MJD slider interaction.
+    The callback updates visit patch alphas based on the slider value,
+    and shows/hides sun and moon markers based on the current night.
+
+    Parameters
+    ----------
+    mjd_slider : `bokeh.models.Slider`
+        The MJD slider widget.
+    night_renderers : `list` of `list` of `ColumnDataSource`
+        List of lists of ColumnDataSources, one list per night,
+        each containing one ColumnDataSource per band.
+    all_sun_markers : `list` of `list` of `GlyphRenderer`
+        List of lists of sun renderers, one list per spheremap,
+        each containing one renderer per night.
+    all_moon_markers : `list` of `list` of `GlyphRenderer`
+        List of lists of moon renderers, one list per spheremap,
+        each containing one renderer per night.
+    dayobs_label : `bokeh.models.Div`
+        The label to show the current night.
+    unique_nights : `list`
+        List of unique nights in visits.
+    conditions_list : `list`
+        List of nightly Conditions objects, one per night to plot.
+    fade_scale : `float`
+        Time scale for fading visit markers (in days).
+
+    Returns
+    -------
+    `None`
+    """
+
     callback_code = """
     const mjd_val = mjd_slider.value;
     let current_day = null;
@@ -494,10 +578,38 @@ def create_visit_skymaps(
     applet_mode=False,
     theme="LIGHT",
 ):
-    """
-    Prepare data for multi-night SphereMap plotting.
-    Returns figure and data dict.
-    This is a modified version of schedview.plot.visitmap.create_visit_skymaps
+    """Prepare data for multi-night SphereMap plotting.
+    This is a modified version of
+    `schedview.plot.visitmap.create_visit_skymaps`
+    to support multi-night data with added support
+    for light/dark themes and applet mode.
+
+    Parameters
+    ----------
+    visits : `pd.DataFrame`
+        Must contain 'day_obs', 'observationStartMJD',
+        'fieldRA', 'fieldDec', 'band'.
+    nside : `int`
+        Healpix nside for footprint.
+    observatory : `ModelObservatory` or `None`
+        The model observotary to use. If None, a default will be created.
+    timezone : `str`
+        Timezone for night calculations. Default is Chile/Continental.
+    planisphere_only : `bool`
+        If `True`, only create planisphere map (no armillary sphere).
+        Default is `False`.
+    applet_mode : `bool`
+        If `True`, uses compact fixed sizing for dashboard (380x220).
+        If `False`, uses responsive full-size mode for both maps.
+    theme : `str`
+        Theme to use, either "LIGHT" or "DARK". Default is "LIGHT".
+
+    Returns
+    -------
+    figure : `bokeh.models.plots.Plot`
+        The plot with the map(s).
+    data : `dict`
+        The data used to create the plot(s).
     """
 
     # Prepare observatory and conditions per night
@@ -512,7 +624,6 @@ def create_visit_skymaps(
         night_date = datetime.strptime(str(day_obs), '%Y%m%d').date()
         night_events = schedview.compute.astro.night_events(night_date=night_date, site=observatory.location,
                                                             timezone=timezone)
-        # start_time = Time(night_events.loc["sunset","UTC"])
         end_time = Time(night_events.loc["sunrise","UTC"])
         observatory.mjd = end_time.mjd
         conditions_list.append(observatory.return_conditions())
@@ -574,15 +685,15 @@ def my_map_visits_over_hpix(
         the scale.
     palette : `str`
         The bokeh palette to use for the healpix map.
-    map_class : `class`, optional
+    map_class : `Planisphere` or `Armillary`, optional
         The class of map to use.  Defaults to uranography.Planisphere.
     prerender_hpix : `bool`, optional
-        Pre-render the healpix map? Defaults to True
+        Pre-render the healpix map? Defaults to `True`.
 
     Returns
     -------
     plot : `bokeh.models.plots.Plot`
-        The plot with the map
+        The plot with the map.
     """
     camera_perimeter = LsstCameraFootprintPerimeter()
 
@@ -681,14 +792,10 @@ def my_map_visits_over_hpix(
 def my_create_hpix_visit_map_grid(hpix_maps, visits, conditions, **kwargs):
     """Create a grid of healpix maps with visits overplotted.
 
-    Notes
-    -----
-    Additional keyword args are passed to map_visits_over_hpix.
-
     Parameters
     ----------
     map_hpix : `numpy.array`
-        An array of healpix values
+        An array of healpix values.
     visits : `pd.DataFrame`
         The table of visits to plot, with columns matching the opsim database
         definitions.
@@ -698,9 +805,8 @@ def my_create_hpix_visit_map_grid(hpix_maps, visits, conditions, **kwargs):
     Returns
     -------
     plot : `bokeh.models.plots.Plot`
-        The plot with the map
+        The plot with the map.
     """
-    # from schedview.plot.survey import map_visits_over_hpix
     visit_map = {}
     for band in hpix_maps:
         visit_map[band] = my_map_visits_over_hpix(
@@ -731,9 +837,9 @@ def my_create_metric_visit_map_grid(
     Parameters
     ----------
     metric : `numpy.array`
-        An array of healpix values
+        An array of healpix values.
     metric_visits : `pd.DataFrame`
-        The visits to use to compute the metric
+        The visits to use to compute the metric.
     visits : `pd.DataFrame`
         The table of visits to plot, with columns matching the opsim database
         definitions.
@@ -742,12 +848,12 @@ def my_create_metric_visit_map_grid(
     nside : `int`
         The nside with which to compute the metric.
     use_matplotlib: `bool`
-        Use matplotlib instead of bokeh? Defaults to False.
+        Use matplotlib instead of bokeh? Defaults to `False`.
 
     Returns
     -------
     plot : `bokeh.models.plots.Plot`
-        The plot with the map
+        The plot with the map or `None` if no visits are provided.
     """
 
     if len(metric_visits):
@@ -762,7 +868,5 @@ def my_create_metric_visit_map_grid(
 
         bokeh.io.show(map_grid)
         return map_grid
-    else:
-        print("No visits")
 
     return None
