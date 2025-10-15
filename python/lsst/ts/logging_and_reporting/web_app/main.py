@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timedelta
 import logging
 from fastapi import FastAPI, Request, HTTPException, Depends
@@ -320,23 +319,24 @@ async def multi_night_visit_maps(
     """Generate multi-night visit maps using Bokeh.
     Parameters
     ----------
-    request : Request
+    request : `Request`
         FastAPI request object.
-    dayObsStart : int
+    dayObsStart : `int`
         Start date in YYYYMMDD format.
-    dayObsEnd : int
+    dayObsEnd : `int`
         End date in YYYYMMDD format.
-    instrument : str
+    instrument : `str`
         Instrument name (e.g., 'lsstCam', 'latiss', etc.).
-    planisphereOnly : bool, optional
+    planisphereOnly : `bool`, optional
         If True, generate only the planisphere map. Default is False.
-    appletMode : bool, optional
+    appletMode : `bool`, optional
         If True, generate maps suitable for applet display. Default is False.
-    auth_token : str
+    auth_token : `str`
         Authentication token (injected by FastAPI dependency).
+
     Returns
     -------
-    dict
+    `dict`
         A dictionary containing the Bokeh JSON item for the interactive map.
     """
     logger.info(
@@ -363,7 +363,6 @@ async def multi_night_visit_maps(
 
         if len(visits):
             visits = add_coords_tuple(visits)
-            print(visits["day_obs"].unique())
 
             v_map, _ = create_visit_skymaps(
                 visits=visits,
@@ -390,6 +389,25 @@ async def survey_progress_map(
     instrument: str,
     auth_token: str = Depends(get_access_token),
 ):
+    """Generate a survey progress map for a given night using Bokeh.
+
+    Parameters
+    ----------
+    request : `Request`
+        FastAPI request object.
+    dayObs : `int`
+        Date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+    auth_token : `str`
+        Authentication token (injected by FastAPI dependency).
+
+    Returns
+    -------
+    `dict`
+        A dictionary containing the Bokeh JSON item for
+        the static survey progress map.
+    """
     logger.info(
         f"Getting survey progress map for night: "
         f"{dayObs} and instrument: {instrument}"
@@ -400,12 +418,9 @@ async def survey_progress_map(
         from schedview.plot.survey import create_metric_visit_map_grid
         from rubin_sim import maf
 
-        os.environ["RUBIN_SIM_DATA_DIR"] = os.environ["RUBIN_DATA_PATH"]
-
         observatory = ModelObservatory(init_load_length=1)
 
         dayobs_dt = datetime.strptime(str(dayObs), '%Y%m%d')
-        print(f"Processing dayObs: {dayObs} -> {dayobs_dt}")
 
         start_time = time.perf_counter()
 
@@ -418,7 +433,7 @@ async def survey_progress_map(
 
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
-        print(f"read_visits() executed in {elapsed_time:.6f} seconds")
+        logger.debug(f"read_visits() executed in {elapsed_time:.6f} seconds")
 
         s_map = None
 
@@ -427,19 +442,15 @@ async def survey_progress_map(
             start_time = time.perf_counter()
 
             dayobs_visits = visits[visits['day_obs'] == dayObs]
-            print(len(dayobs_visits))
 
             previous_day_obs_dt = dayobs_dt - timedelta(days=1)
             previous_day_obs = previous_day_obs_dt.strftime('%Y%m%d')
 
-            print(previous_day_obs)
-
             previous_visits = visits[visits['day_obs'] == int(previous_day_obs)]
-            print(len(previous_visits))
 
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time
-            print(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
+            logger.debug(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
 
             if len(dayobs_visits) and len(previous_visits) \
                     and not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])) \
@@ -455,7 +466,7 @@ async def survey_progress_map(
                 )
                 end_time = time.perf_counter()
                 elapsed_time = end_time - start_time
-                print(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+                logger.debug(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
 
         return {
             "static": json_item(s_map) if s_map is not None  else {}
