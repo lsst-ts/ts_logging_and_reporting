@@ -2,8 +2,13 @@ from fastapi.testclient import TestClient
 import os
 import pytest
 import requests
+from datetime import datetime, timedelta
+from unittest.mock import patch, Mock, MagicMock
+
+from bokeh.plotting import figure
+import pandas as pd
+
 from rubin_nights.connections import get_clients
-from unittest.mock import patch, Mock
 
 from lsst.ts.logging_and_reporting import __version__
 from lsst.ts.logging_and_reporting.web_app.main import app
@@ -939,4 +944,201 @@ def test_context_feed_endpoint(monkeypatch):
     assert response.json()["detail"] == "failure"
 
     # Clean up override
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+@pytest.fixture
+def sample_visit_data_for_visit_maps():
+    """Sample visit data for testing
+    multi-night visit maps."""
+
+    base_date = datetime(2024, 1, 1)
+    visits_list = []
+
+    for day_offset in range(3):
+        day_obs = int((base_date + timedelta(days=day_offset)).strftime('%Y%m%d'))
+        for obs_idx in range(5):
+            visits_list.append({
+                'day_obs': day_obs,
+                'observationStartMJD': 60000.0 + day_offset + obs_idx * 0.1,
+                'fieldRA': 180.0 + obs_idx,
+                'fieldDec': -30.0 + obs_idx,
+                'band': 'r',
+                'rotSkyPos': 45.0,
+            })
+
+    return pd.DataFrame(visits_list)
+
+
+@pytest.fixture
+def mock_conditions():
+    mock_cond = MagicMock()
+    mock_cond.mjd = 60000.0
+    mock_cond.sun_ra = 0.5  # in radians
+    mock_cond.sun_dec = -0.5
+    mock_cond.moon_ra = 1.0
+    mock_cond.moon_dec = 0.2
+    mock_cond.sun_n12_setting = 60000.0
+    mock_cond.sun_n12_rising = 60000.5
+
+    return mock_cond
+
+
+@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
+@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
+@patch('lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps')
+@patch('lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple')
+def test_applet_mode_planisphere_only(
+    mock_add_coords,
+    mock_create_skymaps,
+    mock_observatory,
+    mock_read_visits,
+    sample_visit_data_for_visit_maps,
+):
+
+    mock_read_visits.return_value = sample_visit_data_for_visit_maps
+    mock_add_coords.return_value = sample_visit_data_for_visit_maps
+
+    dummy_fig = figure(title="Test Figure")
+    mock_create_skymaps.return_value = (dummy_fig, {})
+
+    mock_observatory_instance = MagicMock()
+    mock_observatory.return_value = mock_observatory_instance
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(
+        "/multi-night-visit-maps",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240103,
+            "instrument": "lsstCam",
+            "planisphereOnly": True,
+            "appletMode": True,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "interactive" in data
+    assert isinstance(data["interactive"], dict)
+    assert "target_id" in data["interactive"]
+    assert "root_id" in data["interactive"]
+
+    mock_read_visits.assert_called_once()
+    mock_create_skymaps.assert_called_once()
+
+    call_kwargs = mock_create_skymaps.call_args[1]
+    assert call_kwargs["planisphere_only"] is True
+    assert call_kwargs["applet_mode"] is True
+    assert call_kwargs["timezone"] == "UTC"
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
+@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
+@patch('lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps')
+@patch('lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple')
+def test_full_mode_both_maps(
+    mock_add_coords,
+    mock_create_skymaps,
+    mock_observatory,
+    mock_read_visits,
+    sample_visit_data_for_visit_maps,
+):
+    mock_read_visits.return_value = sample_visit_data_for_visit_maps
+    mock_add_coords.return_value = sample_visit_data_for_visit_maps
+
+    dummy_fig = figure(title="Test Figure")
+    mock_create_skymaps.return_value = (dummy_fig, {})
+
+    mock_observatory_instance = MagicMock()
+    mock_observatory.return_value = mock_observatory_instance
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(
+        "/multi-night-visit-maps",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240104,
+            "instrument": "latiss",
+            "planisphereOnly": False,
+            "appletMode": False,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "interactive" in data
+    assert "target_id" in data["interactive"]
+    assert "root_id" in data["interactive"]
+
+    mock_read_visits.assert_called_once()
+    call_kwargs = mock_read_visits.call_args[1]
+    assert call_kwargs["num_nights"] == 3
+
+    call_kwargs = mock_create_skymaps.call_args[1]
+    assert call_kwargs["planisphere_only"] is False
+    assert call_kwargs["applet_mode"] is False
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
+@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
+def test_no_visits_data(
+    mock_observatory,
+    mock_read_visits,
+):
+    # empty visits DataFrame
+    mock_read_visits.return_value = pd.DataFrame()
+    mock_observatory_instance = MagicMock()
+    mock_observatory.return_value = mock_observatory_instance
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(
+        "/multi-night-visit-maps",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240102,
+            "instrument": "lsstCam",
+        },
+    )
+
+    # Should still return 200 with empty interactive data
+    assert response.status_code == 200
+    data = response.json()
+    assert "interactive" in data
+    assert data["interactive"] == {}
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
+@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
+def test_read_visits_exception(
+    mock_observatory,
+    mock_read_visits,
+):
+    mock_read_visits.side_effect = Exception("Database connection error")
+
+    mock_observatory_instance = MagicMock()
+    mock_observatory.return_value = mock_observatory_instance
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(
+        "/multi-night-visit-maps",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240102,
+            "instrument": "lsstCam",
+        },
+    )
+
+    assert response.status_code == 500
+    assert "Database connection error" in response.json()["detail"]
+
     app.dependency_overrides.pop(get_access_token, None)

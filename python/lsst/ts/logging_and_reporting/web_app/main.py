@@ -301,6 +301,7 @@ async def read_context_feed(
         }
     except Exception as e:
         logger.error(f"Error in /context-feed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/multi-night-visit-maps")
@@ -353,8 +354,6 @@ async def multi_night_visit_maps(
             dayobs_end_dt.date() - timedelta(days=1),
             instrument.lower(),
             stackers = NIGHT_STACKERS, num_nights=diff.days)
-
-        visits['filter'] = visits['band']
 
         v_map = None
 
