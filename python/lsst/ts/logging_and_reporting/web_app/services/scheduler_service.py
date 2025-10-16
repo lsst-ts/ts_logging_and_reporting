@@ -168,7 +168,7 @@ def plot_visit_skymaps(
     mjd_slider = spheremaps[0].sliders["mjd"]
     mjd_slider.start = mjd_start
     mjd_slider.end = mjd_end
-    mjd_slider.value = mjd_start
+    mjd_slider.value = mjd_end
 
     # Share slider across all spheremaps
     for sm in spheremaps[1:]:
