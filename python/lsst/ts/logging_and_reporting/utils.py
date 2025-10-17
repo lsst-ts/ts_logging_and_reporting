@@ -81,9 +81,7 @@ def fallback_parameters(day_obs, number_of_days, period, verbose, warning):
         freq = period_default
         message += f"\nInvalid period given: {period!r}\n"
         message += "Must be an Alias string formed from "
-        message += (
-            "https://pandas.pydata.org/docs/user_guide/timeseries.html#period-aliases"
-        )
+        message += "https://pandas.pydata.org/docs/user_guide/timeseries.html#period-aliases"
         message += f"Using: {freq}\n{str(err)!r}"
 
     to_use = dict(
@@ -110,7 +108,6 @@ class DatetimeIter:
         return self
 
     def __next__(self):
-
         if self.increasing:
             not_done = self.date <= self.stop_datetime
         else:
@@ -166,9 +163,7 @@ def dayobs_int(dayobs: str) -> int:
 def get_utc_datetime_from_dayobs_str(dayobs):
     # Add timezone = Chile to now datetime
     dome_tz = pytz.timezone("Chile/Continental")
-    dome_today_noon = dome_tz.localize(
-        dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
-    )
+    dome_today_noon = dome_tz.localize(dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0))
 
     dayobs_str = str(dayobs)
     match dayobs_str.lower():
@@ -182,9 +177,7 @@ def get_utc_datetime_from_dayobs_str(dayobs):
             no_dash = dayobs_str.replace("-", "")
             # noon is the start of an observing day
             datetime = dome_tz.localize(
-                dt.datetime.strptime(no_dash, "%Y%m%d").replace(
-                    hour=12, minute=0, second=0
-                )
+                dt.datetime.strptime(no_dash, "%Y%m%d").replace(hour=12, minute=0, second=0)
             )
     return datetime.astimezone(pytz.utc)
 
@@ -265,9 +258,7 @@ class Server:
     @classmethod
     def get_all(cls):
         return [
-            value
-            for value in cls.__dict__.values()
-            if isinstance(value, str) and value.startswith("https")
+            value for value in cls.__dict__.values() if isinstance(value, str) and value.startswith("https")
         ]
 
     @classmethod
@@ -328,6 +319,7 @@ def get_access_token(request: Request = None):
     """
     try:
         import lsst.rsp.utils
+
         return lsst.rsp.utils.get_info()
     except ImportError:
         env_token = os.getenv("ACCESS_TOKEN")
@@ -340,8 +332,7 @@ def get_access_token(request: Request = None):
                 return auth_header.split(" ")[1]
 
     raise HTTPException(
-        status_code=401,
-        detail="RSP authentication token could not be retrieved by any method."
+        status_code=401, detail="RSP authentication token could not be retrieved by any method."
     )
 
 

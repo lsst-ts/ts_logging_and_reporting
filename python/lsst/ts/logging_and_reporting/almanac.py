@@ -32,9 +32,7 @@ class Almanac(SourceAdapter):
         # Allow formats: int, YYYY-MM-DD, YYYYMMDD
         dobs = str(dayobs).replace("-", "")
         dome_tz = pytz.timezone("Chile/Continental")
-        self.dome_noon = Time(
-            dome_tz.localize(dt.datetime.strptime(dobs + " 12:00", "%Y%m%d %H:%M"))
-        )
+        self.dome_noon = Time(dome_tz.localize(dt.datetime.strptime(dobs + " 12:00", "%Y%m%d %H:%M")))
 
         astro_day = dt.datetime.strptime(dobs, "%Y%m%d").date()
         astro_date = dt.datetime.strptime(dobs, "%Y%m%d")
@@ -60,19 +58,12 @@ class Almanac(SourceAdapter):
     @property
     def sources(self):
         return {
-            "Astroplan": (
-                "https://astroplan.readthedocs.io/en/stable/api/"
-                "astroplan.Observer.html"
-            ),
+            "Astroplan": ("https://astroplan.readthedocs.io/en/stable/api/astroplan.Observer.html"),
         }
 
     def get_moon(self):
-        self.moon_rise_time = self.observer.moon_rise_time(
-            self.astro_midnight, which="nearest"
-        )
-        self.moon_set_time = self.observer.moon_set_time(
-            self.astro_midnight, which="nearest"
-        )
+        self.moon_rise_time = self.observer.moon_rise_time(self.astro_midnight, which="nearest")
+        self.moon_set_time = self.observer.moon_set_time(self.astro_midnight, which="nearest")
 
         # Percent of moon lit
         self.moon_illum = self.observer.moon_illumination(self.astro_midnight)
@@ -80,35 +71,23 @@ class Almanac(SourceAdapter):
     def get_sun(self):
         # ast(ronoimical) twilight: -18 degrees)
         obs = self.observer
-        self.ast_twilight_morning = obs.twilight_morning_astronomical(
-            self.astro_midnight, which="next"
-        )
-        self.ast_twilight_evening = obs.twilight_evening_astronomical(
-            self.astro_midnight, which="previous"
-        )
+        self.ast_twilight_morning = obs.twilight_morning_astronomical(self.astro_midnight, which="next")
+        self.ast_twilight_evening = obs.twilight_evening_astronomical(self.astro_midnight, which="previous")
 
         # nau(tical) twilight: -12 degrees)
-        self.nau_twilight_morning = self.observer.twilight_morning_nautical(
-            self.astro_midnight, which="next"
-        )
+        self.nau_twilight_morning = self.observer.twilight_morning_nautical(self.astro_midnight, which="next")
         self.nau_twilight_evening = self.observer.twilight_evening_nautical(
             self.astro_midnight, which="previous"
         )
 
         # civ(il) twilight: -6 degrees)
-        self.civ_twilight_morning = self.observer.twilight_morning_civil(
-            self.astro_midnight, which="next"
-        )
+        self.civ_twilight_morning = self.observer.twilight_morning_civil(self.astro_midnight, which="next")
         self.civ_twilight_evening = self.observer.twilight_evening_civil(
             self.astro_midnight, which="previous"
         )
 
-        self.sun_rise_time = self.observer.sun_rise_time(
-            self.astro_midnight, which="next"
-        )
-        self.sun_set_time = self.observer.sun_set_time(
-            self.astro_midnight, which="previous"
-        )
+        self.sun_rise_time = self.observer.sun_rise_time(self.astro_midnight, which="next")
+        self.sun_set_time = self.observer.sun_set_time(self.astro_midnight, which="previous")
 
     @property
     def night_hours(self):
@@ -133,19 +112,12 @@ class Almanac(SourceAdapter):
         )
 
         if localize:
-            events_dt = {
-                k: self.observer.astropy_time_to_datetime(v) for k, v in events.items()
-            }
+            events_dt = {k: self.observer.astropy_time_to_datetime(v) for k, v in events.items()}
         else:
-            events_dt = {
-                k: v.to_datetime(leap_second_strict="silent") for k, v in events.items()
-            }
+            events_dt = {k: v.to_datetime(leap_second_strict="silent") for k, v in events.items()}
 
         if iso:
-            return {
-                k: v.isoformat(sep=" ", timespec="seconds")
-                for k, v in events_dt.items()
-            }
+            return {k: v.isoformat(sep=" ", timespec="seconds") for k, v in events_dt.items()}
         else:
             return events_dt
 

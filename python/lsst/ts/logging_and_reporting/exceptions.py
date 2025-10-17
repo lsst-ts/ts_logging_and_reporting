@@ -68,19 +68,13 @@ example_error_from_exposurelog = {
         {
             "type": "int_parsing",
             "loc": ["query", "min_day_obs"],
-            "msg": (
-                "Input should be a valid integer, "
-                "unable to parse string as an integer"
-            ),
+            "msg": ("Input should be a valid integer, unable to parse string as an integer"),
             "input": "2024-08-19",
         },
         {
             "type": "int_parsing",
             "loc": ["query", "max_day_obs"],
-            "msg": (
-                "Input should be a valid integer, "
-                "unable to parse string as an integer"
-            ),
+            "msg": ("Input should be a valid integer, unable to parse string as an integer"),
             "input": "2024-09-21",
         },
     ]

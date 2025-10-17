@@ -28,10 +28,13 @@ def test_get_access_token_rsp_utils():
     mock_lsst = Mock()
     mock_lsst.rsp.utils.get_info.return_value = "mocked-token"
 
-    with patch.dict("sys.modules", {
-        "lsst": mock_lsst,
-        "lsst.rsp.utils": mock_lsst.rsp.utils,
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "lsst": mock_lsst,
+            "lsst.rsp.utils": mock_lsst.rsp.utils,
+        },
+    ):
         token = get_access_token()
         assert token == "mocked-token"
 
@@ -39,10 +42,7 @@ def test_get_access_token_rsp_utils():
 def test_get_access_token_request_headers(monkeypatch):
     monkeypatch.delenv("ACCESS_TOKEN", raising=False)
     client = TestClient(app)
-    response = client.get(
-        "/test-access-token",
-        headers={"Authorization": "Bearer header_token"}
-    )
+    response = client.get("/test-access-token", headers={"Authorization": "Bearer header_token"})
     assert response.status_code == 200
     assert response.json() == {"token": "header_token"}
 
@@ -52,9 +52,7 @@ def test_get_access_token_no_token(monkeypatch):
     client = TestClient(app)
     response = client.get("/test-access-token")
     assert response.status_code == 401
-    assert response.json() == {
-        "detail": "RSP authentication token could not be retrieved by any method."
-    }
+    assert response.json() == {"detail": "RSP authentication token could not be retrieved by any method."}
 
 
 def test_stringify_special_floats_nan():

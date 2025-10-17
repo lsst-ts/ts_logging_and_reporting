@@ -166,9 +166,7 @@ def merge_sources(allsrc, verbose=False):
             print(f"Debug merge_sources: {srcname=}")
         df = merge_to_timelog(f"{srcname}_", df, srcdf)
         if verbose:
-            print(
-                f"Debug merge_sources: {srcname=} {df.shape=} {df.columns.to_list()=}"
-            )
+            print(f"Debug merge_sources: {srcname=} {df.shape=} {df.columns.to_list()=}")
 
     df.set_index(["Time"], inplace=True)
 
@@ -278,11 +276,7 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
         "is_valid_EXP",
     ]
 
-    drop_cols = [
-        cname
-        for cname in df.columns
-        if (cname.startswith("date_") or cname in exclude_cols)
-    ]
+    drop_cols = [cname for cname in df.columns if (cname.startswith("date_") or cname in exclude_cols)]
     if allow_data_loss:
         if verbose:
             print(f"Debug compact: {sorted(drop_cols)=}\n\n")
@@ -311,13 +305,7 @@ def compact(full_df, delta="4h", allow_data_loss=False, verbose=False):
         print(f"WARNING removed {len(columns)} containing list values. {columns=}")
         print(f"Debug compact: Output {df.shape=}")
 
-    return (
-        df.reset_index()
-        .set_index(["Time"])
-        .drop_duplicates()
-        .reset_index()
-        .set_index(["Period", "Time"])
-    )
+    return df.reset_index().set_index(["Time"]).drop_duplicates().reset_index().set_index(["Period", "Time"])
     # return df
 
 
@@ -436,11 +424,7 @@ def field_distribution(df, available=None):
     if not available:
         available = set(df.columns)
     thresh = 0.10 * len(df)  # max density threshold
-    facets = {
-        c: set(df[c].unique()) - set([np.nan])
-        for c in available
-        if 0 < len(df[c].unique()) < thresh
-    }
+    facets = {c: set(df[c].unique()) - set([np.nan]) for c in available if 0 < len(df[c].unique()) < thresh}
     return facets
 
 

@@ -70,11 +70,17 @@ def get_time_accounting(
         visits = rn_aug.augment_visits(exposures_df, "lsstcam", skip_rs_columns=True)
 
         visits, _ = rn_sch.add_model_slew_times(
-            visits, clients["efd"], model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False)
+            visits, clients["efd"], model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False
+        )
         max_scatter = 6
-        valid_overhead = np.min([np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values)
-                                    + max_scatter, visits.visit_gap.values], axis=0)
-        visits['overhead'] = valid_overhead
+        valid_overhead = np.min(
+            [
+                np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values) + max_scatter,
+                visits.visit_gap.values,
+            ],
+            axis=0,
+        )
+        visits["overhead"] = valid_overhead
 
         visits = visits.replace([np.inf, -np.inf], np.nan)
         visits = visits.where(pd.notnull(visits), None)
@@ -83,8 +89,8 @@ def get_time_accounting(
 
     except Exception as e:
         logger.error(
-            f"Error in getting time accounting data from rubin_nights through EFD: {e}",
-            exc_info=True)
+            f"Error in getting time accounting data from rubin_nights through EFD: {e}", exc_info=True
+        )
         return pd.DataFrame()
 
 
@@ -93,7 +99,7 @@ def get_open_close_dome(
     dayObsEnd: int,
     instrument: str,
     auth_token: str = None,
- ) -> dict:
+) -> dict:
     """
     Retrieve the dome open and close times for a specified
     range of observation days and instrument.
@@ -124,8 +130,8 @@ def get_open_close_dome(
         # Get connections to rubin_nights services
         clients = get_clients(auth_token=auth_token)
 
-        day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format='isot', scale='utc')
-        day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00", format='isot', scale='utc')
+        day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format="isot", scale="utc")
+        day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00", format="isot", scale="utc")
         dome_open = get_dome_open_close(day_min, day_max, clients["efd"])
         return dome_open
     except Exception as e:
@@ -171,15 +177,13 @@ def get_context_feed(
             The column names included in the context feed.
         Returns an empty list if an error occurs.
     """
-    logger.info(
-        f"Getting context feed data for start: {dayobs_start}, end: {dayobs_end}"
-    )
+    logger.info(f"Getting context feed data for start: {dayobs_start}, end: {dayobs_end}")
     try:
         # Get connections to rubin_nights services
         endpoints = get_clients(auth_token=auth_token)
 
         # Convert dayobs_start and dayobs_end to t_start and t_end
-        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayobs_start)}T12:00:00", format='isot', scale='utc')
+        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayobs_start)}T12:00:00", format="isot", scale="utc")
         t_end = Time(
             f"{rn_dayobs.day_obs_int_to_str(dayobs_end)}T12:00:00",
             format="isot",
@@ -200,7 +204,5 @@ def get_context_feed(
         return [records, cols]
 
     except Exception as e:
-        logger.error(
-            f"Error retrieving Context Feed data from rubin_nights: {e}",
-            exc_info=True)
+        logger.error(f"Error retrieving Context Feed data from rubin_nights: {e}", exc_info=True)
         return []

@@ -71,9 +71,7 @@ maximum_record_limit = 9000
 
 
 def all_endpoints(server):
-    endpoints = itertools.chain.from_iterable(
-        [sa(server_url=server).used_endpoints() for sa in adapters]
-    )
+    endpoints = itertools.chain.from_iterable([sa(server_url=server).used_endpoints() for sa in adapters])
     return list(endpoints)
 
 
@@ -171,8 +169,7 @@ class SourceAdapter(ABC):
 
     def __str__(self):
         return (
-            f"{self.server}: {self.min_dayobs}, {self.max_dayobs}; "
-            f"{self.service} endpoints={self.endpoints}"
+            f"{self.server}: {self.min_dayobs}, {self.max_dayobs}; {self.service} endpoints={self.endpoints}"
         )
 
     def __repr__(self):
@@ -261,9 +258,7 @@ class SourceAdapter(ABC):
         if self.verbose:
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
-            response = requests.get(
-                url, timeout=timeout, headers=ut.get_auth_header(self.token)
-            )
+            response = requests.get(url, timeout=timeout, headers=ut.get_auth_header(self.token))
             if self.verbose:
                 print(
                     f"DEBUG protected_get({url=},{ut.get_auth_header(self.token)=},{timeout=}) => "
@@ -293,10 +288,7 @@ class SourceAdapter(ABC):
             result = f"Error getting data from API at {url}. {err}"
         else:  # No exception. Could something else be wrong?
             if self.verbose:
-                print(
-                    f"DEBUG protected_get: {response.status_code=} "
-                    f"{response.reason=}"
-                )
+                print(f"DEBUG protected_get: {response.status_code=} {response.reason=}")
             result = response.json()
             if self.verbose:
                 print(f"DEBUG protected_get: {len(result)=}")
@@ -318,9 +310,7 @@ class SourceAdapter(ABC):
         qparams = dict(limit=2)  # API requires > 1 !
         url = f"{endpoint}?{urlencode(qparams)}"
         try:
-            requests.get(
-                url, timeout=self.timeout, headers=ut.get_auth_header(self.token)
-            )
+            requests.get(url, timeout=self.timeout, headers=ut.get_auth_header(self.token))
         except Exception:
             pass  # this is a hack to force reconnect. Response irrelevent.
 
@@ -407,9 +397,7 @@ class SourceAdapter(ABC):
             ok, result, status_code = self.protected_get(url)
             url_http_status_code[url] = status_code if ok else "GET error"
 
-        return url_http_status_code, all(
-            [v == 200 for v in url_http_status_code.values()]
-        )
+        return url_http_status_code, all([v == 200 for v in url_http_status_code.values()])
 
     def analytics(self, recs, categorical_fields=None):
         if len(recs) == 0:
@@ -422,10 +410,7 @@ class SourceAdapter(ABC):
         facflds = flds - ignore_fields
 
         # facets(field) = set(value-1, value-2, ...)
-        facets = {
-            f: set([str(r[f]) for r in recs if not isinstance(r[f], list)])
-            for f in facflds
-        }
+        facets = {f: set([str(r[f]) for r in recs if not isinstance(r[f], list)]) for f in facflds}
         return dict(
             fields=flds,
             facet_fields=facflds,
@@ -493,20 +478,12 @@ class NightReportAdapter(SourceAdapter):
 
     @property
     def sources(self):
-        return {
-            "Nightreport API": (
-                f"{self.server}/{self.service}/{self.primary_endpoint}"
-            )
-        }
+        return {"Nightreport API": (f"{self.server}/{self.service}/{self.primary_endpoint}")}
 
     @property
     def urls(self):
         """RETURN flattened list of all URLs."""
-        nig_urls = [
-            [r.get("confluence_url", [])]
-            for r in self.records
-            if r.get("confluence_url") != ""
-        ]
+        nig_urls = [[r.get("confluence_url", [])] for r in self.records if r.get("confluence_url") != ""]
         return set(itertools.chain.from_iterable(nig_urls))
 
     # Nightreport
@@ -685,10 +662,7 @@ class NarrativelogAdapter(SourceAdapter):
             auth_token=auth_token,
         )
         if self.verbose:
-            print(
-                "NarrativeLogAdapter("
-                f"{server_url=}, {max_dayobs=}, {min_dayobs=}, {limit=}"
-            )
+            print(f"NarrativeLogAdapter({server_url=}, {max_dayobs=}, {min_dayobs=}, {limit=}")
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
@@ -700,9 +674,7 @@ class NarrativelogAdapter(SourceAdapter):
 
     @property
     def sources(self):
-        return {
-            "Narrative Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"
-        }
+        return {"Narrative Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"}
 
     @property
     def urls(self):
@@ -761,11 +733,8 @@ class NarrativelogAdapter(SourceAdapter):
                 if new:
                     msg = new
                 else:
-
                     # Replace 3 or more newlines with just two.
-                    msg = rep.htmlcode(
-                        re.sub(r"\n{3,}", "\n\n", rec["message_text"].strip())
-                    )
+                    msg = rep.htmlcode(re.sub(r"\n{3,}", "\n\n", rec["message_text"].strip()))
                     mdstr += f"- {attrstr}"
 
                 mdstr += "\n\n" + msg + "\n"
@@ -827,9 +796,7 @@ class NarrativelogAdapter(SourceAdapter):
                     "Expected one of {AuxTel, MainTel, Simonyi} "
                     f"got {components=}. "
                 )
-                warnings.warn(
-                    msg, category=ex.UnknownTelescopeWarning, stacklevel=2
-                )
+                warnings.warn(msg, category=ex.UnknownTelescopeWarning, stacklevel=2)
 
             if instrument == "lsst":
                 if day_added >= LSST_DAY:
@@ -864,13 +831,9 @@ class NarrativelogAdapter(SourceAdapter):
         if message_text:
             qparams["message_text"] = message_text
         if self.min_date:
-            qparams["min_date_begin"] = dt.datetime.combine(
-                self.min_date, dt.time(12, 0)
-            ).isoformat()
+            qparams["min_date_begin"] = dt.datetime.combine(self.min_date, dt.time(12, 0)).isoformat()
         if self.max_date:
-            qparams["max_date_begin"] = dt.datetime.combine(
-                self.max_date, dt.time(11, 59, 59)
-            ).isoformat()
+            qparams["max_date_begin"] = dt.datetime.combine(self.max_date, dt.time(11, 59, 59)).isoformat()
 
         error = None
         recs = []
@@ -988,9 +951,7 @@ class ExposurelogAdapter(SourceAdapter):
 
     @property
     def sources(self):
-        return {
-            "Exposure Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"
-        }
+        return {"Exposure Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"}
 
     # SIDE-EFFECT: Modifies self.exp_src.exposures in place.429
     def add_exposure_flag_to_exposures(self):
@@ -1073,7 +1034,7 @@ class ExposurelogAdapter(SourceAdapter):
                     # (BLACK workaround)
                     str = ""
                     str += f"* {attrstr}"
-                    str += f"\n    - {flag}`{msg}`" f"{linkstr}"
+                    str += f"\n    - {flag}`{msg}`{linkstr}"
                     table.append(str)
         return table
 
@@ -1139,9 +1100,7 @@ class ExposurelogAdapter(SourceAdapter):
             ok, result, status_code = self.protected_get(url)
             url_http_status_code[url] = status_code if ok else "GET error"
 
-        return url_http_status_code, all(
-            [v == 200 for v in url_http_status_code.values()]
-        )
+        return url_http_status_code, all([v == 200 for v in url_http_status_code.values()])
 
     def get_instruments(self):
         url = f"{self.server}/{self.service}/instruments"

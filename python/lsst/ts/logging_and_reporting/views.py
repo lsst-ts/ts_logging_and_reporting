@@ -17,9 +17,7 @@ def decant_by_column_name(df, nontable_columns):
     for c in nontable_columns:
         table_columns.remove(c)
     dense_df = df[table_columns]
-    sparse_dict = {
-        k: set(v.values()) for k, v in df[nontable_columns].to_dict().items()
-    }
+    sparse_dict = {k: set(v.values()) for k, v in df[nontable_columns].to_dict().items()}
     return dense_df, sparse_dict
 
 
@@ -48,10 +46,7 @@ def decant_by_maxwidth(df, thresh):
     wide = {col for col, width in width_map.items() if width > thresh}
     table_columns = list(set(df.columns.to_list()) - wide)
     dense_df = df[table_columns]
-    sparse_dict = {
-        k: "\n\n".join([s for s in v.values() if s])
-        for k, v in df[list(wide)].to_dict().items()
-    }
+    sparse_dict = {k: "\n\n".join([s for s in v.values() if s]) for k, v in df[list(wide)].to_dict().items()}
     return ut.wrap_dataframe_columns(dense_df), sparse_dict
 
 

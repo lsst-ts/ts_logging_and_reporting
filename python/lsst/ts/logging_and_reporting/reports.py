@@ -37,33 +37,18 @@ def md(markdown_str, color=None, background=None):
         display(Markdown(markdown_str))
 
 
-htmlgood = (
-    '<font style="background-color:green; '
-    'color:white; font-size:20px">&nbsp;G&nbsp;</font>'
-)
-htmlquestion = (
-    '<font style="background-color:yellow; '
-    'color:black; font-size:20px">&nbsp;?&nbsp;</font>'
-)
-htmlbad = (
-    '<font style="background-color:red; '
-    'color:black; font-size:20px">&nbsp;R&nbsp;</font>'
-)
+htmlgood = '<font style="background-color:green; color:white; font-size:20px">&nbsp;G&nbsp;</font>'
+htmlquestion = '<font style="background-color:yellow; color:black; font-size:20px">&nbsp;?&nbsp;</font>'
+htmlbad = '<font style="background-color:red; color:black; font-size:20px">&nbsp;R&nbsp;</font>'
 
 
 def html_beta(text):
-    msg = (
-        f'<font style="background-color:green; '
-        f'color:white; font-size:20px">BETA</font> {text}'
-    )
+    msg = f'<font style="background-color:green; color:white; font-size:20px">BETA</font> {text}'
     return msg
 
 
 def html_draft(text):
-    msg = (
-        f'<font style="background-color:yellow; '
-        f'color:black; font-size:20px">DRAFT</font> {text}'
-    )
+    msg = f'<font style="background-color:yellow; color:black; font-size:20px">DRAFT</font> {text}'
     return msg
 
 
@@ -76,11 +61,7 @@ def mdlink(
     """Wrap link in html to open link in new tab, must be used in an md()"""
     if title is None:
         title = url
-    html = (
-        f'<a href="{url}"'
-        f' target="_blank" rel="noreferrer noopener">{title}</a>'
-        f" {description} ({caveat}) "
-    )
+    html = f'<a href="{url}" target="_blank" rel="noreferrer noopener">{title}</a> {description} ({caveat}) '
     return html
 
 
@@ -150,9 +131,7 @@ class Report(ABC):
         """
         adapter = self.source_adapter
         if adapter:
-            self.time_log_as_markdown(
-                log_title=f"{adapter.service.title()} Report for {day_obs}"
-            )
+            self.time_log_as_markdown(log_title=f"{adapter.service.title()} Report for {day_obs}")
 
     def overview(self):
         """Emit overview of a source."""
@@ -163,7 +142,7 @@ class Report(ABC):
         result = error if error else f"Got {count} records. "
 
         print(md(f"### Overview for Service: `{adapter.service}` [{count}]"))
-        print(md(f'- Endpoint: {status["endpoint_url"]}'))
+        print(md(f"- Endpoint: {status['endpoint_url']}"))
         print(f"- {result}")
 
     def time_log_as_markdown(self, zero_message=True):
@@ -178,8 +157,7 @@ class Report(ABC):
                 service = adapter.service
                 url = adapter.get_status().get("endpoint_url")
                 msg = (
-                    f"No {service} records found "
-                    f"{adapter.min_dayobs} to {adapter.max_dayobs}. "
+                    f"No {service} records found {adapter.min_dayobs} to {adapter.max_dayobs}. "
                     # f"status={adapter.status}"
                 )
                 md(msg, color="lightblue")
@@ -198,19 +176,16 @@ class AlmanacReport(Report):
         display(df.style.hide(axis="columns", subset=None))
 
     def almanac_as_dataframe(self):
-        return pd.DataFrame.from_records(
-            self.source_adapter.as_dict, index=["UTC", "Comment"]
-        ).T.sort_values("UTC")
+        return pd.DataFrame.from_records(self.source_adapter.as_dict, index=["UTC", "Comment"]).T.sort_values(
+            "UTC"
+        )
 
 
 class NightlyLogReport(Report):
-
     def day_obs_report(self, day_obs):
         adapter = self.source_adapter
         if adapter:
-            self.time_log_as_markdown(
-                log_title=f"{adapter.service.title()} Report for {day_obs}"
-            )
+            self.time_log_as_markdown(log_title=f"{adapter.service.title()} Report for {day_obs}")
 
     def block_tickets_as_markdown(
         self,
@@ -238,7 +213,6 @@ class NightlyLogReport(Report):
 
 
 class ExposurelogReport(Report):
-
     def daily_observation_gap(self, min_day_obs, max_day_obs):
         pass
 

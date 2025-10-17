@@ -55,15 +55,11 @@ class EfdAdapter(SourceAdapter):
             case ut.Server.usdfdev:
                 self.client = EfdClient("usdf_efd")
                 # #!self.client = makeEfdClient()
-                os.environ["RUBIN_SIM_DATA_DIR"] = (
-                    "/sdf/data/rubin/shared/rubin_sim_data"
-                )
+                os.environ["RUBIN_SIM_DATA_DIR"] = "/sdf/data/rubin/shared/rubin_sim_data"
             case ut.Server.usdf:
                 self.client = EfdClient("usdf_efd")
                 # #!self.client = makeEfdClient()
-                os.environ["RUBIN_SIM_DATA_DIR"] = (
-                    "/sdf/data/rubin/shared/rubin_sim_data"
-                )
+                os.environ["RUBIN_SIM_DATA_DIR"] = "/sdf/data/rubin/shared/rubin_sim_data"
             case ut.Server.tucson:
                 pass
             case ut.Server.base:
@@ -109,10 +105,7 @@ class EfdAdapter(SourceAdapter):
         errors = dict()  # errors[topic] = error_message
         populated = dict()  # populated[topic] = [field, ...]
         all_topics = await self.client.get_topics()
-        print(
-            f"Query all {len(all_topics)} topics "
-            "(this will take a long time - maybe 2 hours): "
-        )
+        print(f"Query all {len(all_topics)} topics (this will take a long time - maybe 2 hours): ")
         ut.tic()
         for topic in all_topics:
             if max_topics and (topic_count > max_topics):
@@ -120,11 +113,7 @@ class EfdAdapter(SourceAdapter):
                 break
             print(".", end="", flush=True)
             try:
-                fields = [
-                    f
-                    for f in await self.client.get_fields(topic)
-                    if not f.startswith("private_")
-                ]
+                fields = [f for f in await self.client.get_fields(topic) if not f.startswith("private_")]
                 if not fields:
                     continue
             except Exception as err:
@@ -143,19 +132,15 @@ class EfdAdapter(SourceAdapter):
                     populated[topic] = fields
             except Exception as err:
                 errors[topic] = str(err)
-        print(f" DONE in {ut.toc()/60} minutes")
+        print(f" DONE in {ut.toc() / 60} minutes")
         return populated, errors, topic_count
 
-    async def query_nights(
-        self, topic, fields, min_date=None, max_date=None, index=None
-    ):
+    async def query_nights(self, topic, fields, min_date=None, max_date=None, index=None):
         start = Time(min_date or self.min_date)
         end = Time(max_date or self.max_date)
 
         # TODO resample
-        series = await self.client.select_time_series(
-            topic, fields, start=start, end=end, index=index
-        )
+        series = await self.client.select_time_series(topic, fields, start=start, end=end, index=index)
         return series
 
     # slewTime (and probably others) are EXPECTED times, not ACTUAL.

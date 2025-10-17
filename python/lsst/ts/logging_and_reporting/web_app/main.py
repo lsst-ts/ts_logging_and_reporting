@@ -42,6 +42,7 @@ app.add_middleware(
 
 logger.info("Starting FastAPI app")
 
+
 @app.get("/health")
 async def health():
     """Health check endpoint.
@@ -51,10 +52,7 @@ async def health():
 
 
 @app.get("/mock-exposures")
-async def read_exposures_from_mock_data(
-    request: Request, dayObsStart: int, dayObsEnd: int, instrument: str
-):
-
+async def read_exposures_from_mock_data(request: Request, dayObsStart: int, dayObsEnd: int, instrument: str):
     logger.info("Getting exposures from mock data")
     exposures = get_mock_exposures(dayObsStart, dayObsEnd, instrument)
     return {"exposures": exposures}
@@ -68,15 +66,9 @@ async def read_exposures(
     instrument: str,
     auth_token: str = Depends(get_access_token),
 ):
-    logger.info(
-        f"Getting exposures for start: "
-        f"{dayObsStart}, end: {dayObsEnd} "
-        f"and instrument: {instrument}"
-    )
+    logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
-        exposures = get_exposures(
-            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
-        )
+        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky")]
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
@@ -84,7 +76,7 @@ async def read_exposures(
         open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, auth_token)
         open_dome_hours = 0
         if not open_dome_times.empty:
-            open_dome_hours = open_dome_times['open_hours'].sum()
+            open_dome_hours = open_dome_times["open_hours"].sum()
 
         exposures_df = get_time_accounting(
             dayObsStart,
@@ -95,12 +87,30 @@ async def read_exposures(
         )
 
         if not exposures_df.empty:
-
-            exposures_dict = exposures_df[["exposure_id", "exposure_name", "exp_time", "img_type",
-                "observation_reason", "science_program", "target_name", "can_see_sky",
-                "band", "obs_start", "physical_filter", "day_obs", "seq_num",
-                "obs_end", "overhead", "zero_point_median", "visit_id", "overhead",
-                "pixel_scale_median", "psf_sigma_median"]].to_dict(orient="records")
+            exposures_dict = exposures_df[
+                [
+                    "exposure_id",
+                    "exposure_name",
+                    "exp_time",
+                    "img_type",
+                    "observation_reason",
+                    "science_program",
+                    "target_name",
+                    "can_see_sky",
+                    "band",
+                    "obs_start",
+                    "physical_filter",
+                    "day_obs",
+                    "seq_num",
+                    "obs_end",
+                    "overhead",
+                    "zero_point_median",
+                    "visit_id",
+                    "overhead",
+                    "pixel_scale_median",
+                    "psf_sigma_median",
+                ]
+            ].to_dict(orient="records")
 
             exposures_safe_dict = make_json_safe(exposures_dict)
 
@@ -131,15 +141,9 @@ async def read_data_log(
     instrument: str,
     auth_token: str = Depends(get_access_token),
 ):
-    logger.info(
-        f"Getting data log for start: "
-        f"{dayObsStart}, end: {dayObsEnd} "
-        f"and instrument: {instrument}"
-    )
+    logger.info(f"Getting data log for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
-        records = get_data_log(
-            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
-        )
+        records = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         return jsonable_encoder({"data_log": records})
 
     except ConsdbQueryError as ce:
@@ -151,14 +155,9 @@ async def read_data_log(
 
 
 @app.get("/jira-tickets")
-async def read_jira_tickets(
-    request: Request, dayObsStart: int, dayObsEnd: int, instrument: str
-):
-
+async def read_jira_tickets(request: Request, dayObsStart: int, dayObsEnd: int, instrument: str):
     logger.info(
-        f"Getting jira tickets for start: "
-        f"{dayObsStart}, end: {dayObsEnd} "
-        f"and instrument: {instrument}"
+        f"Getting jira tickets for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}"
     )
     try:
         tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
@@ -173,9 +172,7 @@ async def read_jira_tickets(
 
 @app.get("/almanac")
 async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
-    logger.info(
-        f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
-    )
+    logger.info(f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
     try:
         almanac_info = get_almanac(dayObsStart, dayObsEnd)
         return {"almanac_info": almanac_info}
@@ -197,15 +194,9 @@ async def read_narrative_log(
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
     try:
-        records = get_messages(
-            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
-        )
-        time_lost_to_weather = sum(
-            msg["time_lost"] for msg in records if msg["time_lost_type"] == "weather"
-        )
-        time_lost_to_faults = sum(
-            msg["time_lost"] for msg in records if msg["time_lost_type"] == "fault"
-        )
+        records = get_messages(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == "weather")
+        time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == "fault")
         return {
             "narrative_log": records,
             "time_lost_to_weather": time_lost_to_weather,
@@ -229,9 +220,7 @@ async def read_exposure_flags(
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
     try:
-        flags = get_exposure_flags(
-            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
-        )
+        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         return {
             "exposure_flags": flags,
         }
@@ -253,9 +242,7 @@ async def read_exposure_entries(
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
     try:
-        entries = get_exposurelog_entries(
-            dayObsStart, dayObsEnd, instrument, auth_token=auth_token
-        )
+        entries = get_exposurelog_entries(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         return {
             "exposure_entries": entries,
         }

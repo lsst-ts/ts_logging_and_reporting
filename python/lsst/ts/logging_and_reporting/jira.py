@@ -139,22 +139,18 @@ class JiraAdapter(SourceAdapter):
             {
                 "key": issue["key"],
                 "summary": issue["fields"]["summary"],
-                "updated":
-                    datetime.strptime(issue["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z")
-                    .strftime("%Y-%m-%d %H:%M:%S"),
-                "created":
-                    datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
-                    .strftime("%Y-%m-%d %H:%M:%S"),
+                "updated": datetime.strptime(issue["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z").strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                "created": datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z").strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
                 "status": issue["fields"]["status"]["name"],
                 "system": get_system_names(issue["fields"][OBS_SYSTEMS_FIELD]),
-                "isNew":
-                    datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
-                    >= start_dayobs_user
-                    and
-                    datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
-                    < end_dayobs_user,
+                "isNew": datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                >= start_dayobs_user
+                and datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z") < end_dayobs_user,
                 "url": f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{issue['key']}",
             }
             for issue in issues
         ]
-

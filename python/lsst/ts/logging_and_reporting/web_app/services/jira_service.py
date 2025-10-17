@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 INSTRUMENTS = {
     "LATISS": "AuxTel",
-    "LSSTCam" : "Simonyi",
+    "LSSTCam": "Simonyi",
 }
 
 
@@ -35,7 +35,7 @@ def filter_tickets_by_instrument(tickets, instrument):
 
     def matches(ticket):
         # Get the list of systems from the object
-        obj_system_list = ticket['system']
+        obj_system_list = ticket["system"]
         search_terms = (instrument, INSTRUMENTS[instrument])
         # Check if any search term appears in any system name
         matched = any(term in system for term in search_terms for system in obj_system_list)
@@ -44,14 +44,8 @@ def filter_tickets_by_instrument(tickets, instrument):
     return [ticket for ticket in tickets if matches(ticket)]
 
 
-
-def get_jira_tickets(
-        dayobs_start: int,
-        dayobs_end: int,
-        telescope: str
-        ) -> list[dict]:
-    logger.info(f"Jira service: start: {dayobs_start}, "
-          f"end: {dayobs_end} and telescope: {telescope}")
+def get_jira_tickets(dayobs_start: int, dayobs_end: int, telescope: str) -> list[dict]:
+    logger.info(f"Jira service: start: {dayobs_start}, end: {dayobs_end} and telescope: {telescope}")
 
     jira = JiraAdapter(
         max_dayobs=dayobs_end,
