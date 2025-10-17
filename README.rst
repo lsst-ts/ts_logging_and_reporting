@@ -2,43 +2,32 @@
 ts_logging_and_reporting
 ########################
 
-``ts_logging_and_reporting`` is a package providing summarizing and other functionality to query logging sources from the summit and usdf.
+Hello, ``ts_logging_and_reporting`` is a package providing summarizing and other functionality to query logging sources from the summit and usdf.
 
 ===================
 About this software
 ===================
 
-The notebooks contained are a **Prototype** application.  It is intended to help figure
-out what is needed for a *Project-wide Logging and Reporting* system
-for Rubin. It helps with this by presenting content in the `Nightly Digest`_
-.. _Nightly Digest: https://usdf-rsp-dev.slac.stanford.edu/times-square/github/lsst-ts/ts_logging_and_reporting/NightLog
-jupyter notebook under Times Square. The intent is to eventually put
-the content into a solid User Interface environment (such as **LOVE:**
-*LSST Operator's Visualization Environment*). The Times Square
-environment is used because it allows rapid turn-around from code
-change to an easily accessible report on USDF.
+This is the backend repository for the `Nightly Digest`_
 
-While current *rendering* is in the Notebook, most of the rest of the code
-(back-end) is in the python package included in this repository.  The
-intent is for that package to be modified and used with the final UI.
+.. _Nightly Digest: https://usdf-rsp-dev.slac.stanford.edu/nightlydigest
+
+This project is Rubin Observatory Software's *Project-wide Logging and Reporting* system
+aiming to present and summarize content to give insight into nightly operations at the summit.
+This includes fetching data from the `consolidated database`_, `exposure log`_, `narrative log`_,
+`night report`_, and leverages other repositories like `rubin-nights`_ and `rubin-scheduler`_
+
+.. _consolidated database: https://consdb.lsst.io/index.html
+.. _exposure log: https://github.com/lsst-ts/exposurelog
+.. _narrative log: https://github.com/lsst-ts/narrativelog
+.. _night report: https://github.com/lsst-ts/ts_nightreport
+.. _rubin-nights: https://github.com/lsst-sims/rubin_nights
+.. _rubin-scheduler: https://rubin-scheduler.lsst.io
 
 ======
 Set up
 ======
 
-For local development, create a virtual environment and install the required packages:
+This is a conda package following the standards at `TSSW Developer Guide`_
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-This repository uses pre-commit hooks to ensure code is formatted correctly and 
-that notebooks are cleared of outputs before committing. 
-To set up the pre-commit hooks, run the following command in the root directory of the repository:
-
-```bash
-
-pre-commit install
-```
+.. _TSSW Developer Guide: https://tssw-developer.lsst.io/index.html
