@@ -99,7 +99,7 @@ SERVICE_ENDPOINT_MOCK_RESPONSES = {
                 " published many TimeOut errors until it eventually failed."
                 " We cycled the Hexapod CSC, changed the max_iter value to"
                 " 500, and the script completed, even though it was clear"
-                " that \"y\" and \"x\" were struggling to complete movements"
+                ' that "y" and "x" were struggling to complete movements'
                 " even at 22 degrees elevation. \nThe HVAC chiller triggered"
                 " the system's alarms, reporting pressure-related alarms"
                 " likely caused by a temporary software communication glitch."
@@ -118,7 +118,7 @@ SERVICE_ENDPOINT_MOCK_RESPONSES = {
                 " telemetry (OBS-1160). The issue seems related with the "
                 "lfa files from DREAM. A change in the scheduler "
                 "configuration was deployed avoiding the issue for the rest"
-                " of SV FBS observations.\n\nThe \"water drop noise\" was"
+                ' of SV FBS observations.\n\nThe "water drop noise" was'
                 " heard several instances. The timestamps are recorder "
                 "on OBS-1158.\n"
             ),
@@ -133,7 +133,7 @@ SERVICE_ENDPOINT_MOCK_RESPONSES = {
                 " switch off the ATWhiteLight, after calibrations, did"
                 " not work properly. The problem was that the "
                 "MTWhileLight CSC was not connected to the lamp "
-                "controller, we executed the \"power_on_atcalsys\" "
+                'controller, we executed the "power_on_atcalsys" '
                 "script, and the CSC went to fault, turned off the light"
                 " (OBS-1172).\n\nOnce we went to sky, we were not able"
                 " to correct for pointing and LATISS images were not"
@@ -731,9 +731,7 @@ def test_nightreport_endpoint(mock_requests_get):
 
 
 def test_exposure_entries_endpoint(mock_requests_get):
-    endpoint = (
-        "/exposure-entries?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    )
+    endpoint = "/exposure-entries?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     _test_endpoint_authentication(endpoint)
 
     app.dependency_overrides[get_access_token] = lambda: "dummy-token"
@@ -771,34 +769,36 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
     _test_endpoint_authentication(endpoint)
 
-    with patch(
-        "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome"
-    ) as mock_open_close, patch(
-        "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting"
-    ) as mock_time_accounting:
+    with (
+        patch("lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome") as mock_open_close,
+        patch("lsst.ts.logging_and_reporting.web_app.main.get_time_accounting") as mock_time_accounting,
+    ):
         import pandas as pd
+
         mock_open_close.return_value = pd.DataFrame({"open_hours": [2.5]})
-        mock_time_accounting.return_value = pd.DataFrame({
-            "exposure_id": [2025073000001],
-            "exposure_name": ["MC_O_20250730_000001"],
-            "exp_time": [30],
-            "img_type": ["science"],
-            "observation_reason": ["BLOCK-365"],
-            "science_program": ["field_survey_science"],
-            "target_name": ["Rubin_SV_225_-40"],
-            "can_see_sky": [True],
-            "band": ["r"],
-            "obs_start": ["2025-07-30T23:33:43.069000"],
-            "physical_filter": ["r_57"],
-            "day_obs": [20250730],
-            "seq_num": [1],
-            "obs_end": ["2025-07-30T23:34:13.999000"],
-            "overhead": [9.0],
-            "zero_point_median": [32.1],
-            "visit_id": [2025071600135],
-            "pixel_scale_median": [0.2],
-            "psf_sigma_median": [1.1],
-        })
+        mock_time_accounting.return_value = pd.DataFrame(
+            {
+                "exposure_id": [2025073000001],
+                "exposure_name": ["MC_O_20250730_000001"],
+                "exp_time": [30],
+                "img_type": ["science"],
+                "observation_reason": ["BLOCK-365"],
+                "science_program": ["field_survey_science"],
+                "target_name": ["Rubin_SV_225_-40"],
+                "can_see_sky": [True],
+                "band": ["r"],
+                "obs_start": ["2025-07-30T23:33:43.069000"],
+                "physical_filter": ["r_57"],
+                "day_obs": [20250730],
+                "seq_num": [1],
+                "obs_end": ["2025-07-30T23:34:13.999000"],
+                "overhead": [9.0],
+                "zero_point_median": [32.1],
+                "visit_id": [2025071600135],
+                "pixel_scale_median": [0.2],
+                "psf_sigma_median": [1.1],
+            }
+        )
         app.dependency_overrides[get_access_token] = lambda: "dummy-token"
         app.dependency_overrides[get_clients] = lambda: {"efd": Mock()}
 
@@ -925,4 +925,3 @@ def test_context_feed_endpoint(monkeypatch):
 
     # Clean up override
     app.dependency_overrides.pop(get_access_token, None)
-

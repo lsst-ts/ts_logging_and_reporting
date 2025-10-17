@@ -89,9 +89,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
                 qstr = "?instrument=LSSTComCamSim" if ep == "exposures" else ""
                 url = f"{server}/{sa.service}/{ep}{qstr}"
                 try:
-                    res = requests.get(
-                        url, timeout=self.timeout, headers=ut.get_auth_header()
-                    )
+                    res = requests.get(url, timeout=self.timeout, headers=ut.get_auth_header())
                     recs = res.json()
                     if isinstance(recs, dict):
                         samples[url] = recs
@@ -139,10 +137,7 @@ class Dashboard:  # TODO Move to its own file (utils.py).
             else:
                 bad.append((url, stat))
 
-        print(
-            f"\nConnected to {good_cnt} out of {total_cnt} endpoints."
-            f"({good_cnt/total_cnt:.0%})"
-        )
+        print(f"\nConnected to {good_cnt} out of {total_cnt} endpoints.({good_cnt / total_cnt:.0%})")
         print(f"Successful connects ({good_cnt}): ")
         for gurl in good:
             print(f"\t{gurl}")

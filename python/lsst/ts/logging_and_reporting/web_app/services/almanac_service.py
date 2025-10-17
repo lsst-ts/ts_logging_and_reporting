@@ -12,23 +12,25 @@ def get_almanac(dayobs_start: int, dayobs_end: int) -> list:
     try:
         # adding one day to the start and end dates as the Almanac adapter
         # considers only max_dayobs, which is exclused from the dayobs range
-        start = datetime.strptime(str(dayobs_start), '%Y%m%d') + timedelta(days=1)
-        end = datetime.strptime(str(dayobs_end), '%Y%m%d') + timedelta(days=1)
+        start = datetime.strptime(str(dayobs_start), "%Y%m%d") + timedelta(days=1)
+        end = datetime.strptime(str(dayobs_end), "%Y%m%d") + timedelta(days=1)
         almanac_info = []
         current = start
         while current < end:
-            dayobs = int(current.strftime('%Y%m%d'))
+            dayobs = int(current.strftime("%Y%m%d"))
             almanac = Almanac(min_dayobs=dayobs_start, max_dayobs=dayobs)
             night_events = almanac.as_dict[0]
-            almanac_info.append({
-                'dayobs': dayobs,
-                'night_hours': almanac.night_hours,
-                'twilight_evening': night_events['Evening Nautical Twilight'],
-                'twilight_morning': night_events['Morning Nautical Twilight'],
-                'moon_rise_time': night_events['Moon Rise'],
-                'moon_set_time': night_events['Moon Set'],
-                'moon_illumination': night_events['Moon Illumination'],
-            })
+            almanac_info.append(
+                {
+                    "dayobs": dayobs,
+                    "night_hours": almanac.night_hours,
+                    "twilight_evening": night_events["Evening Nautical Twilight"],
+                    "twilight_morning": night_events["Morning Nautical Twilight"],
+                    "moon_rise_time": night_events["Moon Rise"],
+                    "moon_set_time": night_events["Moon Set"],
+                    "moon_illumination": night_events["Moon Illumination"],
+                }
+            )
             current += timedelta(days=1)
         return almanac_info
     except Exception as e:

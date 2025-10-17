@@ -203,10 +203,7 @@ class AllSources:
                 }
             }
         if verbose:
-            print(
-                f"DEBUG night_tally_observation_gaps: "
-                f"{used_instruments=} {self.exclude_instruments=}"
-            )
+            print(f"DEBUG night_tally_observation_gaps: {used_instruments=} {self.exclude_instruments=}")
 
         instrument_tally = dict()  # d[instrument] = tally_dict
 
@@ -263,9 +260,7 @@ class AllSources:
             # TODO despite unreliability, use messages values.
             ltypes = set([r["time_lost_type"] for r in self.nar_src.records])
             ltime = defaultdict(int)
-            print(
-                f"Debug night_tally_observation_gaps: {ltypes=} {len(self.nar_src.records)=}"
-            )
+            print(f"Debug night_tally_observation_gaps: {ltypes=} {len(self.nar_src.records)=}")
             for t in ltypes:
                 for r in self.nar_src.records:
                     ltime[t] += r["time_lost"]
@@ -411,9 +406,7 @@ class AllSources:
             ),
         }
 
-        df = pd.DataFrame.from_records(account_records, columns=columns).set_index(
-            "Row"
-        )
+        df = pd.DataFrame.from_records(account_records, columns=columns).set_index("Row")
 
         # Calc time accounting for each Instrument.
         # "Total Observable Night" same for all instruments.
@@ -507,8 +500,7 @@ class AllSources:
         ]
         res = {
             src.service: {
-                endpoint: (ed["number_of_records"], ed["endpoint_url"])
-                for endpoint, ed in src.status.items()
+                endpoint: (ed["number_of_records"], ed["endpoint_url"]) for endpoint, ed in src.status.items()
             }
             for src in sources
         }
@@ -556,9 +548,7 @@ class AllSources:
         recs = sorted(recs, key=lost_type)
         recs = sorted(recs, key=date_begin)
         for day, day_grp in itertools.groupby(recs, key=date_begin):
-            day_tl[day]["fault"] = sum(
-                [r["time_lost"] for r in day_grp if "fault" == r["time_lost_type"]]
-            )
+            day_tl[day]["fault"] = sum([r["time_lost"] for r in day_grp if "fault" == r["time_lost_type"]])
             day_tl[day]["weather"] = sum(
                 [r["time_lost"] for r in day_grp if "weather" == r["time_lost_type"]]
             )
@@ -655,9 +645,7 @@ class AllSources:
             for eflag in eflag_values:
                 # Initialize to zeros
                 counter = Counter({f: 0 for f in eflag_values})
-                counter.update(
-                    [r["exposure_flag"] for r in records if r[field_name] == field]
-                )
+                counter.update([r["exposure_flag"] for r in records if r[field_name] == field])
             table_recs[field][field_name_title] = gen_link(field)
             table_recs[field].update(dict(counter))
             # User want this?: counter.update(dict(total=counter.total()))
@@ -831,10 +819,7 @@ class AllSources:
         # #! df = ut.wrap_dataframe_columns(df[fields])
         # #! df.columns = df.columns.str.title()
         if self.verbose:
-            print(
-                "Debug allsrc.exposure_detail "
-                f"{used_fields=} {sorted(labels.keys())=}"
-            )
+            print(f"Debug allsrc.exposure_detail {used_fields=} {sorted(labels.keys())=}")
         if self.warning:
             if used_fields < fields:
                 msg = "Some requested fields are not available. "
@@ -876,10 +861,7 @@ def get_facets(records, fieldnames=None, ignore_fields=None):
         ignore_fields.append("day_obs")
     facflds = set(flds) - set(ignore_fields)
     # facets(fieldname) = set(value-1, value-2, ...)
-    facets = {
-        f: set([str(r[f]) for r in records if not isinstance(r[f], list)])
-        for f in facflds
-    }
+    facets = {f: set([str(r[f]) for r in records if not isinstance(r[f], list)]) for f in facflds}
 
     # Remove facets for fields that are mostly unique across records
     too_diverse = set()
@@ -898,9 +880,7 @@ def get_facets(records, fieldnames=None, ignore_fields=None):
 def facet_counts(records, fieldnames=None, ignore_fields=None):
     if len(records) == 0:
         return None
-    facets, ignored = get_facets(
-        records, fieldnames=fieldnames, ignore_fields=ignore_fields
-    )
+    facets, ignored = get_facets(records, fieldnames=fieldnames, ignore_fields=ignore_fields)
     fc = {k: len(v) for k, v in facets.items()}
     fc["total"] = len(records)
     return fc

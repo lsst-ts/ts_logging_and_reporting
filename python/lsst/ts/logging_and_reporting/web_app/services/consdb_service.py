@@ -11,10 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def convert_row(row):
-    return {
-        key: (row[key].item() if isinstance(row[key], np.generic) else row[key])
-        for key in row.keys()
-    }
+    return {key: (row[key].item() if isinstance(row[key], np.generic) else row[key]) for key in row.keys()}
 
 
 def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> list:
@@ -29,12 +26,8 @@ def get_exposures(
     telescope: str,
     auth_token: str = None,
 ) -> dict:
-
     exposures = {}
-    logger.info(
-        f"Getting exposures for start: {dayobs_start}, "
-        f"end: {dayobs_end} and telescope: {telescope}"
-    )
+    logger.info(f"Getting exposures for start: {dayobs_start}, end: {dayobs_end} and telescope: {telescope}")
     cons_db = ConsdbAdapter(
         server_url=nd_utils.Server.get_url(),
         max_dayobs=dayobs_end,
@@ -42,9 +35,7 @@ def get_exposures(
         auth_token=auth_token,
     )
     logger.debug(
-        f"max_dayobs: {cons_db.max_dayobs}, "
-        f"min_dayobs: {cons_db.min_dayobs}, "
-        f"telescope: {telescope}"
+        f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}, telescope: {telescope}"
     )
     ssql = f"""
         SELECT e.exposure_id, e.exposure_name, e.exp_time, e.img_type,
@@ -94,18 +85,14 @@ def get_data_log(
         auth_token=auth_token,
     )
     logger.debug(
-        f"max_dayobs: {cons_db.max_dayobs}, "
-        f"min_dayobs: {cons_db.min_dayobs}, "
-        f"telescope: {telescope}"
+        f"max_dayobs: {cons_db.max_dayobs}, min_dayobs: {cons_db.min_dayobs}, telescope: {telescope}"
     )
     # Returns a pandas DataFrame
     data_log = cons_db.get_exposures(instrument=telescope)
     transformed_efd_data = cons_db.get_transformed_efd_data(instrument=telescope)
     if len(data_log) > 0 and len(transformed_efd_data) > 0:
         # Add transformed efd dataframe to data_log dataframe
-        data_log = pd.merge(
-            data_log, transformed_efd_data, on="exposure id", how="inner"
-        )
+        data_log = pd.merge(data_log, transformed_efd_data, on="exposure id", how="inner")
 
     # Convert special floats (nans and infs) to strings
     # This ensures that JSON serialisation does not fail
@@ -113,9 +100,7 @@ def get_data_log(
     records = df_safe.to_dict(orient="records")
 
     if cons_db.verbose and len(data_log) > 0:
-        logger.debug(
-            f"Debug cdb.get_data_log {telescope=} {dayobs_start=} {dayobs_end=}"
-        )
+        logger.debug(f"Debug cdb.get_data_log {telescope=} {dayobs_start=} {dayobs_end=}")
         logger.debug(f"Debug cdb.get_data_log: {data_log[0]=}")
 
     return records

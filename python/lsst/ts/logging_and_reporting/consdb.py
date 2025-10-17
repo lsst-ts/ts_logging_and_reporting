@@ -145,9 +145,7 @@ class ConsdbAdapter(SourceAdapter):
 
     def get_sample_of_each(self, day_obs):
         instrument = self.instruments[0]
-        exposure_sql = (
-            f"SELECT * FROM cdb_{instrument}.exposure WHERE day_obs = {day_obs}"
-        )
+        exposure_sql = f"SELECT * FROM cdb_{instrument}.exposure WHERE day_obs = {day_obs}"
         s1 = self.query(exposure_sql)
         return s1
 
@@ -219,8 +217,7 @@ class ConsdbAdapter(SourceAdapter):
             records.append(record)
         if duplicate_columns and self.warning:
             msg = (
-                "Duplicate ConsDB columns detected and merged safely: "
-                f"{', '.join(sorted(duplicate_columns))}"
+                f"Duplicate ConsDB columns detected and merged safely: {', '.join(sorted(duplicate_columns))}"
             )
             warnings.warn(msg, category=ex.ConsdbQueryWarning, stacklevel=2)
         if len(records) == 0 and self.warning:

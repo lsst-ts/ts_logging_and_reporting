@@ -68,9 +68,7 @@ def field_schema_location_table(
     #                       aggfunc=lambda x: ' '.join(x))
     #   HTML(pv.to_html())
 
-    pv = df.pivot_table(
-        index="field", columns="instrument", values="table", aggfunc=list
-    )
+    pv = df.pivot_table(index="field", columns="instrument", values="table", aggfunc=list)
 
     return pv
 
