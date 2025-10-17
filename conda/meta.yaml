@@ -51,3 +51,4 @@ requirements:
         - schedview =0.19
         - rubin-sim =2
         - bokeh =3
+        - lsst-efd-client =0.12
