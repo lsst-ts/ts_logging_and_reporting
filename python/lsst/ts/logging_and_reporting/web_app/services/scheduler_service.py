@@ -86,6 +86,123 @@ THEMES = {
     },
 }
 
+
+def _get_slider_callback_code():
+    """Get JavaScript code for MJD slider callback.
+    The callback updates visit patch alphas based on the slider value,
+    and shows/hides sun and moon markers based on the current night.
+
+    Returns
+    -------
+    `str`
+        JavaScript code for the callback.
+    """
+    callback_code = """
+    const mjd_val = mjd_slider.value;
+    let current_day = null;
+
+    // Update visit patch alphas
+    for (let i = 0; i < sources.length; i++) {
+        const start = mjd_starts[i];
+        const end = mjd_ends[i];
+
+        if (mjd_val >= start && mjd_val <= end) {
+            current_day = day_obs_list[i];
+        }
+
+        const band_sources = sources[i];
+        for (let j = 0; j < band_sources.length; j++) {
+            const cds = band_sources[j];
+            const data = cds.data;
+
+            for (let k = 0; k < data['mjd'].length; k++) {
+                if (mjd_val >= data['mjd'][k]) {
+                    data['fill_alpha'][k] = 0.5;
+                    data['line_alpha'][k] = Math.max(
+                        0,
+                        1 - (mjd_val - data['mjd'][k]) / scale
+                    );
+                } else {
+                    data['fill_alpha'][k] = 0.0;
+                    data['line_alpha'][k] = 0.0;
+                }
+            }
+            cds.change.emit();
+        }
+    }
+
+    // Update sun and moon visibility
+    if (current_day === null) {
+        day_label.text = "";
+        _hide_all_celestial_markers(all_sun_markers, all_moon_markers);
+    } else {
+        const idx = day_obs_list.indexOf(current_day);
+        _update_celestial_markers(all_sun_markers, all_moon_markers, idx);
+        day_label.text = "Night: " + current_day;
+    }
+
+    function _hide_all_celestial_markers(sun_markers, moon_markers) {
+        for (let s = 0; s < sun_markers.length; s++) {
+            for (let m = 0; m < sun_markers[s].length; m++) {
+                sun_markers[s][m].glyph.fill_alpha = 0.0;
+                moon_markers[s][m].glyph.fill_alpha = 0.0;
+                sun_markers[s][m].data_source.change.emit();
+                moon_markers[s][m].data_source.change.emit();
+            }
+        }
+    }
+
+    function _update_celestial_markers(sun_markers, moon_markers, night_idx) {
+        for (let s = 0; s < sun_markers.length; s++) {
+            for (let m = 0; m < sun_markers[s].length; m++) {
+                if (m === night_idx) {
+                    sun_markers[s][m].glyph.fill_alpha = 1.0;
+                    moon_markers[s][m].glyph.fill_alpha = 0.8;
+                } else {
+                    sun_markers[s][m].glyph.fill_alpha = 0.0;
+                    moon_markers[s][m].glyph.fill_alpha = 0.0;
+                }
+                sun_markers[s][m].data_source.change.emit();
+                moon_markers[s][m].data_source.change.emit();
+            }
+        }
+    }
+    """
+    return callback_code
+
+
+def _initialize_visit_alphas(night_renderers, unique_nights, mjd_value, conditions_list, fade_scale):
+    """
+    Initialize visit alpha values for the current slider value.
+    This runs server-side to set up the initial state.
+
+    Parameters
+    ----------
+    night_renderers : list
+        List of night renderers
+    unique_nights : list
+        List of unique night observation dates
+    mjd_value : float
+        Current MJD slider value
+    conditions_list : list
+        List of Conditions objects
+    fade_scale : float
+        Time scale for fading
+    """
+    # Update all night renderers
+    for night_idx, band_sources in enumerate(night_renderers):
+        for cds in band_sources:
+            data = cds.data
+
+            for k in range(len(data.get('mjd', []))):
+                if mjd_value >= data['mjd'][k]:
+                    data['fill_alpha'][k] = 0.5
+                    data['line_alpha'][k] = max(0, 1 - (mjd_value - data['mjd'][k]) / fade_scale)
+                else:
+                    data['fill_alpha'][k] = 0.0
+                    data['line_alpha'][k] = 0.0
+
+
 def plot_visit_skymaps(
     visits,
     footprint,
@@ -225,7 +342,7 @@ def plot_visit_skymaps(
         # Use column layout with all controls below the map
         fig = bokeh.layouts.column(
             spheremaps[0].figure,
-            dayobs_label
+            dayobs_label,
         )
     else:
         # Full mode: side-by-side maps with controls below
@@ -247,9 +364,46 @@ def plot_visit_skymaps(
                 dayobs_label,
             )
 
+
+    callback_code = _get_slider_callback_code()
+    # Initialize visit alphas for the current slider value
+    _initialize_visit_alphas(
+        night_renderers,
+        unique_nights,
+        mjd_slider.value,
+        conditions_list,
+        fade_scale
+    )
+
+    # Trigger callback on document ready to show visits on initial render
+    trigger_initial_callback = bokeh.models.CustomJS(
+        args=dict(
+            mjd_slider=mjd_slider,
+            sources=night_renderers,
+            day_label=dayobs_label,
+            day_obs_list=unique_nights,
+            mjd_starts=[cond.sun_n12_setting for cond in conditions_list],
+            mjd_ends=[cond.sun_n12_rising for cond in conditions_list],
+            scale=fade_scale,
+            all_sun_markers=all_sun_markers,
+            all_moon_markers=all_moon_markers
+        ),
+        code="setTimeout(function() { " + callback_code + " }, 100);"
+    )
+
+    # Add to the first figure to trigger on document ready
+    if hasattr(fig, 'children') and len(fig.children) > 0:
+        first_fig = fig.children[0]
+    else:
+        first_fig = fig
+
+    if hasattr(first_fig, 'js_on_event'):
+        first_fig.js_on_event('document_ready', trigger_initial_callback)
+
     # Decorate maps
     for sm in spheremaps:
         sm.decorate()
+
 
     return fig
 
@@ -478,78 +632,7 @@ def _setup_slider_callback(
     -------
     `None`
     """
-
-    callback_code = """
-    const mjd_val = mjd_slider.value;
-    let current_day = null;
-
-    // Update visit patch alphas
-    for (let i = 0; i < sources.length; i++) {
-        const start = mjd_starts[i];
-        const end = mjd_ends[i];
-
-        if (mjd_val >= start && mjd_val <= end) {
-            current_day = day_obs_list[i];
-        }
-
-        const band_sources = sources[i];
-        for (let j = 0; j < band_sources.length; j++) {
-            const cds = band_sources[j];
-            const data = cds.data;
-
-            for (let k = 0; k < data['mjd'].length; k++) {
-                if (mjd_val >= data['mjd'][k]) {
-                    data['fill_alpha'][k] = 0.5;
-                    data['line_alpha'][k] = Math.max(
-                        0,
-                        1 - (mjd_val - data['mjd'][k]) / scale
-                    );
-                } else {
-                    data['fill_alpha'][k] = 0.0;
-                    data['line_alpha'][k] = 0.0;
-                }
-            }
-            cds.change.emit();
-        }
-    }
-
-    // Update sun and moon visibility
-    if (current_day === null) {
-        day_label.text = "";
-        _hide_all_celestial_markers(all_sun_markers, all_moon_markers);
-    } else {
-        const idx = day_obs_list.indexOf(current_day);
-        _update_celestial_markers(all_sun_markers, all_moon_markers, idx);
-        day_label.text = "Night: " + current_day;
-    }
-
-    function _hide_all_celestial_markers(sun_markers, moon_markers) {
-        for (let s = 0; s < sun_markers.length; s++) {
-            for (let m = 0; m < sun_markers[s].length; m++) {
-                sun_markers[s][m].glyph.fill_alpha = 0.0;
-                moon_markers[s][m].glyph.fill_alpha = 0.0;
-                sun_markers[s][m].data_source.change.emit();
-                moon_markers[s][m].data_source.change.emit();
-            }
-        }
-    }
-
-    function _update_celestial_markers(sun_markers, moon_markers, night_idx) {
-        for (let s = 0; s < sun_markers.length; s++) {
-            for (let m = 0; m < sun_markers[s].length; m++) {
-                if (m === night_idx) {
-                    sun_markers[s][m].glyph.fill_alpha = 1.0;
-                    moon_markers[s][m].glyph.fill_alpha = 0.8;
-                } else {
-                    sun_markers[s][m].glyph.fill_alpha = 0.0;
-                    moon_markers[s][m].glyph.fill_alpha = 0.0;
-                }
-                sun_markers[s][m].data_source.change.emit();
-                moon_markers[s][m].data_source.change.emit();
-            }
-        }
-    }
-    """
+    callback_code = _get_slider_callback_code()
 
     mjd_slider.js_on_change(
         "value",
@@ -568,6 +651,7 @@ def _setup_slider_callback(
             code=callback_code
         )
     )
+
 
 def create_visit_skymaps(
     visits,
