@@ -360,7 +360,7 @@ async def multi_night_visit_maps(
             )
 
         return {
-            "interactive": json_item(v_map) if v_map is not None else {},
+            "interactive": json_item(v_map) if v_map is not None else None,
             }
 
     except Exception as e:

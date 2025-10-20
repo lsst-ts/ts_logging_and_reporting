@@ -89,33 +89,54 @@ THEMES = {
 
 def _get_slider_callback_code():
     """Get JavaScript code for MJD slider callback.
-    The callback updates visit patch alphas based on the slider value,
-    and shows/hides sun and moon markers based on the current night.
-
-    Returns
-    -------
-    `str`
-        JavaScript code for the callback.
+    Adds night-reset behavior: after morning twilight,
+    visits reset until next night.
     """
     callback_code = """
     const mjd_val = mjd_slider.value;
-    let current_day = null;
+    let current_night_idx = null;
 
-    // Update visit patch alphas
-    for (let i = 0; i < sources.length; i++) {
-        const start = mjd_starts[i];
-        const end = mjd_ends[i];
-
-        if (mjd_val >= start && mjd_val <= end) {
-            current_day = day_obs_list[i];
+    // Determine which night interval the current mjd is in
+    for (let i = 0; i < mjd_starts.length; i++) {
+        if (mjd_val >= mjd_starts[i] && mjd_val <= mjd_ends[i]) {
+            current_night_idx = i;
+            break;
         }
+    }
 
+    // If outside all nights, hide everything
+    if (current_night_idx === null) {
+        for (let i = 0; i < sources.length; i++) {
+            const band_sources = sources[i];
+            for (let j = 0; j < band_sources.length; j++) {
+                const cds = band_sources[j];
+                const data = cds.data;
+                for (let k = 0; k < data['mjd'].length; k++) {
+                    data['fill_alpha'][k] = 0.0;
+                    data['line_alpha'][k] = 0.0;
+                }
+                cds.change.emit();
+            }
+        }
+        day_label.text = "";
+        _hide_all_celestial_markers(all_sun_markers, all_moon_markers);
+        return;
+    }
+
+    // Otherwise, update visits only for the current night
+    for (let i = 0; i < sources.length; i++) {
         const band_sources = sources[i];
         for (let j = 0; j < band_sources.length; j++) {
             const cds = band_sources[j];
             const data = cds.data;
+            const is_current_night = (i === current_night_idx);
 
             for (let k = 0; k < data['mjd'].length; k++) {
+                if (!is_current_night) {
+                    data['fill_alpha'][k] = 0.0;
+                    data['line_alpha'][k] = 0.0;
+                    continue;
+                }
                 if (mjd_val >= data['mjd'][k]) {
                     data['fill_alpha'][k] = 0.5;
                     data['line_alpha'][k] = Math.max(
@@ -131,16 +152,14 @@ def _get_slider_callback_code():
         }
     }
 
-    // Update sun and moon visibility
-    if (current_day === null) {
-        day_label.text = "";
-        _hide_all_celestial_markers(all_sun_markers, all_moon_markers);
-    } else {
-        const idx = day_obs_list.indexOf(current_day);
-        _update_celestial_markers(all_sun_markers, all_moon_markers, idx);
-        day_label.text = "Night: " + current_day;
-    }
+    // Update sun/moon visibility for current night
+    const current_day = day_obs_list[current_night_idx];
+    const idx = current_night_idx;
+    _update_celestial_markers(all_sun_markers, all_moon_markers, idx);
+    day_label.text = "Night: " + current_day;
 
+
+    // helper functions
     function _hide_all_celestial_markers(sun_markers, moon_markers) {
         for (let s = 0; s < sun_markers.length; s++) {
             for (let m = 0; m < sun_markers[s].length; m++) {
@@ -155,13 +174,9 @@ def _get_slider_callback_code():
     function _update_celestial_markers(sun_markers, moon_markers, night_idx) {
         for (let s = 0; s < sun_markers.length; s++) {
             for (let m = 0; m < sun_markers[s].length; m++) {
-                if (m === night_idx) {
-                    sun_markers[s][m].glyph.fill_alpha = 1.0;
-                    moon_markers[s][m].glyph.fill_alpha = 0.8;
-                } else {
-                    sun_markers[s][m].glyph.fill_alpha = 0.0;
-                    moon_markers[s][m].glyph.fill_alpha = 0.0;
-                }
+                const active = (m === night_idx);
+                sun_markers[s][m].glyph.fill_alpha = active ? 1.0 : 0.0;
+                moon_markers[s][m].glyph.fill_alpha = active ? 0.8 : 0.0;
                 sun_markers[s][m].data_source.change.emit();
                 moon_markers[s][m].data_source.change.emit();
             }
@@ -171,7 +186,7 @@ def _get_slider_callback_code():
     return callback_code
 
 
-def _initialize_visit_alphas(night_renderers, unique_nights, mjd_value, conditions_list, fade_scale):
+def _initialize_visit_alphas(night_renderers, mjd_value, conditions_list, fade_scale):
     """
     Initialize visit alpha values for the current slider value.
     This runs server-side to set up the initial state.
@@ -180,8 +195,6 @@ def _initialize_visit_alphas(night_renderers, unique_nights, mjd_value, conditio
     ----------
     night_renderers : list
         List of night renderers
-    unique_nights : list
-        List of unique night observation dates
     mjd_value : float
         Current MJD slider value
     conditions_list : list
@@ -189,18 +202,33 @@ def _initialize_visit_alphas(night_renderers, unique_nights, mjd_value, conditio
     fade_scale : float
         Time scale for fading
     """
-    # Update all night renderers
+    # Determine which night the current mjd belongs to
+    current_night_idx = None
+    for i, cond in enumerate(conditions_list):
+        if cond.sun_n12_setting <= mjd_value <= cond.sun_n12_rising:
+            current_night_idx = i
+            break
+
     for night_idx, band_sources in enumerate(night_renderers):
         for cds in band_sources:
-            data = cds.data
+            # Make a plain Python dict copy
+            data = {k: list(v) for k, v in cds.data.items()}
 
-            for k in range(len(data.get('mjd', []))):
-                if mjd_value >= data['mjd'][k]:
-                    data['fill_alpha'][k] = 0.5
-                    data['line_alpha'][k] = max(0, 1 - (mjd_value - data['mjd'][k]) / fade_scale)
-                else:
-                    data['fill_alpha'][k] = 0.0
-                    data['line_alpha'][k] = 0.0
+            # Only show visits for the current night
+            if night_idx != current_night_idx:
+                data["fill_alpha"] = [0.0] * len(data["mjd"])
+                data["line_alpha"] = [0.0] * len(data["mjd"])
+            else:
+                for k, mjd in enumerate(data["mjd"]):
+                    if mjd <= mjd_value:
+                        data["fill_alpha"][k] = 0.5
+                        data["line_alpha"][k] = max(0, 1 - (mjd_value - data['mjd'][k]) / fade_scale)
+                    else:
+                        data["fill_alpha"][k] = 0.0
+                        data["line_alpha"][k] = 0.0
+
+            # Reassign to trigger update
+            cds.data = data
 
 
 def plot_visit_skymaps(
@@ -369,7 +397,6 @@ def plot_visit_skymaps(
     # Initialize visit alphas for the current slider value
     _initialize_visit_alphas(
         night_renderers,
-        unique_nights,
         mjd_slider.value,
         conditions_list,
         fade_scale
