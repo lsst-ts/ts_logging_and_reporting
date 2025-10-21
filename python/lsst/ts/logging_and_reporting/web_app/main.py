@@ -17,6 +17,7 @@ from .services.narrativelog_service import get_messages
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, get_context_feed
+from .. import __version__
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -41,6 +42,14 @@ app.add_middleware(
 
 
 logger.info("Starting FastAPI app")
+
+
+@app.get("/version")
+@app.get("/version/")
+async def get_version():
+    """Get the current version of the package."""
+
+    return JSONResponse(status_code=200, content={"version": __version__})
 
 
 @app.get("/health")
