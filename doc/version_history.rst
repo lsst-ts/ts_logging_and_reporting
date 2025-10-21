@@ -1,3 +1,18 @@
+v0.9.1 (2025-10-21)
+===================
+
+Bug Fixes
+---------
+
+- Update table name for transformed efd table in consdb. (`OSW-890 <https://rubinobs.atlassian.net//browse/OSW-890>`_)
+
+
+API Removal or Deprecation
+--------------------------
+
+- Update Readme and remove times-square.yaml (`OSW-1261 <https://rubinobs.atlassian.net//browse/OSW-1261>`_)
+
+
 v0.9.0 (2025-10-09)
 ====================
 
