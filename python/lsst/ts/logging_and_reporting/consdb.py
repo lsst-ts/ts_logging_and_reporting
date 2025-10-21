@@ -314,7 +314,7 @@ class ConsdbAdapter(SourceAdapter):
         if not fields:
             return pd.DataFrame()
 
-        table_name = f"efd2_{instrument}"
+        table_name = f"efd_{instrument}"
 
         def make_sql(table_name):
             ssql = f"""
@@ -331,14 +331,7 @@ class ConsdbAdapter(SourceAdapter):
 
         sql = make_sql(table_name)
 
-        try:
-            exposures = self.query(sql)
-        except ex.ConsdbQueryError as ce:
-            # TODO OSW-890 Update tablename when ConsDB's transformed efd
-            # table replaces 'production'
-            if ce.error_code == "BADQUERY":
-                sql = make_sql("efd_{instrument}")
-                exposures = self.query(sql)
+        exposures = self.query(sql)
 
         df = pd.DataFrame(exposures)
         # TODO OSW-889 Don't remove the underscores from the column names.
