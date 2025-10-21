@@ -346,14 +346,16 @@ async def multi_night_visit_maps(
     try:
         observatory = ModelObservatory(init_load_length=1)
 
-        dayobs_start_dt = datetime.strptime(str(dayObsStart), '%Y%m%d')
-        dayobs_end_dt = datetime.strptime(str(dayObsEnd), '%Y%m%d')
+        dayobs_start_dt = datetime.strptime(str(dayObsStart), "%Y%m%d")
+        dayobs_end_dt = datetime.strptime(str(dayObsEnd), "%Y%m%d")
         diff = dayobs_end_dt - dayobs_start_dt
 
         visits = read_visits(
             dayobs_end_dt.date() - timedelta(days=1),
             instrument.lower(),
-            stackers = NIGHT_STACKERS, num_nights=diff.days)
+            stackers=NIGHT_STACKERS,
+            num_nights=diff.days,
+        )
 
         v_map = None
 
@@ -371,7 +373,7 @@ async def multi_night_visit_maps(
 
         return {
             "interactive": json_item(v_map) if v_map is not None else None,
-            }
+        }
 
     except Exception as e:
         logger.error(f"Error in /multi-night-visit-maps: {e}", exc_info=True)
@@ -404,10 +406,7 @@ async def survey_progress_map(
         A dictionary containing the Bokeh JSON item for
         the static survey progress map.
     """
-    logger.info(
-        f"Getting survey progress map for night: "
-        f"{dayObs} and instrument: {instrument}"
-    )
+    logger.info(f"Getting survey progress map for night: {dayObs} and instrument: {instrument}")
     try:
         import time
         import numpy as np
@@ -416,16 +415,13 @@ async def survey_progress_map(
 
         observatory = ModelObservatory(init_load_length=1)
 
-        dayobs_dt = datetime.strptime(str(dayObs), '%Y%m%d')
+        dayobs_dt = datetime.strptime(str(dayObs), "%Y%m%d")
 
         start_time = time.perf_counter()
 
-        visits = read_visits(
-            dayobs_dt.date(),
-            instrument.lower(),
-            stackers = NIGHT_STACKERS, num_nights=50)
+        visits = read_visits(dayobs_dt.date(), instrument.lower(), stackers=NIGHT_STACKERS, num_nights=50)
 
-        visits['filter'] = visits['band']
+        visits["filter"] = visits["band"]
 
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
@@ -434,39 +430,39 @@ async def survey_progress_map(
         s_map = None
 
         if len(visits):
-
             start_time = time.perf_counter()
 
-            dayobs_visits = visits[visits['day_obs'] == dayObs]
+            dayobs_visits = visits[visits["day_obs"] == dayObs]
 
             previous_day_obs_dt = dayobs_dt - timedelta(days=1)
-            previous_day_obs = previous_day_obs_dt.strftime('%Y%m%d')
+            previous_day_obs = previous_day_obs_dt.strftime("%Y%m%d")
 
-            previous_visits = visits[visits['day_obs'] == int(previous_day_obs)]
+            previous_visits = visits[visits["day_obs"] == int(previous_day_obs)]
 
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time
             logger.debug(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
 
-            if len(dayobs_visits) and len(previous_visits) \
-                    and not np.all(np.isnan(dayobs_visits['fiveSigmaDepth'])) \
-                    and not np.all(np.isnan(previous_visits['fiveSigmaDepth'])):
+            if (
+                len(dayobs_visits)
+                and len(previous_visits)
+                and not np.all(np.isnan(dayobs_visits["fiveSigmaDepth"]))
+                and not np.all(np.isnan(previous_visits["fiveSigmaDepth"]))
+            ):
                 start_time = time.perf_counter()
                 s_map = create_metric_visit_map_grid(
-                    maf.CountMetric(col='fiveSigmaDepth', metric_name="Numbers of visits"),
-                    previous_visits.loc[np.isfinite(previous_visits['fiveSigmaDepth']), :],
-                    visits.loc[np.isfinite(visits['fiveSigmaDepth']), :],
+                    maf.CountMetric(col="fiveSigmaDepth", metric_name="Numbers of visits"),
+                    previous_visits.loc[np.isfinite(previous_visits["fiveSigmaDepth"]), :],
+                    visits.loc[np.isfinite(visits["fiveSigmaDepth"]), :],
                     observatory,
                     nside=32,
-                    use_matplotlib=False
+                    use_matplotlib=False,
                 )
                 end_time = time.perf_counter()
                 elapsed_time = end_time - start_time
                 logger.debug(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
 
-        return {
-            "static": json_item(s_map) if s_map is not None  else {}
-            }
+        return {"static": json_item(s_map) if s_map is not None else {}}
     except Exception as e:
         logger.error(f"Error in /survey-progress-map: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -65,12 +65,12 @@ NSIDE_LOW = 8
 
 # Dark theme band colors
 DARK_BAND_COLORS = {
-  "u": "#3eb7ff",
-  "g": "#30c39f",
-  "r": "#ff7e00",
-  "i": "#2af5ff",
-  "z": "#a7f9c1",
-  "y": "#fdc900",
+    "u": "#3eb7ff",
+    "g": "#30c39f",
+    "r": "#ff7e00",
+    "i": "#2af5ff",
+    "z": "#a7f9c1",
+    "y": "#fdc900",
 }
 
 THEMES = {
@@ -222,7 +222,7 @@ def _initialize_visit_alphas(night_renderers, mjd_value, conditions_list, fade_s
                 for k, mjd in enumerate(data["mjd"]):
                     if mjd <= mjd_value:
                         data["fill_alpha"][k] = 0.5
-                        data["line_alpha"][k] = max(0, 1 - (mjd_value - data['mjd'][k]) / fade_scale)
+                        data["line_alpha"][k] = max(0, 1 - (mjd_value - data["mjd"][k]) / fade_scale)
                     else:
                         data["fill_alpha"][k] = 0.0
                         data["line_alpha"][k] = 0.0
@@ -299,7 +299,7 @@ def plot_visit_skymaps(
         spheremaps = []
         for mc in map_classes:
             fig = figure(match_aspect=True)
-            fig.background_fill_color =  THEMES[theme]["BACKGROUND_COLOR"]
+            fig.background_fill_color = THEMES[theme]["BACKGROUND_COLOR"]
             fig.border_fill_color = THEMES[theme]["BACKGROUND_COLOR"]
             spheremaps.append(mc(mjd=reference_conditions.mjd, plot=fig))
 
@@ -322,10 +322,7 @@ def plot_visit_skymaps(
     # Add footprints
     if footprint_outline is not None:
         add_footprint_outlines_to_skymaps(
-            footprint_outline,
-            spheremaps,
-            line_width=5,
-            colormap=defaultdict(lambda: "gray")
+            footprint_outline, spheremaps, line_width=5, colormap=defaultdict(lambda: "gray")
         )
     if footprint is not None:
         add_footprint_to_skymaps(footprint, spheremaps)
@@ -361,7 +358,7 @@ def plot_visit_skymaps(
         dayobs_label,
         unique_nights,
         conditions_list,
-        fade_scale
+        fade_scale,
     )
 
     # Layout based on mode
@@ -392,15 +389,9 @@ def plot_visit_skymaps(
                 dayobs_label,
             )
 
-
     callback_code = _get_slider_callback_code()
     # Initialize visit alphas for the current slider value
-    _initialize_visit_alphas(
-        night_renderers,
-        mjd_slider.value,
-        conditions_list,
-        fade_scale
-    )
+    _initialize_visit_alphas(night_renderers, mjd_slider.value, conditions_list, fade_scale)
 
     # Trigger callback on document ready to show visits on initial render
     trigger_initial_callback = bokeh.models.CustomJS(
@@ -413,24 +404,23 @@ def plot_visit_skymaps(
             mjd_ends=[cond.sun_n12_rising for cond in conditions_list],
             scale=fade_scale,
             all_sun_markers=all_sun_markers,
-            all_moon_markers=all_moon_markers
+            all_moon_markers=all_moon_markers,
         ),
-        code="setTimeout(function() { " + callback_code + " }, 100);"
+        code="setTimeout(function() { " + callback_code + " }, 100);",
     )
 
     # Add to the first figure to trigger on document ready
-    if hasattr(fig, 'children') and len(fig.children) > 0:
+    if hasattr(fig, "children") and len(fig.children) > 0:
         first_fig = fig.children[0]
     else:
         first_fig = fig
 
-    if hasattr(first_fig, 'js_on_event'):
-        first_fig.js_on_event('document_ready', trigger_initial_callback)
+    if hasattr(first_fig, "js_on_event"):
+        first_fig.js_on_event("document_ready", trigger_initial_callback)
 
     # Decorate maps
     for sm in spheremaps:
         sm.decorate()
-
 
     return fig
 
@@ -469,19 +459,13 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
         band_renderers = []
 
         for band in "ugrizy":
-            band_visits = night_visits[
-                night_visits[band_column(night_visits)] == band
-            ].copy()
+            band_visits = night_visits[night_visits[band_column(night_visits)] == band].copy()
 
             if band_visits.empty:
                 continue
 
             # Calculate camera footprint positions
-            ras, decls = camera_perimeter(
-                band_visits.fieldRA,
-                band_visits.fieldDec,
-                band_visits.rotSkyPos
-            )
+            ras, decls = camera_perimeter(band_visits.fieldRA, band_visits.fieldDec, band_visits.rotSkyPos)
             band_visits["ra"] = ras
             band_visits["decl"] = decls
             band_visits["mjd"] = band_visits.observationStartMJD.values
@@ -495,7 +479,7 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
                 fill_color=None if hatch else THEMES[theme]["PLOT_BAND_COLORS"][band],
                 line_color="#ff00ff",
                 line_width=2,
-                name=f"visit_{night_idx}_{band}"
+                name=f"visit_{night_idx}_{band}",
             )
 
             if hatch:
@@ -516,7 +500,7 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
                 hover = bokeh.models.HoverTool(
                     renderers=[sm.plot.select({"name": patches_kwargs["name"]})[0]],
                     tooltips=VISIT_TOOLTIPS,
-                    formatters={"@start_timestamp": "datetime"}
+                    formatters={"@start_timestamp": "datetime"},
                 )
                 sm.plot.add_tools(hover)
 
@@ -573,28 +557,30 @@ def _add_celestial_objects(conditions_list, spheremaps, show_stars, theme="LIGHT
             # Add sun marker
             n_renderers_before = len(sm.plot.renderers)
             sm.add_marker(
-                sun_ra, sun_dec,
+                sun_ra,
+                sun_dec,
                 name=f"Sun_{sm_idx}_{night_idx}",
                 glyph_size=15,
                 circle_kwargs={
                     "color": "yellow",
                     "fill_alpha": 1.0 if night_idx == 0 else 0.0,
-                    "line_alpha": 0.0
-                }
+                    "line_alpha": 0.0,
+                },
             )
             sun_markers.append(sm.plot.renderers[n_renderers_before])
 
             # Add moon marker
             n_renderers_before = len(sm.plot.renderers)
             sm.add_marker(
-                moon_ra, moon_dec,
+                moon_ra,
+                moon_dec,
                 name=f"Moon_{sm_idx}_{night_idx}",
                 glyph_size=15,
                 circle_kwargs={
                     "color": "orange",
                     "fill_alpha": 0.8 if night_idx == 0 else 0.0,
-                    "line_alpha": 0.0
-                }
+                    "line_alpha": 0.0,
+                },
             )
             moon_markers.append(sm.plot.renderers[n_renderers_before])
 
@@ -603,11 +589,7 @@ def _add_celestial_objects(conditions_list, spheremaps, show_stars, theme="LIGHT
             star_data = load_bright_stars()[["name", "ra", "decl", "Vmag"]]
             star_data["glyph_size"] = 15 - (15.0 / 3.5) * star_data["Vmag"]
             star_data = star_data.query("glyph_size>0")
-            sm.add_stars(
-                star_data,
-                mag_limit_slider=False,
-                star_kwargs={"color": "yellow"}
-            )
+            sm.add_stars(star_data, mag_limit_slider=False, star_kwargs={"color": "yellow"})
 
         # Add horizon lines
         sm.add_horizon(line_kwargs={"line_width": 6, "color": THEMES[theme]["HORIZON_COLOR"]})
@@ -627,7 +609,7 @@ def _setup_slider_callback(
     dayobs_label,
     unique_nights,
     conditions_list,
-    fade_scale
+    fade_scale,
 ):
     """Setup JavaScript callback for MJD slider interaction.
     The callback updates visit patch alphas based on the slider value,
@@ -673,10 +655,10 @@ def _setup_slider_callback(
                 mjd_ends=[cond.sun_n12_rising for cond in conditions_list],
                 scale=fade_scale,
                 all_sun_markers=all_sun_markers,
-                all_moon_markers=all_moon_markers
+                all_moon_markers=all_moon_markers,
             ),
-            code=callback_code
-        )
+            code=callback_code,
+        ),
     )
 
 
@@ -732,21 +714,22 @@ def create_visit_skymaps(
 
     conditions_list = []
     for day_obs in unique_nights:
-        night_date = datetime.strptime(str(day_obs), '%Y%m%d').date()
-        night_events = schedview.compute.astro.night_events(night_date=night_date, site=observatory.location,
-                                                            timezone=timezone)
-        end_time = Time(night_events.loc["sunrise","UTC"])
+        night_date = datetime.strptime(str(day_obs), "%Y%m%d").date()
+        night_events = schedview.compute.astro.night_events(
+            night_date=night_date, site=observatory.location, timezone=timezone
+        )
+        end_time = Time(night_events.loc["sunrise", "UTC"])
         observatory.mjd = end_time.mjd
         conditions_list.append(observatory.return_conditions())
 
     # Footprint outline
     footprint_regions = get_current_footprint(nside)[1]
-    footprint_regions[np.isin(footprint_regions, ["bulgy","lowdust"])] = "WFD"
-    footprint_regions[np.isin(footprint_regions,
-                              ["LMC_SMC","dusty_plane","euclid_overlap","nes","scp","virgo"])
-                              ] = "other"
+    footprint_regions[np.isin(footprint_regions, ["bulgy", "lowdust"])] = "WFD"
+    footprint_regions[
+        np.isin(footprint_regions, ["LMC_SMC", "dusty_plane", "euclid_overlap", "nes", "scp", "virgo"])
+    ] = "other"
     footprint_outline = find_healpix_area_polygons(footprint_regions)
-    tiny_loops = footprint_outline.groupby(["region","loop"]).count().query("RA<10").index
+    tiny_loops = footprint_outline.groupby(["region", "loop"]).count().query("RA<10").index
     footprint_outline = footprint_outline.drop(tiny_loops)
 
     data = {
@@ -810,7 +793,8 @@ def my_map_visits_over_hpix(
 
     if plot is None:
         plot = bokeh.plotting.figure(
-            width=256, height=256,
+            width=256,
+            height=256,
             match_aspect=True,
         )
 
