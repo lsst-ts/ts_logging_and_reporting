@@ -941,16 +941,18 @@ def sample_visit_data_for_visit_maps():
     visits_list = []
 
     for day_offset in range(3):
-        day_obs = int((base_date + timedelta(days=day_offset)).strftime('%Y%m%d'))
+        day_obs = int((base_date + timedelta(days=day_offset)).strftime("%Y%m%d"))
         for obs_idx in range(5):
-            visits_list.append({
-                'day_obs': day_obs,
-                'observationStartMJD': 60000.0 + day_offset + obs_idx * 0.1,
-                'fieldRA': 180.0 + obs_idx,
-                'fieldDec': -30.0 + obs_idx,
-                'band': 'r',
-                'rotSkyPos': 45.0,
-            })
+            visits_list.append(
+                {
+                    "day_obs": day_obs,
+                    "observationStartMJD": 60000.0 + day_offset + obs_idx * 0.1,
+                    "fieldRA": 180.0 + obs_idx,
+                    "fieldDec": -30.0 + obs_idx,
+                    "band": "r",
+                    "rotSkyPos": 45.0,
+                }
+            )
 
     return pd.DataFrame(visits_list)
 
@@ -959,7 +961,7 @@ def sample_visit_data_for_visit_maps():
 def mock_conditions():
     mock_cond = MagicMock()
     mock_cond.mjd = 60000.0
-    mock_cond.sun_ra = 0.5  # in radians
+    mock_cond.sun_ra = 0.5
     mock_cond.sun_dec = -0.5
     mock_cond.moon_ra = 1.0
     mock_cond.moon_dec = 0.2
@@ -969,18 +971,17 @@ def mock_conditions():
     return mock_cond
 
 
-@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
-@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
-@patch('lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps')
-@patch('lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple')
-def test_applet_mode_planisphere_only(
+@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
+@patch("lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps")
+@patch("lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple")
+def test_visit_maps_applet_mode_planisphere_only(
     mock_add_coords,
     mock_create_skymaps,
     mock_observatory,
     mock_read_visits,
     sample_visit_data_for_visit_maps,
 ):
-
     mock_read_visits.return_value = sample_visit_data_for_visit_maps
     mock_add_coords.return_value = sample_visit_data_for_visit_maps
 
@@ -1020,11 +1021,12 @@ def test_applet_mode_planisphere_only(
 
     app.dependency_overrides.pop(get_access_token, None)
 
-@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
-@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
-@patch('lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps')
-@patch('lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple')
-def test_full_mode_both_maps(
+
+@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
+@patch("lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps")
+@patch("lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple")
+def test_visit_maps_full_mode_both_maps(
     mock_add_coords,
     mock_create_skymaps,
     mock_observatory,
@@ -1070,9 +1072,9 @@ def test_full_mode_both_maps(
     app.dependency_overrides.pop(get_access_token, None)
 
 
-@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
-@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
-def test_no_visits_data(
+@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
+def test_visit_maps_no_visits_data(
     mock_observatory,
     mock_read_visits,
 ):
@@ -1096,14 +1098,14 @@ def test_no_visits_data(
     assert response.status_code == 200
     data = response.json()
     assert "interactive" in data
-    assert data["interactive"] == {}
+    assert data["interactive"] is None
 
     app.dependency_overrides.pop(get_access_token, None)
 
 
-@patch('lsst.ts.logging_and_reporting.web_app.main.read_visits')
-@patch('lsst.ts.logging_and_reporting.web_app.main.ModelObservatory')
-def test_read_visits_exception(
+@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
+def test_visit_maps_read_visits_exception(
     mock_observatory,
     mock_read_visits,
 ):
