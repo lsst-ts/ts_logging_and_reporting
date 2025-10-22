@@ -315,6 +315,10 @@ def plot_visit_skymaps(
     mjd_slider.end = mjd_end
     mjd_slider.value = mjd_end
 
+    # style the sliders according to the theme
+    for slider_key in spheremaps[0].sliders:
+        spheremaps[0].sliders[slider_key].styles = {"color": THEMES[theme]["HORIZON_COLOR"]}
+
     # Share slider across all spheremaps
     for sm in spheremaps[1:]:
         sm.sliders["mjd"] = mjd_slider
@@ -346,8 +350,12 @@ def plot_visit_skymaps(
         theme=theme,
     )
 
-    # Create night label
-    dayobs_label = bokeh.models.Div(text=f"Night: {unique_nights[0]}", width=150)
+    # Create night label and use theme colors
+    dayobs_label = bokeh.models.Div(
+        text=f"Night: {unique_nights[0]}",
+        width=150,
+        styles={"color": THEMES[theme]["HORIZON_COLOR"], "padding": "0px"},
+    )
 
     # Setup JavaScript callback for slider interaction
     _setup_slider_callback(
@@ -495,13 +503,36 @@ def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatc
             for sm in spheremaps[1:]:
                 sm.add_patches(data_source=cds, patches_kwargs=patches_kwargs)
 
-            # Add hover tooltips
+            all_renderers = []
             for sm in spheremaps:
-                hover = bokeh.models.HoverTool(
-                    renderers=[sm.plot.select({"name": patches_kwargs["name"]})[0]],
-                    tooltips=VISIT_TOOLTIPS,
-                    formatters={"@start_timestamp": "datetime"},
-                )
+                renderers = [r for r in sm.plot.renderers if getattr(r, "data_source", None) == cds]
+                all_renderers.extend(renderers)
+
+            hover = bokeh.models.HoverTool(
+                renderers=all_renderers,
+                mode="mouse",
+                tooltips="""
+                <div style="padding:5px; font-size:12px; line-height:1.2">
+                    <div><strong>Observation ID:</strong> @observationId</div>
+                    <div><strong>Start Timestamp:
+                        </strong>
+                        <span data-column="start_timestamp" data-format="%F %T"> @start_timestamp</span>
+                         UTC
+                    </div>
+                    <div><strong>Night:</strong> @day_obs</div>
+                    <div><strong>Band:</strong> @band</div>
+                    <div><strong>RA:</strong> @fieldRA{0.000}</div>
+                    <div><strong>Dec:</strong> @fieldDec{0.000}</div>
+                    <div><strong>Start MJD:</strong> @observationStartMJD{0.0000}</div>
+                    <div><strong>LST:</strong> @observationStartLST\u00b0</div>
+                    <div><strong>Observation Reason:</strong> @observation_reason</div>
+                    <div><strong>Science Program:</strong> @science_program</div>
+                    <div><strong>q:</strong> @paraAngle\u00b0</div>
+                    <div><strong>a, A:</strong> @azimuth\u00b0, @altitude\u00b0</div>
+                </div>
+                """,
+            )
+            for sm in spheremaps:
                 sm.plot.add_tools(hover)
 
             band_renderers.append(cds)
