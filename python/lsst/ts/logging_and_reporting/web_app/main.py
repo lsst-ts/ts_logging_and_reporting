@@ -158,10 +158,7 @@ async def read_expected_exposures(
     dayObsEnd: int,
     # auth_token: str = Depends(get_access_token),
 ):
-    logger.info(
-        f"Getting expected exposures for start: "
-        f"{dayObsStart}, end: {dayObsEnd} "
-    )
+    logger.info(f"Getting expected exposures for start: {dayObsStart}, end: {dayObsEnd} ")
     try:
         expected_exposures = get_expected_exposures(
             dayObsStart,
