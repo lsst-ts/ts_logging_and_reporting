@@ -1060,10 +1060,7 @@ def get_expected_exposures(
         "sum": int              # sum of all expected exposures in the range
     """
 
-    logger.info(
-        f"Getting expected exposures for dayObsStart: {dayObsStart}, "
-        f"dayObsEnd: {dayObsEnd}."
-    )
+    logger.info(f"Getting expected exposures for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}.")
 
     expected_exposures_list = []
 
@@ -1096,11 +1093,8 @@ def get_expected_exposures(
             "sum": sum_expected_exposures,
         }
 
-
     except Exception as e:
-        logger.error(
-            f"Error in getting expected exposures from rubin_sim: {e}",
-            exc_info=True)
+        logger.error(f"Error in getting expected exposures from rubin_sim: {e}", exc_info=True)
         return {
             "nightly": [],
             "sum": 0,
