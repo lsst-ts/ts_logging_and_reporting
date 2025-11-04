@@ -89,8 +89,10 @@ THEMES = {
 
 def _get_slider_callback_code():
     """Get JavaScript code for MJD slider callback.
-    Adds night-reset behavior: after morning twilight,
-    visits reset until next night.
+    Adds night-reset behavior and manages renderer visibility.
+    Returns
+    -------
+    callback_code : `str`
     """
     callback_code = """
     const mjd_val = mjd_slider.value;
@@ -101,6 +103,16 @@ def _get_slider_callback_code():
         if (mjd_val >= mjd_starts[i] && mjd_val <= mjd_ends[i]) {
             current_night_idx = i;
             break;
+        }
+    }
+
+    // Update renderer visibility for all nights
+    for (let i = 0; i < night_patch_renderers.length; i++) {
+        const renderers_for_night = night_patch_renderers[i];
+        const is_active = (i === current_night_idx);
+
+        for (let j = 0; j < renderers_for_night.length; j++) {
+            renderers_for_night[j].visible = is_active;
         }
     }
 
@@ -118,6 +130,7 @@ def _get_slider_callback_code():
                 cds.change.emit();
             }
         }
+
         day_label.text = "";
         _hide_all_celestial_markers(all_sun_markers, all_moon_markers);
         return;
@@ -159,7 +172,7 @@ def _get_slider_callback_code():
     day_label.text = "Night: " + current_day;
 
 
-    // helper functions
+    // Helper functions
     function _hide_all_celestial_markers(sun_markers, moon_markers) {
         for (let s = 0; s < sun_markers.length; s++) {
             for (let m = 0; m < sun_markers[s].length; m++) {
@@ -186,21 +199,28 @@ def _get_slider_callback_code():
     return callback_code
 
 
-def _initialize_visit_alphas(night_renderers, mjd_value, conditions_list, fade_scale):
-    """
-    Initialize visit alpha values for the current slider value.
+def _initialize_visit_alphas(night_renderers, night_patch_renderers, mjd_value, conditions_list, fade_scale):
+    """Initialize visit alpha values and renderer visibility
+    for the current slider value.
     This runs server-side to set up the initial state.
 
     Parameters
     ----------
     night_renderers : list
-        List of night renderers
+        List of night renderers (ColumnDataSources)
+    night_patch_renderers : list of list
+        List of lists of patch renderers, grouped by night
     mjd_value : float
         Current MJD slider value
     conditions_list : list
         List of Conditions objects
     fade_scale : float
         Time scale for fading
+
+    Returns
+    -------
+    current_night_idx : int or None
+        Index of the current night, or None if outside all nights
     """
     # Determine which night the current mjd belongs to
     current_night_idx = None
@@ -209,6 +229,13 @@ def _initialize_visit_alphas(night_renderers, mjd_value, conditions_list, fade_s
             current_night_idx = i
             break
 
+    # Set renderer visibility based on current night
+    for night_idx, renderers_for_night in enumerate(night_patch_renderers):
+        is_active = night_idx == current_night_idx
+        for renderer in renderers_for_night:
+            renderer.visible = is_active
+
+    # Update alpha values for all nights
     for night_idx, band_sources in enumerate(night_renderers):
         for cds in band_sources:
             # Make a plain Python dict copy
@@ -229,6 +256,169 @@ def _initialize_visit_alphas(night_renderers, mjd_value, conditions_list, fade_s
 
             # Reassign to trigger update
             cds.data = data
+
+    return current_night_idx
+
+
+def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatch, theme="LIGHT"):
+    """Add visit patches for each night and band.
+    Returns list of lists of ColumnDataSources and
+    list of all patch renderers grouped by night.
+
+    Parameters
+    ----------
+    visits : `pd.DataFrame`
+        Must contain 'day_obs', 'observationStartMJD',
+        'fieldRA', 'fieldDec', 'band'.
+    unique_nights : `list`
+        List of unique nights in visits.
+    spheremaps : `list`
+        List of spheremap instances to add patches to.
+    camera_perimeter : `callable`
+        Camera footprint perimeter function.
+    hatch : `bool`
+        Use hatching patterns for bands instead of solid colors.
+    theme : `str`
+        Theme to use, either "LIGHT" or "DARK".
+
+    Returns
+    -------
+    night_renderers : `list` of `list` of `ColumnDataSource`
+        List of lists of ColumnDataSources, one list per night.
+    night_patch_renderers : `list` of `list` of `GlyphRenderer`
+        List of lists of patch renderers, grouped by night.
+    """
+    night_renderers = []
+    night_patch_renderers = []
+
+    for night_idx, day_obs in enumerate(unique_nights):
+        night_visits = visits[visits["day_obs"] == day_obs]
+        band_renderers = []
+        night_renderers_list = []
+
+        for band in "ugrizy":
+            band_visits = night_visits[night_visits[band_column(night_visits)] == band].copy()
+
+            if band_visits.empty:
+                continue
+
+            # Calculate camera footprint positions
+            ras, decls = camera_perimeter(band_visits.fieldRA, band_visits.fieldDec, band_visits.rotSkyPos)
+            band_visits["ra"] = ras
+            band_visits["decl"] = decls
+            band_visits["mjd"] = band_visits.observationStartMJD.values
+            band_visits["fill_alpha"] = [0.0] * len(band_visits)
+            band_visits["line_alpha"] = [0.0] * len(band_visits)
+
+            # Setup patch styling
+            patches_kwargs = dict(
+                fill_alpha="fill_alpha",
+                line_alpha="line_alpha",
+                fill_color=None if hatch else THEMES[theme]["PLOT_BAND_COLORS"][band],
+                line_color="#ff00ff",
+                line_width=2,
+                name=f"visit_{night_idx}_{band}",
+            )
+
+            if hatch:
+                patches_kwargs.update(
+                    hatch_alpha="fill_alpha",
+                    hatch_color=THEMES[theme]["PLOT_BAND_COLORS"][band],
+                    hatch_pattern=BAND_HATCH_PATTERNS[band],
+                    hatch_scale=BAND_HATCH_SCALES[band],
+                )
+
+            # Add patches to all spheremaps
+            cds = spheremaps[0].add_patches(band_visits, patches_kwargs=patches_kwargs)
+            for sm in spheremaps[1:]:
+                sm.add_patches(data_source=cds, patches_kwargs=patches_kwargs)
+
+            # Collect all renderers for this band across all spheremaps
+            for sm in spheremaps:
+                renderers = [r for r in sm.plot.renderers if getattr(r, "data_source", None) == cds]
+                night_renderers_list.extend(renderers)
+
+            band_renderers.append(cds)
+
+        night_renderers.append(band_renderers)
+        night_patch_renderers.append(night_renderers_list)
+
+    # Create separate hover tools for each night
+    for night_idx, renderers_for_night in enumerate(night_patch_renderers):
+        if not renderers_for_night:
+            continue
+
+        hover = bokeh.models.HoverTool(
+            renderers=renderers_for_night,
+            mode="mouse",
+            tooltips="""
+            <div style="padding:5px; font-size:12px; line-height:1.2">
+                <div><strong>Observation ID:</strong> @observationId</div>
+                <div><strong>Start Timestamp:
+                    </strong>
+                    <span data-column="start_timestamp" data-format="%F %T"> @start_timestamp</span>
+                     UTC
+                </div>
+                <div><strong>Night:</strong> @day_obs</div>
+                <div><strong>Band:</strong> @band</div>
+                <div><strong>RA:</strong> @fieldRA{0.000}</div>
+                <div><strong>Dec:</strong> @fieldDec{0.000}</div>
+                <div><strong>Start MJD:</strong> @observationStartMJD{0.0000}</div>
+                <div><strong>LST:</strong> @observationStartLST\u00b0</div>
+                <div><strong>Observation Reason:</strong> @observation_reason</div>
+                <div><strong>Science Program:</strong> @science_program</div>
+                <div><strong>q:</strong> @paraAngle\u00b0</div>
+                <div><strong>a, A:</strong> @azimuth\u00b0, @altitude\u00b0</div>
+            </div>
+            """,
+            tags=[night_idx],  # Tag with night index
+        )
+
+        # Add hover tool to all spheremaps
+        for sm in spheremaps:
+            sm.plot.add_tools(hover)
+
+    return night_renderers, night_patch_renderers
+
+
+def _setup_slider_callback(
+    mjd_slider,
+    night_renderers,
+    all_sun_markers,
+    all_moon_markers,
+    dayobs_label,
+    unique_nights,
+    conditions_list,
+    fade_scale,
+    night_patch_renderers,
+):
+    """Setup JavaScript callback for MJD slider interaction.
+
+    Parameters
+    ----------
+    night_patch_renderers : `list` of `list` of `GlyphRenderer`
+        List of lists of patch renderers, grouped by night
+    """
+    callback_code = _get_slider_callback_code()
+
+    mjd_slider.js_on_change(
+        "value",
+        bokeh.models.CustomJS(
+            args=dict(
+                mjd_slider=mjd_slider,
+                sources=night_renderers,
+                day_label=dayobs_label,
+                day_obs_list=unique_nights,
+                mjd_starts=[cond.sun_n12_setting for cond in conditions_list],
+                mjd_ends=[cond.sun_n12_rising for cond in conditions_list],
+                scale=fade_scale,
+                all_sun_markers=all_sun_markers,
+                all_moon_markers=all_moon_markers,
+                night_patch_renderers=night_patch_renderers,  # Add grouped renderers
+            ),
+            code=callback_code,
+        ),
+    )
 
 
 def plot_visit_skymaps(
@@ -333,7 +523,7 @@ def plot_visit_skymaps(
 
     # Add visit patches per night and band
     unique_nights = sorted(visits["day_obs"].unique())
-    night_renderers = _add_visit_patches(
+    night_renderers, night_patch_renderers = _add_visit_patches(
         visits,
         unique_nights,
         spheremaps,
@@ -367,6 +557,7 @@ def plot_visit_skymaps(
         unique_nights,
         conditions_list,
         fade_scale,
+        night_patch_renderers,
     )
 
     # Layout based on mode
@@ -398,8 +589,23 @@ def plot_visit_skymaps(
             )
 
     callback_code = _get_slider_callback_code()
-    # Initialize visit alphas for the current slider value
-    _initialize_visit_alphas(night_renderers, mjd_slider.value, conditions_list, fade_scale)
+
+    # Initialize visit alphas and renderer visibility for
+    # the current slider value and get current night index
+    current_night_idx = _initialize_visit_alphas(
+        night_renderers,
+        night_patch_renderers,  # Pass the renderers
+        mjd_slider.value,
+        conditions_list,
+        fade_scale,
+    )
+
+    # Set the correct initial night label
+    if current_night_idx is not None:
+        initial_night = unique_nights[current_night_idx]
+        dayobs_label.text = f"Night: {initial_night}"
+    else:
+        dayobs_label.text = ""
 
     # Trigger callback on document ready to show visits on initial render
     trigger_initial_callback = bokeh.models.CustomJS(
@@ -413,6 +619,7 @@ def plot_visit_skymaps(
             scale=fade_scale,
             all_sun_markers=all_sun_markers,
             all_moon_markers=all_moon_markers,
+            night_patch_renderers=night_patch_renderers,
         ),
         code="setTimeout(function() { " + callback_code + " }, 100);",
     )
@@ -431,115 +638,6 @@ def plot_visit_skymaps(
         sm.decorate()
 
     return fig
-
-
-def _add_visit_patches(visits, unique_nights, spheremaps, camera_perimeter, hatch, theme="LIGHT"):
-    """Add visit patches for each night and band.
-    Returns list of lists of ColumnDataSources, one list per night,
-    each containing one ColumnDataSource per band.
-
-    Parameters
-    ----------
-    visits : `pd.DataFrame`
-        Must contain 'day_obs', 'observationStartMJD',
-        'fieldRA', 'fieldDec', 'band'.
-    unique_nights : `list`
-        List of unique nights in visits.
-    spheremaps : `list`
-        List of spheremap instances to add patches to.
-    camera_perimeter : `callable`
-        Camera footprint perimeter function.
-    hatch : `bool`
-        Use hatching patterns for bands instead of solid colors.
-    theme : `str`
-        Theme to use, either "LIGHT" or "DARK".
-
-    Returns
-    -------
-    night_renderers : `list` of `list` of `ColumnDataSource`
-        List of lists of ColumnDataSources, one list per night,
-        each containing one ColumnDataSource per band.
-    """
-    night_renderers = []
-
-    for night_idx, day_obs in enumerate(unique_nights):
-        night_visits = visits[visits["day_obs"] == day_obs]
-        band_renderers = []
-
-        for band in "ugrizy":
-            band_visits = night_visits[night_visits[band_column(night_visits)] == band].copy()
-
-            if band_visits.empty:
-                continue
-
-            # Calculate camera footprint positions
-            ras, decls = camera_perimeter(band_visits.fieldRA, band_visits.fieldDec, band_visits.rotSkyPos)
-            band_visits["ra"] = ras
-            band_visits["decl"] = decls
-            band_visits["mjd"] = band_visits.observationStartMJD.values
-            band_visits["fill_alpha"] = [0.0] * len(band_visits)
-            band_visits["line_alpha"] = [0.0] * len(band_visits)
-
-            # Setup patch styling
-            patches_kwargs = dict(
-                fill_alpha="fill_alpha",
-                line_alpha="line_alpha",
-                fill_color=None if hatch else THEMES[theme]["PLOT_BAND_COLORS"][band],
-                line_color="#ff00ff",
-                line_width=2,
-                name=f"visit_{night_idx}_{band}",
-            )
-
-            if hatch:
-                patches_kwargs.update(
-                    hatch_alpha="fill_alpha",
-                    hatch_color=THEMES[theme]["PLOT_BAND_COLORS"][band],
-                    hatch_pattern=BAND_HATCH_PATTERNS[band],
-                    hatch_scale=BAND_HATCH_SCALES[band],
-                )
-
-            # Add patches to all spheremaps
-            cds = spheremaps[0].add_patches(band_visits, patches_kwargs=patches_kwargs)
-            for sm in spheremaps[1:]:
-                sm.add_patches(data_source=cds, patches_kwargs=patches_kwargs)
-
-            all_renderers = []
-            for sm in spheremaps:
-                renderers = [r for r in sm.plot.renderers if getattr(r, "data_source", None) == cds]
-                all_renderers.extend(renderers)
-
-            hover = bokeh.models.HoverTool(
-                renderers=all_renderers,
-                mode="mouse",
-                tooltips="""
-                <div style="padding:5px; font-size:12px; line-height:1.2">
-                    <div><strong>Observation ID:</strong> @observationId</div>
-                    <div><strong>Start Timestamp:
-                        </strong>
-                        <span data-column="start_timestamp" data-format="%F %T"> @start_timestamp</span>
-                         UTC
-                    </div>
-                    <div><strong>Night:</strong> @day_obs</div>
-                    <div><strong>Band:</strong> @band</div>
-                    <div><strong>RA:</strong> @fieldRA{0.000}</div>
-                    <div><strong>Dec:</strong> @fieldDec{0.000}</div>
-                    <div><strong>Start MJD:</strong> @observationStartMJD{0.0000}</div>
-                    <div><strong>LST:</strong> @observationStartLST\u00b0</div>
-                    <div><strong>Observation Reason:</strong> @observation_reason</div>
-                    <div><strong>Science Program:</strong> @science_program</div>
-                    <div><strong>q:</strong> @paraAngle\u00b0</div>
-                    <div><strong>a, A:</strong> @azimuth\u00b0, @altitude\u00b0</div>
-                </div>
-                """,
-            )
-            for sm in spheremaps:
-                sm.plot.add_tools(hover)
-
-            band_renderers.append(cds)
-
-        night_renderers.append(band_renderers)
-
-    return night_renderers
 
 
 def _add_celestial_objects(conditions_list, spheremaps, show_stars, theme="LIGHT"):
@@ -630,67 +728,6 @@ def _add_celestial_objects(conditions_list, spheremaps, show_stars, theme="LIGHT
         all_moon_markers.append(moon_markers)
 
     return all_sun_markers, all_moon_markers
-
-
-def _setup_slider_callback(
-    mjd_slider,
-    night_renderers,
-    all_sun_markers,
-    all_moon_markers,
-    dayobs_label,
-    unique_nights,
-    conditions_list,
-    fade_scale,
-):
-    """Setup JavaScript callback for MJD slider interaction.
-    The callback updates visit patch alphas based on the slider value,
-    and shows/hides sun and moon markers based on the current night.
-
-    Parameters
-    ----------
-    mjd_slider : `bokeh.models.Slider`
-        The MJD slider widget.
-    night_renderers : `list` of `list` of `ColumnDataSource`
-        List of lists of ColumnDataSources, one list per night,
-        each containing one ColumnDataSource per band.
-    all_sun_markers : `list` of `list` of `GlyphRenderer`
-        List of lists of sun renderers, one list per spheremap,
-        each containing one renderer per night.
-    all_moon_markers : `list` of `list` of `GlyphRenderer`
-        List of lists of moon renderers, one list per spheremap,
-        each containing one renderer per night.
-    dayobs_label : `bokeh.models.Div`
-        The label to show the current night.
-    unique_nights : `list`
-        List of unique nights in visits.
-    conditions_list : `list`
-        List of nightly Conditions objects, one per night to plot.
-    fade_scale : `float`
-        Time scale for fading visit markers (in days).
-
-    Returns
-    -------
-    `None`
-    """
-    callback_code = _get_slider_callback_code()
-
-    mjd_slider.js_on_change(
-        "value",
-        bokeh.models.CustomJS(
-            args=dict(
-                mjd_slider=mjd_slider,
-                sources=night_renderers,
-                day_label=dayobs_label,
-                day_obs_list=unique_nights,
-                mjd_starts=[cond.sun_n12_setting for cond in conditions_list],
-                mjd_ends=[cond.sun_n12_rising for cond in conditions_list],
-                scale=fade_scale,
-                all_sun_markers=all_sun_markers,
-                all_moon_markers=all_moon_markers,
-            ),
-            code=callback_code,
-        ),
-    )
 
 
 def create_visit_skymaps(

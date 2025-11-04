@@ -11,7 +11,8 @@ USER saluser
 RUN source /home/saluser/.setup_dev.sh && \
 	# workaround meanwhile waiting for dependencies to be built into the develop-env image
 	conda config --set solver classic && \
-	conda install -c conda-forge -y rubin-nights=0.6 rubin-scheduler=3 rubin-sim=2 schedview=0.19 bokeh=3 && \
+	conda install -c conda-forge -y rubin-sim=2.4 && \
+	# install this package
 	pip install -e .
 
 CMD ["docker/startup.sh"]
