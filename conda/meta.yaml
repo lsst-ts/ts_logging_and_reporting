@@ -52,3 +52,4 @@ requirements:
         - rubin-sim =2.4
         - bokeh =3
         - lsst-efd-client =0.12
+        - scikit-learn
