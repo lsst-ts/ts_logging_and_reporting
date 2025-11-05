@@ -53,3 +53,4 @@ requirements:
         - bokeh =3
         - lsst-efd-client =0.12
         - pz-rail-sklearn =1.1
+        - psycopg2 =2.9
