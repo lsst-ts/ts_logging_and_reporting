@@ -5,6 +5,7 @@ import requests
 from rubin_nights.connections import get_clients
 from unittest.mock import patch, Mock
 
+from lsst.ts.logging_and_reporting import __version__
 from lsst.ts.logging_and_reporting.web_app.main import app
 from lsst.ts.logging_and_reporting.utils import get_access_token
 import lsst.ts.logging_and_reporting.utils as ut
@@ -694,6 +695,20 @@ def mock_requests_post():
     mock_post.return_value = mock_post_response()
     yield mock_post
     patcher.stop()
+
+
+def test_health_endpoint():
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {"status": "ok"}
+
+
+def test_version_endpoint():
+    response = client.get("/version")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["version"] == __version__
 
 
 def test_nightreport_endpoint(mock_requests_get):
