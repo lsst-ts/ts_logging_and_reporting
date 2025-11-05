@@ -49,5 +49,5 @@ requirements:
         - rubin-scheduler =3
         - rubin-nights =0.6
         - schedview =0.19
-        - rubin-sim =2
+        - rubin-sim =2.4
         - bokeh =3
