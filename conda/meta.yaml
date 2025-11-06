@@ -41,7 +41,7 @@ requirements:
         - pandas
         - numpy
         - astroplan
-        - astropy
+        - astropy =7
         - fastapi
         - ipython
         - pydantic
