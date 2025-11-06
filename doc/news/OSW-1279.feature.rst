@@ -1,1 +1,0 @@
-Add endpoint to retrieve the package version.

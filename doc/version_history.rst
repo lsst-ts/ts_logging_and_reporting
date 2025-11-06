@@ -1,3 +1,13 @@
+v0.10.0-alpha.14 (2025-11-06)
+=============================
+
+New Features
+------------
+
+- Add an endpoint to build bokeh interactive plots and serve them via the frontend as json. (`OSW-1061 <https://rubinobs.atlassian.net//browse/OSW-1061>`_)
+- Add endpoint to retrieve the package version. (`OSW-1279 <https://rubinobs.atlassian.net//browse/OSW-1279>`_)
+
+
 v0.9.1 (2025-10-21)
 ===================
 
