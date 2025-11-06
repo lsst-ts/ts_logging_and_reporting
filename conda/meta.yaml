@@ -48,3 +48,10 @@ requirements:
         - uvicorn
         - rubin-scheduler =3
         - rubin-nights =0.6
+        - schedview =0.19
+        - rubin-sim =2.4
+        - bokeh =3
+        - lsst-efd-client =0.12
+        - scikit-learn
+        - psycopg2 =2.9
+        - astropy-iers-data
