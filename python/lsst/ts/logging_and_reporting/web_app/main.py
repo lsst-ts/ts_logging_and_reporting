@@ -33,7 +33,7 @@ logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
 
 
-app = FastAPI()
+app = FastAPI(root_path="/nightlydigest/api", docs_url="/docs", openapi_url="/openapi.json", redoc_url=None)
 
 origins = [
     "http://localhost:5173",  # Vite
