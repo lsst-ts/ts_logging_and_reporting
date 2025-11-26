@@ -1,3 +1,29 @@
+v0.11.0-alpha.2 (2025-12-04)
+============================
+
+Other Changes and Additions
+---------------------------
+
+- Fetch open dome times from rubin-nights for fault calculations and update valid overhead calculation (`OSW-1230 <https://rubinobs.atlassian.net//browse/OSW-1230>`_)
+
+
+v0.11.0-alpha.1 (2025-11-26)
+============================
+
+New Features
+------------
+
+- Add an endpoint to build bokeh interactive plots and serve them via the frontend as json. (`OSW-1061 <https://rubinobs.atlassian.net//browse/OSW-1061>`_)
+- Get expected number of exposures for Simonyi from rubin_sim. (`OSW-1166 <https://rubinobs.atlassian.net//browse/OSW-1166>`_)
+- Add endpoint to retrieve the package version. (`OSW-1279 <https://rubinobs.atlassian.net//browse/OSW-1279>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Specify FastAPI root_path argument to /nightlydigest/api and enable swagger docs. (`OSW-1437 <https://rubinobs.atlassian.net//browse/OSW-1437>`_)
+
+
 v0.9.1 (2025-10-21)
 ===================
 
