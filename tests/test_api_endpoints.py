@@ -795,7 +795,6 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
     ):
         import pandas as pd
 
-        mock_open_close.return_value = pd.DataFrame({"open_hours": [2.5]})
         mock_time_accounting.return_value = pd.DataFrame(
             {
                 "exposure_id": [2025073000001],
@@ -817,6 +816,7 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
                 "visit_id": [2025071600135],
                 "pixel_scale_median": [0.2],
                 "psf_sigma_median": [1.1],
+                "visit_gap": [3],
             }
         )
         app.dependency_overrides[get_access_token] = lambda: "dummy-token"
@@ -830,7 +830,6 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
         assert data["sum_exposure_time"] == 30
         assert data["on_sky_exposures_count"] == 1
         assert data["total_on_sky_exposure_time"] == 30
-        assert data["open_dome_hours"] == 2.5
         mock_time_accounting.assert_called_once()
         mock_open_close.assert_called_once()
 
@@ -843,7 +842,6 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
         data = response.json()
         assert "exposures" in data
         assert data["exposures_count"] == 1
-        assert data["open_dome_hours"] == 0
 
         app.dependency_overrides.pop(get_access_token, None)
         app.dependency_overrides.pop(get_clients, None)

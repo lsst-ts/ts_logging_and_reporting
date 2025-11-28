@@ -92,9 +92,6 @@ async def read_exposures(
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
 
         open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, auth_token)
-        open_dome_hours = 0
-        if not open_dome_times.empty:
-            open_dome_hours = open_dome_times["open_hours"].sum()
 
         exposures_df = get_time_accounting(
             dayObsStart,
@@ -142,7 +139,6 @@ async def read_exposures(
             "on_sky_exposures_count": len(on_sky_exposures),
             "total_on_sky_exposure_time": total_on_sky_exposure_time,
             "open_dome_times": make_json_safe(open_dome_times.to_dict(orient="records")),
-            "open_dome_hours": open_dome_hours,
         }
 
     except ConsdbQueryError as ce:
