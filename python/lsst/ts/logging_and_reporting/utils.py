@@ -379,10 +379,10 @@ def make_json_safe(obj):
 
     This function traverses the input object, converting
     any non-JSON-serializable types (such as NumPy integers,
-    floats, NaN, or infinity) into types that can be safely serialized.
-    Dictionaries and lists are processed recursively.
-    NumPy integer and floating types are converted to their native Python
-    counterparts. NaN and infinity values are replaced with None.
+    floats, NaN, or infinity, Astropy Time objects) into types
+    that can be safely serialized. Dictionaries and lists are
+    processed recursively. NaN and infinity values are replaced
+    with None.
 
     Parameters
     ----------
@@ -394,17 +394,59 @@ def make_json_safe(obj):
     any
         The converted object, safe for JSON serialization.
     """
+    # Handle None and basic JSON-safe types early
+    if obj is None or isinstance(obj, (bool, str)):
+        return obj
+
+    # Containers - process recursively
     if isinstance(obj, dict):
         return {k: make_json_safe(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [make_json_safe(v) for v in obj]
-    elif isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
+    if isinstance(obj, (list, tuple)):
+        result = [make_json_safe(v) for v in obj]
+        return tuple(result) if isinstance(obj, tuple) else result
+
+    # NumPy arrays
+    if isinstance(obj, np.ndarray):
+        if obj.ndim == 0:
+            return make_json_safe(obj.item())
+        return [make_json_safe(v) for v in obj.tolist()]
+
+    # Check for pandas NA/NaT (must be identity check)
+    if obj is pd.NaT or (hasattr(pd, "NA") and obj is pd.NA):
+        return None
+
+    # DateTime-like objects
+    # Check Astropy Time by type name to avoid import issues
+    obj_type_name = type(obj).__name__
+    if obj_type_name == "Time" and hasattr(obj, "to_datetime"):
+        return obj.to_datetime().isoformat()
+
+    if isinstance(obj, pd.Timestamp):
+        if pd.isnull(obj):
             return None
-        return float(obj)
-    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return obj.isoformat()
+
+    if isinstance(obj, np.datetime64):
+        if pd.isnull(obj):
+            return None
+        return pd.Timestamp(obj).isoformat()
+
+    # Timedelta objects
+    if isinstance(obj, (pd.Timedelta, np.timedelta64)):
+        return float(pd.Timedelta(obj).total_seconds())
+
+    # Numeric types - handle NaN/inf
+    if isinstance(obj, (np.integer, np.bool_)):
         return int(obj)
-    elif isinstance(obj, (np.floating, np.float64, np.float32)):
-        return float(obj)
-    else:
+
+    if isinstance(obj, np.floating):
+        v = float(obj)
+        return None if (np.isnan(v) or np.isinf(v)) else v
+
+    if isinstance(obj, (int, float)):
+        if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
+            return None
         return obj
+
+    # Fallback for any other type
+    return obj

@@ -127,6 +127,7 @@ async def read_exposures(
                     "overhead",
                     "pixel_scale_median",
                     "psf_sigma_median",
+                    "visit_gap",
                 ]
             ].to_dict(orient="records")
 
@@ -140,6 +141,7 @@ async def read_exposures(
             "sum_exposure_time": total_exposure_time,
             "on_sky_exposures_count": len(on_sky_exposures),
             "total_on_sky_exposure_time": total_on_sky_exposure_time,
+            "open_dome_times": make_json_safe(open_dome_times.to_dict(orient="records")),
             "open_dome_hours": open_dome_hours,
         }
 
