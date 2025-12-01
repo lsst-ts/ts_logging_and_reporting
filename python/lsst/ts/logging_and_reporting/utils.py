@@ -25,6 +25,7 @@ import pandas as pd
 import numpy as np
 import pytz
 import time
+import math
 
 from fastapi import Request, HTTPException
 
@@ -378,11 +379,11 @@ def make_json_safe(obj):
     Recursively converts objects to be JSON serializable.
 
     This function traverses the input object, converting
-    any non-JSON-serializable types (such as NumPy integers,
-    floats, NaN, or infinity, Astropy Time objects) into types
-    that can be safely serialized. Dictionaries and lists are
-    processed recursively. NaN and infinity values are replaced
-    with None.
+    any non-JSON-serializable types (such as Astropy Time objects,
+    NumPy integers, floats, NaN, or infinity) into types
+    that can be safely serialized.
+    Dictionaries and lists are processed recursively. NaN and infinity values
+    are replaced with None.
 
     Parameters
     ----------
@@ -394,32 +395,31 @@ def make_json_safe(obj):
     any
         The converted object, safe for JSON serialization.
     """
-    # Handle None and basic JSON-safe types early
     if obj is None or isinstance(obj, (bool, str)):
         return obj
 
-    # Containers - process recursively
     if isinstance(obj, dict):
         return {k: make_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         result = [make_json_safe(v) for v in obj]
         return tuple(result) if isinstance(obj, tuple) else result
 
-    # NumPy arrays
+    # Check for Astropy Time BEFORE NumPy array check
+    obj_type_name = type(obj).__name__
+    if obj_type_name == "Time" and hasattr(obj, "to_datetime"):
+        dt = obj.to_datetime()
+        # Handle both scalar and array Time objects
+        if isinstance(dt, np.ndarray):
+            return [make_json_safe(v) for v in dt]
+        return dt.isoformat()
+
     if isinstance(obj, np.ndarray):
         if obj.ndim == 0:
             return make_json_safe(obj.item())
         return [make_json_safe(v) for v in obj.tolist()]
 
-    # Check for pandas NA/NaT (must be identity check)
-    if obj is pd.NaT or (hasattr(pd, "NA") and obj is pd.NA):
+    if obj is pd.NaT or obj is pd.NA:
         return None
-
-    # DateTime-like objects
-    # Check Astropy Time by type name to avoid import issues
-    obj_type_name = type(obj).__name__
-    if obj_type_name == "Time" and hasattr(obj, "to_datetime"):
-        return obj.to_datetime().isoformat()
 
     if isinstance(obj, pd.Timestamp):
         if pd.isnull(obj):
@@ -431,22 +431,23 @@ def make_json_safe(obj):
             return None
         return pd.Timestamp(obj).isoformat()
 
-    # Timedelta objects
     if isinstance(obj, (pd.Timedelta, np.timedelta64)):
         return float(pd.Timedelta(obj).total_seconds())
 
-    # Numeric types - handle NaN/inf
-    if isinstance(obj, (np.integer, np.bool_)):
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+
+    if isinstance(obj, np.integer):
         return int(obj)
 
     if isinstance(obj, np.floating):
         v = float(obj)
         return None if (np.isnan(v) or np.isinf(v)) else v
 
-    if isinstance(obj, (int, float)):
-        if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
-            return None
+    if isinstance(obj, int):
         return obj
 
-    # Fallback for any other type
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+
     return obj
