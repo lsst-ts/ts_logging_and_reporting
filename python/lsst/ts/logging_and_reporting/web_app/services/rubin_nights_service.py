@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 WAIT_BEFORE_SLEW = 1.45
 SETTLE = 2.0
+MAX_SCATTER = 120.0
 
 
 def get_time_accounting(
@@ -72,10 +73,10 @@ def get_time_accounting(
         visits, _ = rn_sch.add_model_slew_times(
             visits, clients["efd"], model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False
         )
-        max_scatter = 6
+
         valid_overhead = np.min(
             [
-                np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values) + max_scatter,
+                np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values) + MAX_SCATTER,
                 visits.visit_gap.values,
             ],
             axis=0,

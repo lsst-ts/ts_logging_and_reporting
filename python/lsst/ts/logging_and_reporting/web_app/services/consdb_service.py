@@ -50,6 +50,7 @@ def get_exposures(
         WHERE e.exposure_id = q.visit_id
         AND {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
         AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
+        ORDER BY e.seq_num ASC
     """
 
     sql = " ".join(ssql.split())

@@ -1,0 +1,1 @@
+Fetch open dome times from rubin-nights for fault calculations and update valid overhead calculation
