@@ -1,3 +1,12 @@
+v0.11.0-alpha.3 (2025-12-05)
+============================
+
+Performance Enhancement
+-----------------------
+
+- Update pins for rubin-nights, schedview and rubin-sim. (`OSW-1539 <https://rubinobs.atlassian.net//browse/OSW-1539>`_)
+
+
 v0.11.0-alpha.2 (2025-12-04)
 ============================
 
