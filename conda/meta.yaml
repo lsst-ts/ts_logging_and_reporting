@@ -45,7 +45,7 @@ requirements:
         - ipython
         - pydantic
         - uvicorn
-        - rubin-scheduler =3
+        - conda-forge::rubin-scheduler =3
         - rubin-nights =0.8
         - schedview =0.20
         - rubin-sim =2
