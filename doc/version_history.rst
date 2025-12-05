@@ -1,3 +1,12 @@
+0.11.0-alpha.4 (2025-12-05)
+===========================
+
+Performance Enhancement
+-----------------------
+
+- Pick rubin-scheduler from conda-forge instead of default one (lsstts). (`OSW-1509 <https://rubinobs.atlassian.net//browse/OSW-1509>`_)
+
+
 v0.11.0-alpha.3 (2025-12-05)
 ============================
 
