@@ -2,7 +2,6 @@ import logging
 
 from lsst.ts.logging_and_reporting.jira import JiraAdapter
 
-
 logger = logging.getLogger(__name__)
 
 

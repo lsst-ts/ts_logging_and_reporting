@@ -1,14 +1,15 @@
 # Used efd.py as a starting point.  Layered in consolidated_database.py
 
+import traceback
 import warnings
 from collections import defaultdict
 
-import lsst.ts.logging_and_reporting.exceptions as ex
-import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 import requests
+
+import lsst.ts.logging_and_reporting.exceptions as ex
+import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
-import traceback
 
 # curl -X 'POST' \
 #   'https://usdf-rsp.slac.stanford.edu/consdb/query' \

@@ -1,7 +1,7 @@
 import logging
-from lsst.ts.logging_and_reporting.source_adapters import NarrativelogAdapter
-import lsst.ts.logging_and_reporting.utils as nd_utils
 
+import lsst.ts.logging_and_reporting.utils as nd_utils
+from lsst.ts.logging_and_reporting.source_adapters import NarrativelogAdapter
 
 logger = logging.getLogger(__name__)
 

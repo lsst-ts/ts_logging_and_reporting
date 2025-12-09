@@ -1,5 +1,4 @@
-from lsst.ts.logging_and_reporting.web_app.services import consdb_service
-from lsst.ts.logging_and_reporting.web_app.services import almanac_service
+from lsst.ts.logging_and_reporting.web_app.services import almanac_service, consdb_service
 
 
 class DummyExposure:

@@ -1,6 +1,7 @@
-import lsst.ts.logging_and_reporting.utils as ut
 import numpy as np
 from jinja2 import DictLoader, Environment
+
+import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting.templates import templates
 
 # white-space: pre-wrap;

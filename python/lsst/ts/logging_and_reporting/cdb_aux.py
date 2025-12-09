@@ -1,6 +1,7 @@
-import lsst.ts.logging_and_reporting.utils as ut
 import pandas as pd
 import requests
+
+import lsst.ts.logging_and_reporting.utils as ut
 
 
 # Use https://usdf-rsp-dev.slac.stanford.edu/consdb/docs

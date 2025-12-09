@@ -1,20 +1,18 @@
-from fastapi.testclient import TestClient
 import os
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, Mock, patch
+
+import pandas as pd
 import pytest
 import requests
-from datetime import datetime, timedelta
-from unittest.mock import patch, Mock, MagicMock
-
 from bokeh.plotting import figure
-import pandas as pd
-
+from fastapi.testclient import TestClient
 from rubin_nights.connections import get_clients
 
-from lsst.ts.logging_and_reporting import __version__
-from lsst.ts.logging_and_reporting.web_app.main import app
-from lsst.ts.logging_and_reporting.utils import get_access_token
 import lsst.ts.logging_and_reporting.utils as ut
-
+from lsst.ts.logging_and_reporting import __version__
+from lsst.ts.logging_and_reporting.utils import get_access_token
+from lsst.ts.logging_and_reporting.web_app.main import app
 
 client = TestClient(app)
 
