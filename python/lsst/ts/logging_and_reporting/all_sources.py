@@ -28,13 +28,14 @@ import warnings
 from collections import Counter, defaultdict
 from urllib.parse import urlencode
 
+import pandas as pd
+
 import lsst.ts.logging_and_reporting.almanac as alm
 import lsst.ts.logging_and_reporting.consdb as cdb
 import lsst.ts.logging_and_reporting.efd as efd
 import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.source_adapters as sad
 import lsst.ts.logging_and_reporting.utils as ut
-import pandas as pd
 
 
 class AllSources:

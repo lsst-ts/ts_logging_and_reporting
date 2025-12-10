@@ -1,11 +1,12 @@
 import logging
-import numpy as np
-from astropy.table import Table
-import pandas as pd
 
+import numpy as np
+import pandas as pd
+from astropy.table import Table
+
+import lsst.ts.logging_and_reporting.utils as nd_utils
 from lsst.ts.logging_and_reporting.consdb import ConsdbAdapter
 from lsst.ts.logging_and_reporting.utils import stringify_special_floats
-import lsst.ts.logging_and_reporting.utils as nd_utils
 
 logger = logging.getLogger(__name__)
 

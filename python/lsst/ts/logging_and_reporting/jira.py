@@ -1,14 +1,14 @@
 import os
-import requests
-from urllib.parse import quote
-from pytz import timezone
 import traceback
 from datetime import datetime
+from urllib.parse import quote
 
-from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
-import lsst.ts.logging_and_reporting.utils as ut
+import requests
+from pytz import timezone
+
 import lsst.ts.logging_and_reporting.exceptions as ex
-
+import lsst.ts.logging_and_reporting.utils as ut
+from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 
 OBS_SYSTEMS_FIELD = "customfield_10476"
 

@@ -1,5 +1,6 @@
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import patch, Mock
 
 from lsst.ts.logging_and_reporting.jira import JiraAdapter, get_system_names
 
@@ -55,6 +56,7 @@ def test_get_system_names(input_data, expected):
 @patch("lsst.ts.logging_and_reporting.jira.ut.get_utc_datetime_from_dayobs_str")
 def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
     from datetime import datetime
+
     from pytz import UTC
 
     # Set up mock UTC conversion

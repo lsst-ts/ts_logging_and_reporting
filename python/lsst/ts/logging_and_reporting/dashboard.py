@@ -2,10 +2,11 @@ from collections import Counter, defaultdict
 from urllib.parse import urlencode
 from warnings import warn
 
+import requests
+
 import lsst.ts.logging_and_reporting.consdb as cdb
 import lsst.ts.logging_and_reporting.source_adapters as sad
 import lsst.ts.logging_and_reporting.utils as ut
-import requests
 
 
 class Dashboard:  # TODO Move to its own file (utils.py).

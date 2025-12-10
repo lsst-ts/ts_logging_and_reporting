@@ -1,12 +1,12 @@
+import json
+from unittest.mock import Mock, patch
+
 import numpy as np
 import pandas as pd
-import json
-
-from fastapi import Request, Depends
+from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
-from fastapi import FastAPI
-from unittest.mock import patch, Mock
-from lsst.ts.logging_and_reporting.utils import get_access_token, stringify_special_floats, make_json_safe
+
+from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe, stringify_special_floats
 
 app = FastAPI()
 

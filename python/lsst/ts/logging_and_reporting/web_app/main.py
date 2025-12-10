@@ -1,33 +1,31 @@
-from datetime import datetime, timedelta
 import logging
-from fastapi import FastAPI, Request, HTTPException, Depends
+from datetime import datetime, timedelta
+
+from bokeh.embed import json_item
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.encoders import jsonable_encoder
-from bokeh.embed import json_item
+from rubin_scheduler.scheduler.model_observatory import ModelObservatory
+from schedview.collect.visits import NIGHT_STACKERS, read_visits
+from schedview.compute.visits import add_coords_tuple
 
-from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
+from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe
 
-from .services.jira_service import get_jira_tickets
-from .services.consdb_service import (
-    get_mock_exposures,
-    get_exposures,
-    get_data_log,
-)
-from .services.almanac_service import get_almanac
-from .services.narrativelog_service import get_messages
-from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
-from .services.nightreport_service import get_night_reports
-from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, get_context_feed
-from .services.scheduler_service import create_visit_skymaps
-
-from schedview.compute.visits import add_coords_tuple
-from schedview.collect.visits import read_visits, NIGHT_STACKERS
-from rubin_scheduler.scheduler.model_observatory import ModelObservatory
-
 from .. import __version__
-
+from .services.almanac_service import get_almanac
+from .services.consdb_service import (
+    get_data_log,
+    get_exposures,
+    get_mock_exposures,
+)
+from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
+from .services.jira_service import get_jira_tickets
+from .services.narrativelog_service import get_messages
+from .services.nightreport_service import get_night_reports
+from .services.rubin_nights_service import get_context_feed, get_open_close_dome, get_time_accounting
+from .services.scheduler_service import create_visit_skymaps
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -407,9 +405,10 @@ async def survey_progress_map(
     logger.info(f"Getting survey progress map for night: {dayObs} and instrument: {instrument}")
     try:
         import time
+
         import numpy as np
-        from schedview.plot.survey import create_metric_visit_map_grid
         from rubin_sim import maf
+        from schedview.plot.survey import create_metric_visit_map_grid
 
         observatory = ModelObservatory(init_load_length=1)
 

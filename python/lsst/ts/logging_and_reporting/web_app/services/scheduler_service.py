@@ -1,29 +1,26 @@
 from collections import defaultdict
-
-import numpy as np
-import pandas as pd
-import colorcet
+from datetime import datetime
 from functools import partial
 
-from datetime import datetime
-from astropy.time import Time
-from rubin_scheduler.scheduler.model_observatory.model_observatory import ModelObservatory
-
-from rubin_scheduler.scheduler.utils import get_current_footprint
-from uranography.api import ArmillarySphere, Planisphere, make_zscale_linear_cmap
-
+import bokeh
+import colorcet
+import healpy as hp
+import numpy as np
+import pandas as pd
 import schedview.compute.astro
+from astropy.time import Time
+from bokeh.models.ui.ui_element import UIElement
+from bokeh.plotting import figure
+from rubin_scheduler.scheduler.model_observatory.model_observatory import ModelObservatory
+from rubin_scheduler.scheduler.utils import get_current_footprint
 from schedview import band_column
 from schedview.collect import load_bright_stars
 from schedview.compute.camera import LsstCameraFootprintPerimeter
 from schedview.compute.footprint import find_healpix_area_polygons
-from schedview.plot import PLOT_BAND_COLORS as LIGHT_BAND_COLORS
-import bokeh
-import healpy as hp
 from schedview.compute.maf import compute_hpix_metric_in_bands
-from bokeh.models.ui.ui_element import UIElement
-from bokeh.plotting import figure
+from schedview.plot import PLOT_BAND_COLORS as LIGHT_BAND_COLORS
 from schedview.plot.footprint import add_footprint_outlines_to_skymaps, add_footprint_to_skymaps
+from uranography.api import ArmillarySphere, Planisphere, make_zscale_linear_cmap
 
 BAND_HATCH_PATTERNS = dict(
     u="dot",

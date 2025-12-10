@@ -2,10 +2,11 @@ import collections
 import datetime as dt
 import random
 
-import lsst.ts.logging_and_reporting.utils as ut
-import lsst.ts.logging_and_reporting.views as views
 import numpy as np
 import pandas as pd
+
+import lsst.ts.logging_and_reporting.utils as ut
+import lsst.ts.logging_and_reporting.views as views
 
 """\
 Single Unified Time Log (SUTL="subtle").

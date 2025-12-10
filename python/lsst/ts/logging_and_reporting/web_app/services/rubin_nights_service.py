@@ -1,17 +1,16 @@
 import logging
-import pandas as pd
-import numpy as np
-from astropy.time import Time, TimeDelta
 
+import numpy as np
+import pandas as pd
+import rubin_nights.augment_visits as rn_aug
 import rubin_nights.dayobs_utils as rn_dayobs
 import rubin_nights.rubin_scheduler_addons as rn_sch
-import rubin_nights.augment_visits as rn_aug
-from rubin_nights.observatory_status import get_dome_open_close
+from astropy.time import Time, TimeDelta
 from rubin_nights.connections import get_clients
+from rubin_nights.observatory_status import get_dome_open_close
 from rubin_nights.scriptqueue import get_consolidated_messages
 
 from lsst.ts.logging_and_reporting.utils import stringify_special_floats
-
 
 logger = logging.getLogger(__name__)
 

@@ -14,12 +14,13 @@ import asyncio
 import datetime as dt
 import os
 
-import lsst.ts.logging_and_reporting.utils as ut
 import nest_asyncio
 import pandas as pd
 from astropy.time import Time, TimeDelta
-from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 from lsst_efd_client import EfdClient
+
+import lsst.ts.logging_and_reporting.utils as ut
+from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 
 nest_asyncio.apply()
 
