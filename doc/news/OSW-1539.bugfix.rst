@@ -1,1 +1,0 @@
-Handle errors when querying transformed EFD data.
