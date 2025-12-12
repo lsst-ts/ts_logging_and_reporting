@@ -1,3 +1,26 @@
+v0.10.0 (2025-12-12)
+====================
+
+New Features
+------------
+
+- Add an endpoint to build bokeh interactive plots and serve them via the frontend as json. (`OSW-1061 <https://rubinobs.atlassian.net//browse/OSW-1061>`_)
+- Add endpoint to retrieve the package version. (`OSW-1279 <https://rubinobs.atlassian.net//browse/OSW-1279>`_)
+
+
+Performance Enhancement
+-----------------------
+
+- Update pins for rubin-nights, schedview and rubin-sim. (`OSW-1539 <https://rubinobs.atlassian.net//browse/OSW-1539>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Fetch open dome times from rubin-nights for fault calculations and update valid overhead calculation (`OSW-1230 <https://rubinobs.atlassian.net//browse/OSW-1230>`_)
+- Specify FastAPI root_path argument to /nightlydigest/api and enable swagger docs. (`OSW-1437 <https://rubinobs.atlassian.net//browse/OSW-1437>`_)
+
+
 v0.9.1 (2025-10-21)
 ===================
 

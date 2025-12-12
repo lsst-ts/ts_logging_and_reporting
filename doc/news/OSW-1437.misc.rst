@@ -1,1 +1,0 @@
-Specify FastAPI root_path argument to /nightlydigest/api and enable swagger docs.

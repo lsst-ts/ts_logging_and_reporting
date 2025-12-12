@@ -1,1 +1,0 @@
-Update pins for rubin-nights, schedview and rubin-sim.
