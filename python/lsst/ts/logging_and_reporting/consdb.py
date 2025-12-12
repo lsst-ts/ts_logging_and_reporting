@@ -302,7 +302,21 @@ class ConsdbAdapter(SourceAdapter):
             return pd.DataFrame()  # empty
 
     def get_transformed_efd_data(self, instrument: str) -> pd.DataFrame:
-        """Query transformed EFD table for columns associated with exposures"""
+        """Query transformed EFD table for columns associated with exposures.
+
+        Columns to be retrieved are hard-coded per instrument in efd_fields.
+
+        Parameters
+        ----------
+        instrument : `str`
+            Instrument name, e.g. "LATISS", "LSSTCam"
+
+        Returns
+        -------
+        df : `pandas.DataFrame`
+            DataFrame with transformed EFD data associated with exposures.
+            Empty DataFrame if error occurs querying the Transformed EFD.
+        """
 
         # If further columns are needed, add those attributes to these
         # per-instrument channel lists
@@ -332,7 +346,12 @@ class ConsdbAdapter(SourceAdapter):
 
         sql = make_sql(table_name)
 
-        exposures = self.query(sql)
+        try:
+            exposures = self.query(sql)
+        except Exception as e:
+            msg = f"Error querying transformed EFD data from ConsDB: {e}"
+            warnings.warn(msg, category=ex.ConsdbQueryWarning, stacklevel=2)
+            return pd.DataFrame()
 
         df = pd.DataFrame(exposures)
         # TODO OSW-889 Don't remove the underscores from the column names.
