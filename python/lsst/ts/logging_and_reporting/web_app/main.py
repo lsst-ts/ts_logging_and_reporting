@@ -25,7 +25,7 @@ from .services.jira_service import get_jira_tickets
 from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import get_context_feed, get_open_close_dome, get_time_accounting
-from .services.scheduler_service import create_visit_skymaps
+from .services.scheduler_service import create_visit_skymaps, get_expected_exposures
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)

@@ -1,7 +1,8 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 
+import logging
 import bokeh
 import colorcet
 import healpy as hp
