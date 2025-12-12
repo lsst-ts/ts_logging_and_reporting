@@ -1,6 +1,7 @@
-import lsst.ts.logging_and_reporting.reports as rep
 import pandas as pd
 from IPython.display import display
+
+import lsst.ts.logging_and_reporting.reports as rep
 
 
 class AllReports:

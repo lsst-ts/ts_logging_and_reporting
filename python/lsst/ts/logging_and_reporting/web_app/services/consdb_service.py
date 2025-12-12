@@ -1,11 +1,12 @@
 import logging
-import numpy as np
-from astropy.table import Table
-import pandas as pd
 
+import numpy as np
+import pandas as pd
+from astropy.table import Table
+
+import lsst.ts.logging_and_reporting.utils as nd_utils
 from lsst.ts.logging_and_reporting.consdb import ConsdbAdapter
 from lsst.ts.logging_and_reporting.utils import stringify_special_floats
-import lsst.ts.logging_and_reporting.utils as nd_utils
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ def get_exposures(
         WHERE e.exposure_id = q.visit_id
         AND {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
         AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
+        ORDER BY e.seq_num ASC
     """
 
     sql = " ".join(ssql.split())

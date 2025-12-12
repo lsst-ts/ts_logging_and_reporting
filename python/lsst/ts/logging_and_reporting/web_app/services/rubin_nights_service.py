@@ -1,22 +1,22 @@
 import logging
-import pandas as pd
-import numpy as np
-from astropy.time import Time, TimeDelta
 
+import numpy as np
+import pandas as pd
+import rubin_nights.augment_visits as rn_aug
 import rubin_nights.dayobs_utils as rn_dayobs
 import rubin_nights.rubin_scheduler_addons as rn_sch
-import rubin_nights.augment_visits as rn_aug
-from rubin_nights.observatory_status import get_dome_open_close
+from astropy.time import Time, TimeDelta
 from rubin_nights.connections import get_clients
+from rubin_nights.observatory_status import get_dome_open_close
 from rubin_nights.scriptqueue import get_consolidated_messages
 
 from lsst.ts.logging_and_reporting.utils import stringify_special_floats
-
 
 logger = logging.getLogger(__name__)
 
 WAIT_BEFORE_SLEW = 1.45
 SETTLE = 2.0
+MAX_SCATTER = 120.0
 
 
 def get_time_accounting(
@@ -72,10 +72,10 @@ def get_time_accounting(
         visits, _ = rn_sch.add_model_slew_times(
             visits, clients["efd"], model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False
         )
-        max_scatter = 6
+
         valid_overhead = np.min(
             [
-                np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values) + max_scatter,
+                np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values) + MAX_SCATTER,
                 visits.visit_gap.values,
             ],
             axis=0,

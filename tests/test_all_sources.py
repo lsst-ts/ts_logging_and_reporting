@@ -28,8 +28,9 @@
 import datetime as dt
 import unittest
 
-import lsst.ts.logging_and_reporting.utils as ut
 import pytz
+
+import lsst.ts.logging_and_reporting.utils as ut
 
 
 class TestBackEnd(unittest.TestCase):

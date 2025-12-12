@@ -57,12 +57,13 @@ from abc import ABC
 from collections import defaultdict
 from urllib.parse import urlencode
 
+import pandas as pd
+import requests
+
 import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.parse_message as pam
 import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
-import pandas as pd
-import requests
 
 MAX_CONNECT_TIMEOUT = 7.05  # seconds
 MAX_READ_TIMEOUT = 180  # seconds

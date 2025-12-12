@@ -1,29 +1,37 @@
 import logging
-from fastapi import FastAPI, Request, HTTPException, Depends
+from datetime import datetime, timedelta
+
+from bokeh.embed import json_item
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.encoders import jsonable_encoder
-from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError, BaseLogrepError
+from rubin_scheduler.scheduler.model_observatory import ModelObservatory
+from schedview.collect.visits import NIGHT_STACKERS, read_visits
+from schedview.compute.visits import add_coords_tuple
+
+from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe
 
-from .services.jira_service import get_jira_tickets
-from .services.consdb_service import (
-    get_mock_exposures,
-    get_exposures,
-    get_data_log,
-)
+from .. import __version__
 from .services.almanac_service import get_almanac
-from .services.narrativelog_service import get_messages
+from .services.consdb_service import (
+    get_data_log,
+    get_exposures,
+    get_mock_exposures,
+)
 from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
+from .services.jira_service import get_jira_tickets
+from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
-from .services.rubin_nights_service import get_time_accounting, get_open_close_dome, get_context_feed
-
+from .services.rubin_nights_service import get_context_feed, get_open_close_dome, get_time_accounting
+from .services.scheduler_service import create_visit_skymaps
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
 
 
-app = FastAPI()
+app = FastAPI(root_path="/nightlydigest/api", docs_url="/docs", openapi_url="/openapi.json", redoc_url=None)
 
 origins = [
     "http://localhost:5173",  # Vite
@@ -43,7 +51,15 @@ app.add_middleware(
 logger.info("Starting FastAPI app")
 
 
+@app.get("/version")
+@app.get("/version/")
+async def get_version():
+    """Get the current version of the package."""
+    return JSONResponse(status_code=200, content={"version": __version__})
+
+
 @app.get("/health")
+@app.get("/health/")
 async def health():
     """Health check endpoint.
     Used by kubernetes readiness and liveness probes.
@@ -74,9 +90,6 @@ async def read_exposures(
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
 
         open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, auth_token)
-        open_dome_hours = 0
-        if not open_dome_times.empty:
-            open_dome_hours = open_dome_times["open_hours"].sum()
 
         exposures_df = get_time_accounting(
             dayObsStart,
@@ -109,6 +122,7 @@ async def read_exposures(
                     "overhead",
                     "pixel_scale_median",
                     "psf_sigma_median",
+                    "visit_gap",
                 ]
             ].to_dict(orient="records")
 
@@ -122,7 +136,7 @@ async def read_exposures(
             "sum_exposure_time": total_exposure_time,
             "on_sky_exposures_count": len(on_sky_exposures),
             "total_on_sky_exposure_time": total_on_sky_exposure_time,
-            "open_dome_hours": open_dome_hours,
+            "open_dome_times": make_json_safe(open_dome_times.to_dict(orient="records")),
         }
 
     except ConsdbQueryError as ce:
@@ -283,4 +297,169 @@ async def read_context_feed(
         }
     except Exception as e:
         logger.error(f"Error in /context-feed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/multi-night-visit-maps")
+async def multi_night_visit_maps(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    planisphereOnly: bool = False,
+    appletMode: bool = False,
+    auth_token: str = Depends(get_access_token),
+):
+    """Generate multi-night visit maps using Bokeh.
+    Parameters
+    ----------
+    request : `Request`
+        FastAPI request object.
+    dayObsStart : `int`
+        Start date in YYYYMMDD format.
+    dayObsEnd : `int`
+        End date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+    planisphereOnly : `bool`, optional
+        If True, generate only the planisphere map. Default is False.
+    appletMode : `bool`, optional
+        If True, generate maps suitable for applet display. Default is False.
+    auth_token : `str`
+        Authentication token (injected by FastAPI dependency).
+
+    Returns
+    -------
+    `dict`
+        A dictionary containing the Bokeh JSON item for the interactive map.
+    """
+    logger.info(
+        f"Getting multi night visit maps for start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+        f"and instrument: {instrument} in appletMode: {appletMode}, "
+        f"planisphereOnly: {planisphereOnly}"
+    )
+    try:
+        observatory = ModelObservatory(init_load_length=1)
+
+        dayobs_start_dt = datetime.strptime(str(dayObsStart), "%Y%m%d")
+        dayobs_end_dt = datetime.strptime(str(dayObsEnd), "%Y%m%d")
+        diff = dayobs_end_dt - dayobs_start_dt
+
+        visits = read_visits(
+            dayobs_end_dt.date() - timedelta(days=1),
+            instrument.lower(),
+            stackers=NIGHT_STACKERS,
+            num_nights=diff.days,
+        )
+
+        v_map = None
+
+        if len(visits):
+            visits = add_coords_tuple(visits)
+
+            v_map, _ = create_visit_skymaps(
+                visits=visits,
+                timezone="UTC",
+                observatory=observatory,
+                planisphere_only=planisphereOnly,
+                applet_mode=appletMode,
+                theme="DARK",
+            )
+
+        return {
+            "interactive": json_item(v_map) if v_map is not None else None,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in /multi-night-visit-maps: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/survey-progress-map")
+async def survey_progress_map(
+    request: Request,
+    dayObs: int,
+    instrument: str,
+    auth_token: str = Depends(get_access_token),
+):
+    """Generate a survey progress map for a given night using Bokeh.
+
+    Parameters
+    ----------
+    request : `Request`
+        FastAPI request object.
+    dayObs : `int`
+        Date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+    auth_token : `str`
+        Authentication token (injected by FastAPI dependency).
+
+    Returns
+    -------
+    `dict`
+        A dictionary containing the Bokeh JSON item for
+        the static survey progress map.
+    """
+    logger.info(f"Getting survey progress map for night: {dayObs} and instrument: {instrument}")
+    try:
+        import time
+
+        import numpy as np
+        from rubin_sim import maf
+        from schedview.plot.survey import create_metric_visit_map_grid
+
+        observatory = ModelObservatory(init_load_length=1)
+
+        dayobs_dt = datetime.strptime(str(dayObs), "%Y%m%d")
+
+        start_time = time.perf_counter()
+
+        visits = read_visits(dayobs_dt.date(), instrument.lower(), stackers=NIGHT_STACKERS, num_nights=50)
+
+        visits["filter"] = visits["band"]
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        logger.debug(f"read_visits() executed in {elapsed_time:.6f} seconds")
+
+        s_map = None
+
+        if len(visits):
+            start_time = time.perf_counter()
+
+            dayobs_visits = visits[visits["day_obs"] == dayObs]
+
+            previous_day_obs_dt = dayobs_dt - timedelta(days=1)
+            previous_day_obs = previous_day_obs_dt.strftime("%Y%m%d")
+
+            previous_visits = visits[visits["day_obs"] == int(previous_day_obs)]
+
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            logger.debug(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
+
+            if (
+                len(dayobs_visits)
+                and len(previous_visits)
+                and not np.all(np.isnan(dayobs_visits["fiveSigmaDepth"]))
+                and not np.all(np.isnan(previous_visits["fiveSigmaDepth"]))
+            ):
+                start_time = time.perf_counter()
+                s_map = create_metric_visit_map_grid(
+                    maf.CountMetric(col="fiveSigmaDepth", metric_name="Numbers of visits"),
+                    previous_visits.loc[np.isfinite(previous_visits["fiveSigmaDepth"]), :],
+                    visits.loc[np.isfinite(visits["fiveSigmaDepth"]), :],
+                    observatory,
+                    nside=32,
+                    use_matplotlib=False,
+                )
+                end_time = time.perf_counter()
+                elapsed_time = end_time - start_time
+                logger.debug(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+
+        return {"static": json_item(s_map) if s_map is not None else {}}
+    except Exception as e:
+        logger.error(f"Error in /survey-progress-map: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

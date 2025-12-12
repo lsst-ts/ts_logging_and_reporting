@@ -20,14 +20,14 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import datetime as dt
+import math
 import os
-import pandas as pd
-import numpy as np
-import pytz
 import time
 
-from fastapi import Request, HTTPException
-
+import numpy as np
+import pandas as pd
+import pytz
+from fastapi import HTTPException, Request
 
 # NOTE on day_obs vs dayobs:
 # Throughout Rubin, and perhaps Astonomy in general, a single night
@@ -378,11 +378,11 @@ def make_json_safe(obj):
     Recursively converts objects to be JSON serializable.
 
     This function traverses the input object, converting
-    any non-JSON-serializable types (such as NumPy integers,
-    floats, NaN, or infinity) into types that can be safely serialized.
-    Dictionaries and lists are processed recursively.
-    NumPy integer and floating types are converted to their native Python
-    counterparts. NaN and infinity values are replaced with None.
+    any non-JSON-serializable types (such as Astropy Time objects,
+    NumPy integers, floats, NaN, or infinity) into types
+    that can be safely serialized.
+    Dictionaries and lists are processed recursively. NaN and infinity values
+    are replaced with None.
 
     Parameters
     ----------
@@ -394,17 +394,59 @@ def make_json_safe(obj):
     any
         The converted object, safe for JSON serialization.
     """
+    if obj is None or isinstance(obj, (bool, str)):
+        return obj
+
     if isinstance(obj, dict):
         return {k: make_json_safe(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [make_json_safe(v) for v in obj]
-    elif isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
+    if isinstance(obj, (list, tuple)):
+        result = [make_json_safe(v) for v in obj]
+        return tuple(result) if isinstance(obj, tuple) else result
+
+    # Check for Astropy Time BEFORE NumPy array check
+    obj_type_name = type(obj).__name__
+    if obj_type_name == "Time" and hasattr(obj, "to_datetime"):
+        dt = obj.to_datetime()
+        # Handle both scalar and array Time objects
+        if isinstance(dt, np.ndarray):
+            return [make_json_safe(v) for v in dt]
+        return dt.isoformat()
+
+    if isinstance(obj, np.ndarray):
+        if obj.ndim == 0:
+            return make_json_safe(obj.item())
+        return [make_json_safe(v) for v in obj.tolist()]
+
+    if obj is pd.NaT or obj is pd.NA:
+        return None
+
+    if isinstance(obj, pd.Timestamp):
+        if pd.isnull(obj):
             return None
-        return float(obj)
-    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return obj.isoformat()
+
+    if isinstance(obj, np.datetime64):
+        if pd.isnull(obj):
+            return None
+        return pd.Timestamp(obj).isoformat()
+
+    if isinstance(obj, (pd.Timedelta, np.timedelta64)):
+        return float(pd.Timedelta(obj).total_seconds())
+
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+
+    if isinstance(obj, np.integer):
         return int(obj)
-    elif isinstance(obj, (np.floating, np.float64, np.float32)):
-        return float(obj)
-    else:
+
+    if isinstance(obj, np.floating):
+        v = float(obj)
+        return None if (np.isnan(v) or np.isinf(v)) else v
+
+    if isinstance(obj, int):
         return obj
+
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+
+    return obj

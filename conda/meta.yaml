@@ -15,7 +15,6 @@ build:
 test:
     requires:
         - ts-conda-build =0.5
-        - rubin-nights =0.6
     source_files:
         - pyproject.toml
         - python
@@ -47,4 +46,11 @@ requirements:
         - pydantic
         - uvicorn
         - rubin-scheduler =3
-        - rubin-nights =0.6
+        - rubin-nights =0.8
+        - schedview =0.20
+        - rubin-sim =2.6
+        - bokeh =3
+        - lsst-efd-client =0.12
+        - scikit-learn
+        - psycopg2 =2.9
+        - astropy-iers-data
