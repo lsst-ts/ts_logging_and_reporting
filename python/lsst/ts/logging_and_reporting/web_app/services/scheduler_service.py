@@ -1072,7 +1072,8 @@ def get_expected_exposures(
         while current_date <= end_date:
             dayobs = int(current_date.strftime("%Y%m%d"))
             try:
-                expected_exposures = fetch_sim_stats_for_night(dayobs)
+                # Can only reach sims <60 days from current date
+                expected_exposures = fetch_sim_stats_for_night(day_obs=dayobs, max_simulation_age=60)
                 visits = expected_exposures.get("nominal_visits", 0)
                 expected_exposures_list.append(visits)
                 logger.info(f"dayobs {dayobs}: {visits} expected exposures")
