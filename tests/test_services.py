@@ -62,7 +62,7 @@ def test_get_almanac(monkeypatch):
 def test_get_expected_exposures_normal_behaviour(monkeypatch):
     """Test normal behavior: 3 days, each returning 100 visits."""
 
-    def fake_fetch(dayobs):
+    def fake_fetch(*, day_obs, max_simulation_age=None):
         return {"nominal_visits": 100}
 
     monkeypatch.setattr(
@@ -81,7 +81,7 @@ def test_get_expected_exposures_missing_nominal_visits(monkeypatch):
     treat as zero.
     """
 
-    def fake_fetch(dayobs):
+    def fake_fetch(*, day_obs, max_simulation_age=None):
         return {}  # missing key
 
     monkeypatch.setattr(
@@ -97,7 +97,7 @@ def test_get_expected_exposures_missing_nominal_visits(monkeypatch):
 def test_get_expected_exposures_inner_exception(monkeypatch):
     """If one day raises inside loop, the exception is propagated."""
 
-    def fake_fetch(dayobs):
+    def fake_fetch(*, day_obs, max_simulation_age=None):
         raise RuntimeError("fail")
 
     monkeypatch.setattr(
@@ -113,8 +113,8 @@ def test_get_expected_exposures_inner_exception(monkeypatch):
 def test_get_expected_exposures_partial_failures(monkeypatch):
     """Mixed success/failure: exception should be raised on failure."""
 
-    def fake_fetch(dayobs):
-        if dayobs == 20240101:
+    def fake_fetch(*, day_obs, max_simulation_age=None):
+        if day_obs == 20240101:
             return {"nominal_visits": 50}
         else:
             raise Exception("fail")
@@ -133,7 +133,7 @@ def test_get_expected_exposures_start_greater_than_end(monkeypatch):
     """If start > end, loop never runs → sum = 0."""
     called = False
 
-    def fake_fetch(dayobs):
+    def fake_fetch(*, day_obs, max_simulation_age=None):
         nonlocal called
         called = True
         return {"nominal_visits": 9999}
@@ -172,7 +172,7 @@ def test_get_expected_exposures_invalid_date_format(monkeypatch):
     """Invalid YYYYMMDD should raise and never call fetch."""
     called = False
 
-    def fake_fetch(dayobs):
+    def fake_fetch(*, day_obs, max_simulation_age=None):
         nonlocal called
         called = True
         return {"nominal_visits": 100}
