@@ -1,3 +1,24 @@
+v0.11.0 (2025-12-19)
+====================
+
+New Features
+------------
+
+- Get expected number of exposures for Simonyi from rubin_sim. (`OSW-1166 <https://rubinobs.atlassian.net//browse/OSW-1166>`_)
+
+
+Bug Fixes
+---------
+
+- Handle errors when querying transformed EFD data. (`OSW-1539 <https://rubinobs.atlassian.net//browse/OSW-1539>`_)
+
+
+Performance Enhancement
+-----------------------
+
+- Pin rubin-scheduler to 3.20 to be more strict about version picking. (`OSW-1539 <https://rubinobs.atlassian.net//browse/OSW-1539>`_)
+
+
 v0.10.0 (2025-12-12)
 ====================
 
