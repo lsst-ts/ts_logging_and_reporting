@@ -181,13 +181,6 @@ class SourceAdapter(ABC):
             f"max_dayobs={self.max_dayobs!r})"
         )
 
-    def records_to_dataframe(self, records, wrap_columns=True):
-        df = pd.DataFrame(records)
-        if wrap_columns:
-            return ut.wrap_dataframe_columns(df)
-        else:
-            return df
-
     def protected_post(self, url, jsondata, timeout=None):
         """Do a POST against an API url.
         Do NOT stop processing when we have a problem with a URL. There
@@ -1082,8 +1075,7 @@ class ExposurelogAdapter(SourceAdapter):
                 f"post-filter={len(recs)}"
             )
         if len(recs) > 0:
-            df = pd.DataFrame(recs)[fields]
-            return ut.wrap_dataframe_columns(df)
+            return pd.DataFrame(recs)[fields]
         else:
             return pd.DataFrame()
 
