@@ -758,23 +758,21 @@ def test_exposure_entries_endpoint(mock_requests_get):
     data = response.json()
     assert "exposure_entries" in data
     expected_entry_params = [
-        "obs_id",
         "id",
         "instrument",
-        "observation_type",
-        "observation_reason",
         "day_obs",
         "seq_num",
-        "group_name",
-        "target_name",
-        "science_program",
-        "tracking_ra",
-        "tracking_dec",
-        "sky_angle",
-        "timespan_begin",
-        "timespan_end",
         "exposure_flag",
-        "exposure_time",
+        "level",
+        "tags",
+        "urls",
+        "user_id",
+        "user_agent",
+        "is_human",
+        "is_valid",
+        "date_added",
+        "date_invalidated",
+        "parent_id",
         "message_text",
     ]
     for entry in data["exposure_entries"]:

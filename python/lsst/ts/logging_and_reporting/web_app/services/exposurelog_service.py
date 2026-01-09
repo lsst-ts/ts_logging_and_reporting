@@ -114,12 +114,7 @@ def get_exposurelog_entries(
     )
 
     # Get records
-    records = adapter.exposures.get(instrument, [])
-
-    # Add message text to each record
-    for rec in records:
-        msg = adapter.messages_lut.get(rec["obs_id"])
-        rec["message_text"] = msg["message_text"] if msg else "na"
+    records = adapter.messages.get(instrument, [])
 
     if verbose:
         logger.debug(f"Fetched {len(records)} Exposure Log records for {instrument}")
