@@ -293,8 +293,7 @@ class ConsdbAdapter(SourceAdapter):
         self.exposures[instrument] = records
 
         if records:
-            df = pd.DataFrame(records)
-            return ut.wrap_dataframe_columns(df)
+            return pd.DataFrame(records)
         else:
             if self.warning:
                 msg = f"No records found for ConsDB for {instrument=}."
@@ -353,9 +352,7 @@ class ConsdbAdapter(SourceAdapter):
             warnings.warn(msg, category=ex.ConsdbQueryWarning, stacklevel=2)
             return pd.DataFrame()
 
-        df = pd.DataFrame(exposures)
-        # TODO OSW-889 Don't remove the underscores from the column names.
-        return ut.wrap_dataframe_columns(df)
+        return pd.DataFrame(exposures)
 
     # TODO Remove if this is still here after Feb 2025
     # This is here just to validate data.

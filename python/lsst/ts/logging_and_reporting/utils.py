@@ -281,14 +281,6 @@ class Server:
                 raise ValueError(f"Unset or invalid {env_var_name}: {current}")
 
 
-def wrap_dataframe_columns(df):
-    def spacify(name):
-        return str(name).replace("_", " ")
-
-    column_map = {colname: spacify(colname) for colname in df.columns}
-    return df.rename(columns=column_map)
-
-
 def get_access_token(request: Request = None):
     """Return access token to be sent in headers as Auth Bearer
 

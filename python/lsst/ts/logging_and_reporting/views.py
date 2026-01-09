@@ -1,7 +1,6 @@
 import numpy as np
 from jinja2 import DictLoader, Environment
 
-import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting.templates import templates
 
 # white-space: pre-wrap;
@@ -48,7 +47,7 @@ def decant_by_maxwidth(df, thresh):
     table_columns = list(set(df.columns.to_list()) - wide)
     dense_df = df[table_columns]
     sparse_dict = {k: "\n\n".join([s for s in v.values() if s]) for k, v in df[list(wide)].to_dict().items()}
-    return ut.wrap_dataframe_columns(dense_df), sparse_dict
+    return dense_df, sparse_dict
 
 
 # It would be better to have each template in its own HTML file
