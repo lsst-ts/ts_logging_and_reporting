@@ -1,6 +1,11 @@
 import pytest
 
-from lsst.ts.logging_and_reporting.web_app.services import almanac_service, consdb_service, scheduler_service
+from lsst.ts.logging_and_reporting.web_app.services import (
+    almanac_service,
+    consdb_service,
+    jira_service,
+    scheduler_service,
+)
 
 
 class DummyExposure:
@@ -188,3 +193,117 @@ def test_get_expected_exposures_invalid_date_format(monkeypatch):
         scheduler_service.get_expected_exposures(20241301, 20240102)
 
     assert not called
+
+
+@pytest.fixture
+def dummy_tickets():
+    """Fixture providing sample JIRA tickets for testing."""
+    return [
+        {"key": "OBS-1", "system": ["AuxTel"], "summary": "AuxTel issue"},
+        {"key": "OBS-2", "system": ["Simonyi"], "summary": "Simonyi issue"},
+        {"key": "OBS-3", "system": ["LATISS"], "summary": "LATISS issue"},
+        {"key": "OBS-4", "system": ["LSSTCam"], "summary": "LSSTCam issue"},
+        {"key": "OBS-5", "system": ["LATISS", "LSSTCam"], "summary": "Cameras issue"},
+        {"key": "OBS-6", "system": ["Facilities"], "summary": "Cameras issue"},
+        {"key": "OBS-7", "system": ["AuxTel Calibrations"], "summary": "AT calibration issue"},
+    ]
+
+
+class TestGetJiraTickets:
+    """Tests for the get_jira_tickets function."""
+
+    def test_get_jira_tickets_returns_empty_list_when_no_tickets(self, monkeypatch):
+        """Test that an empty list is returned when no tickets are found."""
+
+        class DummyJiraAdapter:
+            def __init__(self, max_dayobs, min_dayobs):
+                self.max_dayobs = max_dayobs
+                self.min_dayobs = min_dayobs
+
+            def fetch_issues(self):
+                return []
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
+        )
+
+        result = jira_service.get_jira_tickets(20240101, 20240102, "LATISS")
+        assert result == []
+
+    def test_get_jira_tickets_returns_empty_list_when_fetch_returns_none(self, monkeypatch):
+        """Test that an empty list is returned when
+        fetch_issues returns None."""
+
+        class DummyJiraAdapter:
+            def __init__(self, max_dayobs, min_dayobs):
+                self.max_dayobs = max_dayobs
+                self.min_dayobs = min_dayobs
+
+            def fetch_issues(self):
+                return None
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
+        )
+
+        result = jira_service.get_jira_tickets(20240101, 20240102, "LATISS")
+        assert result == []
+
+    def test_get_jira_tickets_filters_by_instrument_included(self, monkeypatch, dummy_tickets):
+        """Test that tickets are filtered to include
+        only specified instruments."""
+
+        class DummyJiraAdapter:
+            def __init__(self, max_dayobs, min_dayobs):
+                self.max_dayobs = max_dayobs
+                self.min_dayobs = min_dayobs
+
+            def fetch_issues(self):
+                return dummy_tickets
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
+        )
+
+        not_excluding_instruments = (
+            jira_service.INSTRUMENTS.keys() - jira_service.INSTRUMENT_EXCLUDE_MAP.keys()
+        )
+        for instrument in not_excluding_instruments:
+            result = jira_service.get_jira_tickets(20240101, 20240102, instrument)
+            included_systems = (
+                instrument,
+                jira_service.INSTRUMENTS[instrument],
+            )
+            for ticket in result:
+                assert any(included in system for included in included_systems for system in ticket["system"])
+
+    def test_get_jira_tickets_filters_by_instrument_excluded(self, monkeypatch, dummy_tickets):
+        """Test that tickets are filtered to exclude
+        specified instruments (defined in INSTRUMENT_EXCLUDE_MAP)."""
+
+        class DummyJiraAdapter:
+            def __init__(self, max_dayobs, min_dayobs):
+                self.max_dayobs = max_dayobs
+                self.min_dayobs = min_dayobs
+
+            def fetch_issues(self):
+                return dummy_tickets
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
+        )
+
+        for instrument in jira_service.INSTRUMENT_EXCLUDE_MAP:
+            result = jira_service.get_jira_tickets(20240101, 20240102, instrument)
+            excluded_systems = jira_service.INSTRUMENT_EXCLUDE_MAP[instrument]
+            match = any(
+                excluded in system
+                for excluded in excluded_systems
+                for ticket in result
+                for system in ticket["system"]
+            )
+            assert not match
