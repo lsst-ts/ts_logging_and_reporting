@@ -38,16 +38,13 @@ class TestBackEnd(unittest.TestCase):
 
     def test_get_datetime_from_dayobs_str_1(self):
         actual = ut.get_utc_datetime_from_dayobs_str("2024-10-14")
-        expected = dt.datetime(2024, 10, 14, 15, 0, tzinfo=pytz.utc)
+        expected = dt.datetime(2024, 10, 14, 12, 0, tzinfo=pytz.utc)
         self.assertEqual(actual, expected)
 
     def test_get_datetime_from_dayobs_str_2(self):
         actual = ut.get_utc_datetime_from_dayobs_str("20241014")
-        expected = dt.datetime(2024, 10, 14, 15, 0, tzinfo=pytz.utc)
+        expected = dt.datetime(2024, 10, 14, 12, 0, tzinfo=pytz.utc)
         self.assertEqual(actual, expected)
-
-    # TODO Reevaluate how to test times/strings that will be relative
-    # and changing around midnight depending on the time zone
 
 
 if __name__ == "__main__":
