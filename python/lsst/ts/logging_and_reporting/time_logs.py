@@ -115,10 +115,9 @@ def gen_timelog_frame(dayobs, noon="12:00", freq="20min"):
     """Generate a DataFrame as frame for hold multiple timelogs.
     noon: Local clock noon expressed in UTC.
     """
-    dtnoon = dt.time.fromisoformat(noon)
     idayobs = ut.dayobs_int(dayobs)
-    start_date = ut.get_utc_datetime_from_dayobs_str(dayobs, local_noon=dtnoon)
-    end_date = ut.get_utc_datetime_from_dayobs_str(idayobs + 1, local_noon=dtnoon)
+    start_date = ut.get_utc_datetime_from_dayobs_str(dayobs)
+    end_date = ut.get_utc_datetime_from_dayobs_str(idayobs + 1)
     dr = pd.date_range(start=start_date, end=end_date, freq=freq)
     df = pd.DataFrame(data=list(dr), index=dr, columns=["time"])
     return df, dr

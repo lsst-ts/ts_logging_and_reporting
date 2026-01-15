@@ -157,29 +157,25 @@ def dayobs_int(dayobs: str) -> int:
     return int(str(dayobs).replace("-", ""))
 
 
-# dayobs (str:YYYY-MM-DD or YYYYMMDD) to datetime.
-# Allow TODAY, YESTERDAY, TOMORROW
-# was: dos2dt
 def get_utc_datetime_from_dayobs_str(dayobs):
-    # Add timezone = Chile to now datetime
-    dome_tz = pytz.timezone("Chile/Continental")
-    dome_today_noon = dome_tz.localize(dt.datetime.now().replace(hour=12, minute=0, second=0, microsecond=0))
+    """Convert a dayobs string to an UTC datetime object
+    at noon (start of observing day).
 
-    dayobs_str = str(dayobs)
-    match dayobs_str.lower():
-        case "today":
-            datetime = dome_today_noon
-        case "yesterday":
-            datetime = dome_today_noon - dt.timedelta(days=1)
-        case "tomorrow":
-            datetime = dome_today_noon + dt.timedelta(days=1)
-        case _:
-            no_dash = dayobs_str.replace("-", "")
-            # noon is the start of an observing day
-            datetime = dome_tz.localize(
-                dt.datetime.strptime(no_dash, "%Y%m%d").replace(hour=12, minute=0, second=0)
-            )
-    return datetime.astimezone(pytz.utc)
+    Parameters
+    ----------
+    dayobs : `str` | `int`
+        The dayobs string in YYYY-MM-DD or YYYYMMDD.
+
+    Returns
+    -------
+    datetime : `datetime.datetime`
+        The corresponding UTC datetime at noon (start of observing day).
+    """
+    no_dash_dayobs = str(dayobs).replace("-", "")
+    datetime = dt.datetime.strptime(no_dash_dayobs, "%Y%m%d").replace(
+        hour=12, minute=0, second=0, tzinfo=pytz.UTC
+    )
+    return datetime
 
 
 dayobs2dt = get_utc_datetime_from_dayobs_str
