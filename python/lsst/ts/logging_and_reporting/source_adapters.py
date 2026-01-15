@@ -20,33 +20,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 # #############################################################################
 
-
-# TODO: This is considered Proof of Concept code.
-# Tests and documentation exist minimally or not at all since until the
-# concept is Proven, it all might be thrown away or rewritten.
-
-# NOTE on day_obs vs dayobs:
-# Throughout Rubin, and perhaps Astonomy in general, a single night
-# of observering (both before and after midnight portions) is referred
-# to using 'date_obs' or 'dateobs'.
-# Generaly its used as a single word when refering to a TYPE
-# and as two words when referring to a FIELD. But there are
-# plenty exceptions.  Nonetheless, this is the convention we use.
-# One word most of the time, two_words when its a field such as
-# in a Database or API query string.
-
-# Its common to get "dirty data" from sources.
-# Examples:
-#   - A source return values of both None (python type) and "None" (string).
-#   - Values of np.nan (numpy.float64) where py None is more approprite.
-#   - return LIST that always has one element (careful about "always")
-#   - string to represent True and False (careful of tri-state)
-#   - No type for a field when a strict one (pd.astype) would help.
-# TODO: clean up dirty data
-# TODO: Add dtypes to DFs returned by allsrc.get_sources_time_logs()
-# TODO: Every adapter should raise exception when I cannot get data.
-#       (getting empty set should not be exception)
-
 import copy
 import datetime as dt
 import itertools
@@ -66,11 +39,6 @@ MAX_CONNECT_TIMEOUT = 7.05  # seconds
 MAX_READ_TIMEOUT = 180  # seconds
 
 maximum_record_limit = 9000
-
-
-def all_endpoints(server):
-    endpoints = itertools.chain.from_iterable([sa(server_url=server).used_endpoints() for sa in adapters])
-    return list(endpoints)
 
 
 class SourceAdapter(ABC):
