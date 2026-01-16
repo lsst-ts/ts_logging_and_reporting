@@ -1,3 +1,30 @@
+v0.12.0-alpha.1 (2026-01-16)
+============================
+
+New Features
+------------
+
+- Extend get_jira_tickets service function to support excluding systems for certain instruments. (`OSW-756 <https://rubinobs.atlassian.net//browse/OSW-756>`_)
+
+
+Bug Fixes
+---------
+
+- Fix get_exposurelog_entries method to retrieve exposure logs. (`OSW-1284 <https://rubinobs.atlassian.net//browse/OSW-1284>`_)
+
+
+API Removal or Deprecation
+--------------------------
+
+- Remove wrap_dataframe_columns which replaced underscores with spaces in consdb data. (`OSW-889 <https://rubinobs.atlassian.net//browse/OSW-889>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Bump rubin-nights to v0.10 (`OSW-1687 <https://rubinobs.atlassian.net//browse/OSW-1687>`_)
+
+
 v0.11.0 (2025-12-19)
 ====================
 
