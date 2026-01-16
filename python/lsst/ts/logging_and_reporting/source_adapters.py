@@ -50,7 +50,6 @@
 import copy
 import datetime as dt
 import itertools
-import re
 import traceback
 import warnings
 from abc import ABC
@@ -61,8 +60,6 @@ import pandas as pd
 import requests
 
 import lsst.ts.logging_and_reporting.exceptions as ex
-import lsst.ts.logging_and_reporting.parse_message as pam
-import lsst.ts.logging_and_reporting.reports as rep
 import lsst.ts.logging_and_reporting.utils as ut
 
 MAX_CONNECT_TIMEOUT = 7.05  # seconds
@@ -74,33 +71,6 @@ maximum_record_limit = 9000
 def all_endpoints(server):
     endpoints = itertools.chain.from_iterable([sa(server_url=server).used_endpoints() for sa in adapters])
     return list(endpoints)
-
-
-def OBSOLETE_invalid_response(response, endpoint_url, timeout=None, verbose=False):
-    """Return error string if invalid, else return None"""
-    if verbose:
-        print(f"DEBUG invalid_response {endpoint_url=}")
-    if response.ok:
-        return None
-    else:
-        msg = f"{endpoint_url=} {timeout=} "
-        msg += f"{response.status_code=} {response.reason}"
-        try:
-            msg += f" {response.json()}"
-        except Exception as err:
-            msg += f" {response.text}; {str(err)}"
-
-        if verbose:
-            print(f"DEBUG invalid_response ERROR {msg=}")
-
-        # We want to continue when one source gets errors because
-        # other sources may not.
-        # raise ex.StatusError(msg)
-        rep.display_error(msg)
-        msg2 = "TRACEBACK (4 levels)\n"
-        msg2 += "".join(traceback.format_stack(limit=4))
-        rep.display_error(msg2)
-        return msg
 
 
 class SourceAdapter(ABC):
@@ -480,56 +450,6 @@ class NightReportAdapter(SourceAdapter):
         nig_urls = [[r.get("confluence_url", [])] for r in self.records if r.get("confluence_url") != ""]
         return set(itertools.chain.from_iterable(nig_urls))
 
-    # Nightreport
-    def day_table(
-        self,
-        datetime_field,
-        dayobs_field=None,
-        zero_message=False,
-    ):
-        """Break on TELESCOPE, DATE. Within that only show time."""
-
-        def obs_night(rec):
-            if "day_obs" in rec:
-                return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
-            else:
-                rdt = dt.datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(rdt)
-
-        def obs_date(rec):
-            rdt = dt.datetime.fromisoformat(rec[datetime_field])
-            return rdt.replace(microsecond=0)
-
-        def telescope(rec):
-            return rec["telescope"]
-
-        recs = self.records
-        if len(recs) == 0:
-            if zero_message:
-                print("Nothing to display.")
-            return
-
-        table = list()
-        # Sort by TELESCOPE, within that by OBS_DATE.
-        recs = sorted(recs, key=obs_date)
-        recs = sorted(recs, key=telescope)
-        for tele, g0 in itertools.groupby(recs, key=telescope):
-            table.append(f"### Telescope: {tele}")
-            for rec in g0:
-                # Replace 3 or more newlines with just two.
-                msg = re.sub(r"\n{3,}", "\n\n", rec["summary"].strip())
-
-                table.append(f"\n{msg}\n")
-                crew_list = rec.get("observers_crew", [])
-                crew_str = ", ".join(crew_list)
-                status = rec.get("telescope_status", "Not Available")
-                url = rec.get("confluence_url")
-                if url and len(url) > 0:
-                    table.append(f"Confluence page: {rep.mdfragmentlink(url)}")
-                table.append(f"Telescope Status: {status}")
-                table.append(f"*Authors: {crew_str}*")
-        return table
-
     # Night Report
     def get_records(
         self,
@@ -676,69 +596,6 @@ class NarrativelogAdapter(SourceAdapter):
         rurls = [r.get("urls", []) for r in self.records]
         return set(itertools.chain.from_iterable(rurls))
 
-    # Narrativelog
-    def day_table(
-        self,
-        datetime_field,
-        dayobs_field=None,
-        zero_message=False,
-        use_parser=True,
-    ):
-        """Break on DATE. Within that show time, author."""
-
-        def obs_night(rec):
-            if "day_obs" in rec:
-                return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
-            else:
-                rdt = dt.datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(rdt)
-
-        def obs_date(rec):
-            rdt = dt.datetime.fromisoformat(rec[datetime_field])
-            return rdt.replace(microsecond=0)
-
-        recs = self.records
-        if len(recs) == 0:
-            if zero_message:
-                print("Nothing to display.")
-            return
-
-        table = list()
-
-        # Sort by OBS_NIGHT within that by OBS_DATE (datetime)
-        recs = sorted(recs, key=obs_date)
-        recs = sorted(recs, key=obs_night)
-        # time_lost_type=weather is RARE
-        for tele, g0 in itertools.groupby(recs, key=obs_night):
-            for rec in g0:
-                rec_dt = str(dt.datetime.fromisoformat(rec[datetime_field]))[:16]
-
-                attrstr = ""
-                attrstr += f"**{rec_dt}**"
-                if rec.get("components"):
-                    complist = ", ".join(rec.get("components", []))
-                    attrstr += f"   **{complist}**"
-
-                if rec.get("time_lost", 0) > 0:
-                    attrstr += f" Time Lost: {rec.get('time_lost')};"
-                    attrstr += f" Time Lost Type: {rec.get('time_lost_type')};"
-                new = rec.get("error_message")
-                mdstr = ""
-                if new:
-                    msg = new
-                else:
-                    # Replace 3 or more newlines with just two.
-                    msg = rep.htmlcode(re.sub(r"\n{3,}", "\n\n", rec["message_text"].strip()))
-                    mdstr += f"- {attrstr}"
-
-                mdstr += "\n\n" + msg + "\n"
-                table.append(mdstr)
-
-                if rec.get("urls"):
-                    for url in rec.get("urls"):
-                        table.append(f"- Link: {rep.mdpathlink(url)}")
-        return table
-
     # figure out instrument name from telescope name
     def add_instrument(self, records):
         """Add 'instrument' field to records (SIDE-EFFECT)
@@ -857,7 +714,6 @@ class NarrativelogAdapter(SourceAdapter):
         # END: while
 
         self.records = self.add_instrument(recs)
-        pam.markup_errors(self.records)
         return status
 
     def verify_records(self):
@@ -971,66 +827,6 @@ class ExposurelogAdapter(SourceAdapter):
         """RETURN flattened list of all URLs."""
         rurls = [r.get("urls", []) for r in self.records]
         return set(itertools.chain.from_iterable(rurls))
-
-    # Exposurelog
-    def day_table(self, datetime_field, dayobs_field=None, zero_message=False):
-        """Break on INSTRUMENT, DATE. Within that only show time."""
-
-        def obs_night(rec):
-            if "day_obs" in rec:
-                return ut.dayobs_str(rec["day_obs"])  # -> # "YYYY-MM-DD"
-            else:
-                rdt = dt.datetime.fromisoformat(rec[datetime_field])
-                return ut.datetime_to_dayobs(rdt)
-
-        def obs_date(rec):
-            rdt = dt.datetime.fromisoformat(rec[datetime_field])
-            return rdt.replace(microsecond=0)
-
-        def instrument(rec):
-            return rec["instrument"]
-
-        def obs_id(rec):
-            return rec["obs_id"]
-
-        recs = self.records
-        if len(recs) == 0:
-            if zero_message:
-                print("Nothing to display.")
-            return
-
-        table = list()
-        # Sort by INSTRUMENT, then by OBS_ID.
-        recs = sorted(recs, key=obs_id)
-        recs = sorted(recs, key=instrument)
-        for instrum, inst_grp in itertools.groupby(recs, key=instrument):
-            inst_list = list(inst_grp)
-            table.append(f"### Instrument: {instrum} ({len(inst_list)})")
-            for obsid, obs_grp in itertools.groupby(inst_list, key=obs_id):
-                obs_list = list(obs_grp)
-                rec = obs_list[0]
-
-                attrstr = f"{obsid} : {rec[datetime_field]}"
-                for rec in obs_list:
-                    eflag = rec.get("exposure_flag")
-                    if eflag == "junk":
-                        flag = rep.htmlbad
-                    elif eflag == "questionable":
-                        flag = rep.htmlquestion
-                    else:  # "none", the literal string in API!
-                        # value changed to "good" in adapter after read
-                        flag = rep.htmlgood
-                    msg = rec["message_text"].strip()
-                    plinks = [rep.mdpathlink(url) for url in rec.get("urls")]
-                    links = ", ".join(plinks)
-                    linkstr = "" if links == "" else f"\n    - Links: {links}"
-
-                    # (BLACK workaround)
-                    str = ""
-                    str += f"* {attrstr}"
-                    str += f"\n    - {flag}`{msg}`{linkstr}"
-                    table.append(str)
-        return table
 
     # /exposurelog/exposures?instrument=LSSTComCamSim
     def exposure_detail(
