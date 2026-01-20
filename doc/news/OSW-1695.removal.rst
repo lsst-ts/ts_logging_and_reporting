@@ -1,1 +1,1 @@
-Removing unused MVP files
+Remove unused MVP files
