@@ -47,9 +47,10 @@ def get_exposures(
               e.s_dec, e.s_ra, e.sky_rotation,
               q.zero_point_median, q.visit_id,
               q.pixel_scale_median, q.psf_sigma_median
-        FROM cdb_{telescope}.exposure e, cdb_{telescope}.visit1_quicklook q
-        WHERE e.exposure_id = q.visit_id
-        AND {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
+        FROM cdb_{telescope}.exposure e
+        LEFT JOIN cdb_{telescope}.visit1_quicklook q
+           ON e.exposure_id = q.visit_id
+        WHERE {nd_utils.dayobs_int(cons_db.min_dayobs)} <= e.day_obs
         AND e.day_obs < {nd_utils.dayobs_int(cons_db.max_dayobs)}
         ORDER BY e.seq_num ASC
     """
@@ -94,7 +95,7 @@ def get_data_log(
     transformed_efd_data = cons_db.get_transformed_efd_data(instrument=telescope)
     if len(data_log) > 0 and len(transformed_efd_data) > 0:
         # Add transformed efd dataframe to data_log dataframe
-        data_log = pd.merge(data_log, transformed_efd_data, on="exposure_id", how="inner")
+        data_log = pd.merge(data_log, transformed_efd_data, on="exposure id", how="left")
 
     # Convert special floats (nans and infs) to strings
     # This ensures that JSON serialisation does not fail
