@@ -95,7 +95,7 @@ def get_data_log(
     transformed_efd_data = cons_db.get_transformed_efd_data(instrument=telescope)
     if len(data_log) > 0 and len(transformed_efd_data) > 0:
         # Add transformed efd dataframe to data_log dataframe
-        data_log = pd.merge(data_log, transformed_efd_data, on="exposure id", how="left")
+        data_log = pd.merge(data_log, transformed_efd_data, on="exposure_id", how="left")
 
     # Convert special floats (nans and infs) to strings
     # This ensures that JSON serialisation does not fail
