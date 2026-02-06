@@ -34,6 +34,8 @@ def get_system_names(jira_system_field):
 
 
 class JiraAdapter(SourceAdapter):
+    EXCLUDED_STATUSES = ["Cancelled"]
+
     def __init__(
         self,
         *,
@@ -113,8 +115,11 @@ class JiraAdapter(SourceAdapter):
             end_dayobs_str = end_dayobs_user.strftime("%Y-%m-%d %H:%M")
 
             # JQL query to get all issues in the OBS project created between
+            # the specified dayobs range, excluding certain statuses
+            status_exclusions = " ".join(f'AND status != "{s}"' for s in self.EXCLUDED_STATUSES)
             jql_query = (
-                f'project = OBS AND ((created >= "{start_dayobs_str}" '
+                f"project = OBS {status_exclusions} "
+                f'AND ((created >= "{start_dayobs_str}" '
                 f'AND created < "{end_dayobs_str}") '
                 f'OR (updated >= "{start_dayobs_str}" '
                 f'AND updated < "{end_dayobs_str}"))'

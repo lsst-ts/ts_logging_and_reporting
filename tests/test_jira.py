@@ -1,4 +1,5 @@
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 import pytest
 
@@ -84,7 +85,7 @@ def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
                     "status": {"name": "Open"},
                     "customfield_10476": [[{"name": "Simonyi"}]],
                 },
-            }
+            },
         ]
     }
 
@@ -96,6 +97,11 @@ def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
 
     adapter = JiraAdapter(min_dayobs="20250101", max_dayobs="20250102")
     result = adapter.get_jira_obs_report()
+
+    # Verify that the Jira JQL query included the excluded statuses
+    called_url = mock_requests_get.call_args.args[0]
+    status_exclusions = " ".join(f'AND status != "{s}"' for s in adapter.EXCLUDED_STATUSES)
+    assert quote(status_exclusions) in called_url
 
     assert isinstance(result, list)
     assert result[0]["key"] == "OBS-999"
