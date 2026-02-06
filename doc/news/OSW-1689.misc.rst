@@ -1,0 +1,1 @@
+Extend JiraAdapter to include time lost from OBS Jira issues.
