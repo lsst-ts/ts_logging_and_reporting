@@ -1,0 +1,1 @@
+Extend JiraAdapter to allow excluding issues with certain statuses.
