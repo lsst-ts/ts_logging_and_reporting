@@ -3,7 +3,12 @@ from urllib.parse import quote
 
 import pytest
 
-from lsst.ts.logging_and_reporting.jira import JiraAdapter, get_system_names
+from lsst.ts.logging_and_reporting.jira import (
+    OBS_SYSTEMS_FIELD,
+    TIME_LOST_FIELD,
+    JiraAdapter,
+    get_system_names,
+)
 
 
 # ------------------------
@@ -83,7 +88,19 @@ def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
                     "updated": "2025-01-01T12:00:00.000Z",
                     "created": "2025-01-01T11:00:00.000Z",
                     "status": {"name": "Open"},
-                    "customfield_10476": [[{"name": "Simonyi"}]],
+                    OBS_SYSTEMS_FIELD: [[{"name": "Simonyi"}]],
+                    TIME_LOST_FIELD: 2.0,
+                },
+            },
+            {
+                "key": "OBS-998",
+                "fields": {
+                    "summary": "Test issue 2",
+                    "updated": "2025-01-01T14:00:00.000Z",
+                    "created": "2025-01-01T13:00:00.000Z",
+                    "status": {"name": "To Do"},
+                    OBS_SYSTEMS_FIELD: [[{"name": "AuxTel"}]],
+                    TIME_LOST_FIELD: None,
                 },
             },
         ]
@@ -107,3 +124,8 @@ def test_get_jira_obs_report(mock_get_utc, mock_requests_get):
     assert result[0]["key"] == "OBS-999"
     assert result[0]["system"] == ["Simonyi"]
     assert result[0]["updated"] == "2025-01-01 12:00:00"
+    assert result[0]["time_lost"] == 2.0
+    assert result[1]["key"] == "OBS-998"
+    assert result[1]["system"] == ["AuxTel"]
+    assert result[1]["updated"] == "2025-01-01 14:00:00"
+    assert result[1]["time_lost"] is None

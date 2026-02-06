@@ -11,6 +11,7 @@ import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 
 OBS_SYSTEMS_FIELD = "customfield_10476"
+TIME_LOST_FIELD = "customfield_10106"
 
 
 def get_system_names(jira_system_field):
@@ -35,6 +36,16 @@ def get_system_names(jira_system_field):
 
 class JiraAdapter(SourceAdapter):
     EXCLUDED_STATUSES = ["Cancelled"]
+    ISSUE_FIELDS = [
+        "key",
+        "summary",
+        "updated",
+        "created",
+        "status",
+        "system",
+        OBS_SYSTEMS_FIELD,
+        TIME_LOST_FIELD,
+    ]
 
     def __init__(
         self,
@@ -124,7 +135,7 @@ class JiraAdapter(SourceAdapter):
                 f'OR (updated >= "{start_dayobs_str}" '
                 f'AND updated < "{end_dayobs_str}"))'
             )
-            fields = f"key,summary,updated,created,status,system,{OBS_SYSTEMS_FIELD}"
+            fields = ",".join(self.ISSUE_FIELDS)
             url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/search/jql?jql={quote(jql_query)}&fields={fields}"
             response = requests.get(url, headers=headers)
             response.raise_for_status()
@@ -156,6 +167,7 @@ class JiraAdapter(SourceAdapter):
                 >= start_dayobs_user
                 and datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z") < end_dayobs_user,
                 "url": f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{issue['key']}",
+                "time_lost": issue["fields"][TIME_LOST_FIELD],
             }
             for issue in issues
         ]
