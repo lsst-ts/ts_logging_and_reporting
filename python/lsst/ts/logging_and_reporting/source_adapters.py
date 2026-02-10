@@ -26,7 +26,6 @@ import itertools
 import traceback
 import warnings
 from abc import ABC
-from collections import defaultdict
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -403,11 +402,6 @@ class NightReportAdapter(SourceAdapter):
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
 
-        # Load the data (records) we need from relevant endpoints
-        if self.min_date:
-            self.hack_reconnect_after_idle()
-            self.status[self.primary_endpoint] = self.get_records()
-
     @property
     def sources(self):
         return {"Nightreport API": (f"{self.server}/{self.service}/{self.primary_endpoint}")}
@@ -474,14 +468,6 @@ class NightReportAdapter(SourceAdapter):
             print(f"Debug get_records-2 {len(self.records)=} {status=}")
 
         return status
-
-    def nightly_tickets(self):
-        tickets = defaultdict(set)  # tickets[day_obs] = {ticket_url, ...}
-        for r in self.records:
-            ticket_url = r["confluence_url"]
-            if ticket_url:
-                tickets[r["day_obs"]].add(ticket_url)
-        return {dayobs: list(urls) for dayobs, urls in tickets.items()}
 
 
 class NarrativelogAdapter(SourceAdapter):
