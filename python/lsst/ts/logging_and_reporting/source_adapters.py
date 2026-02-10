@@ -491,14 +491,6 @@ class NarrativelogAdapter(SourceAdapter):
         "urls",
         "user_agent",
         "user_id",
-        # ## The following are deprecated. Removed in v1.0.0.
-        # ## Use 'components_path' (components_json) instead
-        # "subsystems",
-        # "systems",
-        # "cscs",
-        # "components",
-        # "primary_hardware_components",
-        # "primary_software_components",
         "components_json",
     }
     default_record_limit = 1000  # Adapter specific default
@@ -534,11 +526,6 @@ class NarrativelogAdapter(SourceAdapter):
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
-
-        # Load the data (records) we need from relevant endpoints
-        if self.min_date:
-            self.hack_reconnect_after_idle()
-            self.status[self.primary_endpoint] = self.get_records()
 
     @property
     def sources(self):
@@ -669,14 +656,6 @@ class NarrativelogAdapter(SourceAdapter):
 
         self.records = self.add_instrument(recs)
         return status
-
-    def verify_records(self):
-        telescope_fault_loss = [
-            (r["date_added"], r["time_lost"], r["time_lost_type"], r["components"])
-            for r in self.records
-            if r["time_lost"] > 0
-        ]
-        return telescope_fault_loss
 
     # END: class NarrativelogAdapter
 
