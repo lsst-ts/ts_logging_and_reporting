@@ -1,3 +1,37 @@
+v0.12.0-alpha.6 (2026-02-12)
+============================
+
+New Features
+------------
+
+- Extend get_jira_tickets service function to support excluding systems for certain instruments. (`OSW-756 <https://rubinobs.atlassian.net//browse/OSW-756>`_)
+
+
+Bug Fixes
+---------
+
+- Fix get_exposurelog_entries method to retrieve exposure logs. (`OSW-1284 <https://rubinobs.atlassian.net//browse/OSW-1284>`_)
+- Fix some records not appearing in datalog and plots pages (`OSW-1569 <https://rubinobs.atlassian.net//browse/OSW-1569>`_)
+- Fix error fetching datalog (`OSW-1773 <https://rubinobs.atlassian.net//browse/OSW-1773>`_)
+
+
+API Removal or Deprecation
+--------------------------
+
+- Remove files that depended on IPython. (`OSW-535 <https://rubinobs.atlassian.net//browse/OSW-535>`_)
+- Remove wrap_dataframe_columns which replaced underscores with spaces in consdb data. (`OSW-889 <https://rubinobs.atlassian.net//browse/OSW-889>`_)
+- Remove unused MVP files (`OSW-1695 <https://rubinobs.atlassian.net//browse/OSW-1695>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Extend JiraAdapter to allow excluding issues with certain statuses. (`OSW-772 <https://rubinobs.atlassian.net//browse/OSW-772>`_)
+- Bump rubin-nights to v0.10 (`OSW-1687 <https://rubinobs.atlassian.net//browse/OSW-1687>`_)
+- Extend JiraAdapter to include time lost from OBS Jira issues. (`OSW-1689 <https://rubinobs.atlassian.net//browse/OSW-1689>`_)
+- Bump rubin-scheduler to v3.21. (`OSW-1763 <https://rubinobs.atlassian.net//browse/OSW-1763>`_)
+
+
 v0.11.0 (2025-12-19)
 ====================
 
