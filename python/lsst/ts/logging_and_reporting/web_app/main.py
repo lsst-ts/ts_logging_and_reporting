@@ -362,20 +362,56 @@ async def multi_night_visit_maps(
     try:
         observatory = ModelObservatory(init_load_length=1)
 
-        dayobs_start_dt = datetime.strptime(str(dayObsStart), "%Y%m%d")
-        dayobs_end_dt = datetime.strptime(str(dayObsEnd), "%Y%m%d")
-        diff = dayobs_end_dt - dayobs_start_dt
+        from rubin_nights.augment_visits import (
+            augment_visits,
+        )  # needed if using our consdb adapter like it is the case for time accounting data
+        from rubin_nights import rubin_sim_addons as rn_sim
+        import pandas as pd
+        import lsst.ts.logging_and_reporting.utils as nd_utils
+        from lsst.ts.logging_and_reporting.consdb import ConsdbAdapter
+        from lsst.ts.logging_and_reporting.utils import stringify_special_floats
 
-        visits = read_visits(
-            dayobs_end_dt.date() - timedelta(days=1),
-            instrument.lower(),
-            stackers=NIGHT_STACKERS,
-            num_nights=diff.days,
+        # using rubin_nights connections
+        # import rubin_nights.dayobs_utils as rn_dayobs
+        # from rubin_nights.connections import get_clients
+        # from astropy.time import Time, TimeDelta
+
+        # clients = get_clients(auth_token=auth_token)
+        # t_start =
+        #   Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00",
+        #   format="isot", scale="utc")
+
+        # t_end = Time(
+        #     f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00",
+        #     format="isot",
+        #     scale="utc",
+        # )
+        # visits = clients['consdb'].get_visits(
+        # "lsstcam", t_start, t_end, augment=True)
+
+        # using consdb adapter
+        cons_db = ConsdbAdapter(
+            server_url=nd_utils.Server.get_url(),
+            max_dayobs=dayObsEnd,
+            min_dayobs=dayObsStart,
+            auth_token=auth_token,
         )
+
+        exposures_df = cons_db.get_exposures(instrument=instrument)
+        exposures_df_safe = exposures_df.map(stringify_special_floats)
+        visits = augment_visits(exposures_df_safe, "lsstcam")
 
         v_map = None
 
         if len(visits):
+            # drop visits with no RA/Dec, since we can't plot them on the sky
+            visits.dropna(subset=["s_ra"], inplace=True)
+            opsdb = rn_sim.consdb_to_opsim(visits)
+            opsdb_rec = opsdb.to_records()
+            for stacker in NIGHT_STACKERS:
+                opsdb_rec = stacker.run(opsdb_rec)
+            visits = pd.DataFrame(opsdb_rec)
+
             visits = add_coords_tuple(visits)
 
             v_map, _ = create_visit_skymaps(
