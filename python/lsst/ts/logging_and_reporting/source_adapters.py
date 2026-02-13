@@ -227,23 +227,6 @@ class SourceAdapter(ABC):
             print(f"DEBUG protected_get: FAIL: {result=}")
         return ok, result, code
 
-    def hack_reconnect_after_idle(self):
-        """Do a dummy query to a service to force a DB reconnect.
-
-        When a connection has been idle for some time, it disconnects
-        such that the following API call returns zero records. This
-        HACK gets around this problem.
-
-        TODO After DM-43835 is fixed, remove this hack.
-        """
-        endpoint = f"{self.server}/{self.service}/{self.primary_endpoint}"
-        qparams = dict(limit=2)  # API requires > 1 !
-        url = f"{endpoint}?{urlencode(qparams)}"
-        try:
-            requests.get(url, timeout=self.timeout, headers=ut.get_auth_header(self.token))
-        except Exception:
-            pass  # this is a hack to force reconnect. Response irrelevent.
-
     def get_status(self, endpoint=None):
         return self.status.get(endpoint or self.primary_endpoint)
 
@@ -315,7 +298,6 @@ class SourceAdapter(ABC):
         return used
 
     def check_endpoints(self, verbose=True):
-        self.hack_reconnect_after_idle()
         if verbose:
             msg = f"Try to connect ({self.timeout=}) to each endpoint of "
             msg += f"{self.server}/{self.service} "
@@ -759,7 +741,6 @@ class ExposurelogAdapter(SourceAdapter):
         return set(itertools.chain.from_iterable(rurls))
 
     def check_endpoints(self, verbose=True):
-        self.hack_reconnect_after_idle()
         if verbose:
             msg = "Try to connect ({self.timeout=}) to each endpoint of "
             msg += f"{self.server}/{self.service} "
