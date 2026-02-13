@@ -206,3 +206,42 @@ def get_context_feed(
     except Exception as e:
         logger.error(f"Error retrieving Context Feed data from rubin_nights: {e}", exc_info=True)
         return []
+
+
+def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: str):
+    """Get visits from rubin-nights for a given dayObs range and instrument.
+    Parameters
+    ----------
+    dayObsStart : int
+        The starting dayObs (observation day) for which to retrieve visits.
+    dayObsEnd : int
+        The ending dayObs (observation day) for which to retrieve visits.
+    instrument : str
+        The name of the instrument for which to retrieve visits.
+    auth_token : str
+        Authentication token to connect to consdb.
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the visits.
+        Returns an empty DataFrame if an error occurs.
+    """
+    logger.info(
+        f"Getting visits using rubin-nights for dayObsStart: {dayObsStart}, "
+        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+    )
+    try:
+        clients = get_clients(auth_token=auth_token)
+        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format="isot", scale="utc")
+
+        t_end = Time(
+            f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00",
+            format="isot",
+            scale="utc",
+        )
+        visits = clients["consdb"].get_visits(instrument.lower(), t_start, t_end, augment=True)
+        return visits
+
+    except Exception as e:
+        logger.error(f"Error getting visits using rubin-nights: {e}", exc_info=True)
+        return pd.DataFrame()

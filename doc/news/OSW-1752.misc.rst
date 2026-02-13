@@ -1,0 +1,1 @@
+Update visit maps endpoint to query consdb using rubin-nights

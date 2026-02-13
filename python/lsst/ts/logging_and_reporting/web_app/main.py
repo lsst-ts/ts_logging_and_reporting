@@ -7,8 +7,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from rubin_scheduler.scheduler.model_observatory import ModelObservatory
-from schedview.collect.visits import NIGHT_STACKERS, read_visits
-from schedview.compute.visits import add_coords_tuple
 
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe
@@ -24,8 +22,13 @@ from .services.exposurelog_service import get_exposure_flags, get_exposurelog_en
 from .services.jira_service import get_jira_tickets
 from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
-from .services.rubin_nights_service import get_context_feed, get_open_close_dome, get_time_accounting
-from .services.scheduler_service import create_visit_skymaps, get_expected_exposures
+from .services.rubin_nights_service import (
+    get_context_feed,
+    get_open_close_dome,
+    get_time_accounting,
+    get_visits,
+)
+from .services.scheduler_service import create_visit_skymaps, get_expected_exposures, prepare_visit_maps_data
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -360,60 +363,12 @@ async def multi_night_visit_maps(
         f"planisphereOnly: {planisphereOnly}"
     )
     try:
-        observatory = ModelObservatory(init_load_length=1)
-
-        from rubin_nights.augment_visits import (
-            augment_visits,
-        )  # needed if using our consdb adapter like it is the case for time accounting data
-        from rubin_nights import rubin_sim_addons as rn_sim
-        import pandas as pd
-        import lsst.ts.logging_and_reporting.utils as nd_utils
-        from lsst.ts.logging_and_reporting.consdb import ConsdbAdapter
-        from lsst.ts.logging_and_reporting.utils import stringify_special_floats
-
-        # using rubin_nights connections
-        # import rubin_nights.dayobs_utils as rn_dayobs
-        # from rubin_nights.connections import get_clients
-        # from astropy.time import Time, TimeDelta
-
-        # clients = get_clients(auth_token=auth_token)
-        # t_start =
-        #   Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00",
-        #   format="isot", scale="utc")
-
-        # t_end = Time(
-        #     f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00",
-        #     format="isot",
-        #     scale="utc",
-        # )
-        # visits = clients['consdb'].get_visits(
-        # "lsstcam", t_start, t_end, augment=True)
-
-        # using consdb adapter
-        cons_db = ConsdbAdapter(
-            server_url=nd_utils.Server.get_url(),
-            max_dayobs=dayObsEnd,
-            min_dayobs=dayObsStart,
-            auth_token=auth_token,
-        )
-
-        exposures_df = cons_db.get_exposures(instrument=instrument)
-        exposures_df_safe = exposures_df.map(stringify_special_floats)
-        visits = augment_visits(exposures_df_safe, "lsstcam")
-
+        visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         v_map = None
 
         if len(visits):
-            # drop visits with no RA/Dec, since we can't plot them on the sky
-            visits.dropna(subset=["s_ra"], inplace=True)
-            opsdb = rn_sim.consdb_to_opsim(visits)
-            opsdb_rec = opsdb.to_records()
-            for stacker in NIGHT_STACKERS:
-                opsdb_rec = stacker.run(opsdb_rec)
-            visits = pd.DataFrame(opsdb_rec)
-
-            visits = add_coords_tuple(visits)
-
+            visits = prepare_visit_maps_data(visits)
+            observatory = ModelObservatory(init_load_length=1)
             v_map, _ = create_visit_skymaps(
                 visits=visits,
                 timezone="UTC",
@@ -422,7 +377,6 @@ async def multi_night_visit_maps(
                 applet_mode=appletMode,
                 theme="DARK",
             )
-
         return {
             "interactive": json_item(v_map) if v_map is not None else None,
         }
@@ -464,6 +418,7 @@ async def survey_progress_map(
 
         import numpy as np
         from rubin_sim import maf
+        from schedview.collect.visits import NIGHT_STACKERS, read_visits
         from schedview.plot.survey import create_metric_visit_map_grid
 
         observatory = ModelObservatory(init_load_length=1)
