@@ -28,7 +28,6 @@ import warnings
 from abc import ABC
 from urllib.parse import urlencode
 
-import pandas as pd
 import requests
 
 import lsst.ts.logging_and_reporting.exceptions as ex
@@ -719,10 +718,8 @@ class ExposurelogAdapter(SourceAdapter):
         self.instruments = dict()  # dict[instrument] = registry
 
         self.exposures = dict()  # dd[instrument] = [rec, ...]
-
         # Load the data (records) we need from relevant endpoints
         # in dependency order.
-        self.hack_reconnect_after_idle()
         self.status["instruments"] = self.get_instruments()
         for instrument in self.instruments.keys():
             endpoint = f"exposures.{instrument}"
@@ -760,53 +757,6 @@ class ExposurelogAdapter(SourceAdapter):
         """RETURN flattened list of all URLs."""
         rurls = [r.get("urls", []) for r in self.records]
         return set(itertools.chain.from_iterable(rurls))
-
-    # /exposurelog/exposures?instrument=LSSTComCamSim
-    def exposure_detail(
-        self,
-        instrument,
-        science_program=None,
-        observation_type=None,
-        observation_reason=None,
-    ):
-        fields = [
-            "exposure_flag",  # joined from exposures.messages
-            "obs_id",
-            "timespan_begin",  # 'time',
-            "seq_num",
-            "observation_type",
-            "observation_reason",
-            "science_program",
-            "exposure_time",
-            # 'physical_filter',
-            # 'nimage',
-            # 'hasPD',
-            # 'metadata',
-        ]
-        program = science_program and science_program.lower()
-        otype = observation_type and observation_type.lower()
-        reason = observation_reason and observation_reason.lower()
-        recs = [
-            r
-            for r in self.exposures[instrument]
-            if ((program is None) or (r["science_program"].lower() == program))
-            and ((otype is None) or (r["observation_type"].lower() == otype))
-            and ((reason is None) or (r["observation_reason"].lower() == reason))
-        ]
-        if self.verbose:
-            print(
-                f"exposure_detail({instrument}, "
-                f"{science_program=},{observation_type=},{observation_reason=}):"
-            )
-            print(
-                f"{program=} {otype=} {reason=} "
-                f"pre-filter={len(self.exposures[instrument])} "
-                f"post-filter={len(recs)}"
-            )
-        if len(recs) > 0:
-            return pd.DataFrame(recs)[fields]
-        else:
-            return pd.DataFrame()
 
     def check_endpoints(self, verbose=True):
         self.hack_reconnect_after_idle()
