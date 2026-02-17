@@ -998,19 +998,19 @@ def mock_conditions():
     return mock_cond
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.prepare_visit_maps_data")
 @patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
 @patch("lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps")
-@patch("lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple")
 def test_visit_maps_applet_mode_planisphere_only(
-    mock_add_coords,
     mock_create_skymaps,
     mock_observatory,
-    mock_read_visits,
+    mock_prepare_visit_maps_data,
+    mock_get_visits,
     sample_visit_data_for_visit_maps,
 ):
-    mock_read_visits.return_value = sample_visit_data_for_visit_maps
-    mock_add_coords.return_value = sample_visit_data_for_visit_maps
+    mock_get_visits.return_value = sample_visit_data_for_visit_maps
+    mock_prepare_visit_maps_data.return_value = sample_visit_data_for_visit_maps
 
     dummy_fig = figure(title="Test Figure")
     mock_create_skymaps.return_value = (dummy_fig, {})
@@ -1038,7 +1038,7 @@ def test_visit_maps_applet_mode_planisphere_only(
     assert "target_id" in data["interactive"]
     assert "root_id" in data["interactive"]
 
-    mock_read_visits.assert_called_once()
+    mock_get_visits.assert_called_once()
     mock_create_skymaps.assert_called_once()
 
     call_kwargs = mock_create_skymaps.call_args[1]
@@ -1049,19 +1049,19 @@ def test_visit_maps_applet_mode_planisphere_only(
     app.dependency_overrides.pop(get_access_token, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.prepare_visit_maps_data")
 @patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
 @patch("lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps")
-@patch("lsst.ts.logging_and_reporting.web_app.main.add_coords_tuple")
 def test_visit_maps_full_mode_both_maps(
-    mock_add_coords,
     mock_create_skymaps,
     mock_observatory,
-    mock_read_visits,
+    mock_prepare_visit_maps_data,
+    mock_get_visits,
     sample_visit_data_for_visit_maps,
 ):
-    mock_read_visits.return_value = sample_visit_data_for_visit_maps
-    mock_add_coords.return_value = sample_visit_data_for_visit_maps
+    mock_get_visits.return_value = sample_visit_data_for_visit_maps
+    mock_prepare_visit_maps_data.return_value = sample_visit_data_for_visit_maps
 
     dummy_fig = figure(title="Test Figure")
     mock_create_skymaps.return_value = (dummy_fig, {})
@@ -1088,9 +1088,8 @@ def test_visit_maps_full_mode_both_maps(
     assert "target_id" in data["interactive"]
     assert "root_id" in data["interactive"]
 
-    mock_read_visits.assert_called_once()
-    call_kwargs = mock_read_visits.call_args[1]
-    assert call_kwargs["num_nights"] == 3
+    mock_get_visits.assert_called_once()
+    call_kwargs = mock_get_visits.call_args[1]
 
     call_kwargs = mock_create_skymaps.call_args[1]
     assert call_kwargs["planisphere_only"] is False
@@ -1099,14 +1098,14 @@ def test_visit_maps_full_mode_both_maps(
     app.dependency_overrides.pop(get_access_token, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
 @patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
 def test_visit_maps_no_visits_data(
     mock_observatory,
-    mock_read_visits,
+    mock_get_visits,
 ):
     # empty visits DataFrame
-    mock_read_visits.return_value = pd.DataFrame()
+    mock_get_visits.return_value = pd.DataFrame()
     mock_observatory_instance = MagicMock()
     mock_observatory.return_value = mock_observatory_instance
 
@@ -1130,13 +1129,13 @@ def test_visit_maps_no_visits_data(
     app.dependency_overrides.pop(get_access_token, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.read_visits")
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
 @patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
 def test_visit_maps_read_visits_exception(
     mock_observatory,
-    mock_read_visits,
+    mock_get_visits,
 ):
-    mock_read_visits.side_effect = Exception("Database connection error")
+    mock_get_visits.side_effect = Exception("Database connection error")
 
     mock_observatory_instance = MagicMock()
     mock_observatory.return_value = mock_observatory_instance

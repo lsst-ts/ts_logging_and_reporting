@@ -7,8 +7,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from rubin_scheduler.scheduler.model_observatory import ModelObservatory
-from schedview.collect.visits import NIGHT_STACKERS, read_visits
-from schedview.compute.visits import add_coords_tuple
 
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe
@@ -24,8 +22,13 @@ from .services.exposurelog_service import get_exposure_flags, get_exposurelog_en
 from .services.jira_service import get_jira_tickets
 from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
-from .services.rubin_nights_service import get_context_feed, get_open_close_dome, get_time_accounting
-from .services.scheduler_service import create_visit_skymaps, get_expected_exposures
+from .services.rubin_nights_service import (
+    get_context_feed,
+    get_open_close_dome,
+    get_time_accounting,
+    get_visits,
+)
+from .services.scheduler_service import create_visit_skymaps, get_expected_exposures, prepare_visit_maps_data
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -360,24 +363,12 @@ async def multi_night_visit_maps(
         f"planisphereOnly: {planisphereOnly}"
     )
     try:
-        observatory = ModelObservatory(init_load_length=1)
-
-        dayobs_start_dt = datetime.strptime(str(dayObsStart), "%Y%m%d")
-        dayobs_end_dt = datetime.strptime(str(dayObsEnd), "%Y%m%d")
-        diff = dayobs_end_dt - dayobs_start_dt
-
-        visits = read_visits(
-            dayobs_end_dt.date() - timedelta(days=1),
-            instrument.lower(),
-            stackers=NIGHT_STACKERS,
-            num_nights=diff.days,
-        )
-
+        visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         v_map = None
 
         if len(visits):
-            visits = add_coords_tuple(visits)
-
+            visits = prepare_visit_maps_data(visits)
+            observatory = ModelObservatory(init_load_length=1)
             v_map, _ = create_visit_skymaps(
                 visits=visits,
                 timezone="UTC",
@@ -386,7 +377,6 @@ async def multi_night_visit_maps(
                 applet_mode=appletMode,
                 theme="DARK",
             )
-
         return {
             "interactive": json_item(v_map) if v_map is not None else None,
         }
@@ -428,6 +418,7 @@ async def survey_progress_map(
 
         import numpy as np
         from rubin_sim import maf
+        from schedview.collect.visits import NIGHT_STACKERS, read_visits
         from schedview.plot.survey import create_metric_visit_map_grid
 
         observatory = ModelObservatory(init_load_length=1)

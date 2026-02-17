@@ -12,14 +12,17 @@ import schedview.compute.astro
 from astropy.time import Time
 from bokeh.models.ui.ui_element import UIElement
 from bokeh.plotting import figure
+from rubin_nights import rubin_sim_addons as rn_sim
 from rubin_scheduler.scheduler.model_observatory.model_observatory import ModelObservatory
 from rubin_scheduler.scheduler.utils import get_current_footprint
 from rubin_sim.sim_archive import fetch_sim_stats_for_night
 from schedview import band_column
 from schedview.collect import load_bright_stars
+from schedview.collect.visits import NIGHT_STACKERS
 from schedview.compute.camera import LsstCameraFootprintPerimeter
 from schedview.compute.footprint import find_healpix_area_polygons
 from schedview.compute.maf import compute_hpix_metric_in_bands
+from schedview.compute.visits import add_coords_tuple
 from schedview.plot import PLOT_BAND_COLORS as LIGHT_BAND_COLORS
 from schedview.plot.footprint import add_footprint_outlines_to_skymaps, add_footprint_to_skymaps
 from uranography.api import ArmillarySphere, Planisphere, make_zscale_linear_cmap
@@ -1092,3 +1095,35 @@ def get_expected_exposures(
     except Exception as e:
         logger.error(f"Error in getting expected exposures from rubin_sim: {e}", exc_info=True)
         raise
+
+
+def prepare_visit_maps_data(
+    visits: pd.DataFrame,
+):
+    """Prepare visit data for plotting on visit maps.
+    This includes converting from consdb columns to opsim columns,
+    applying stackers, and adding coordinate tuples for plotting.
+
+    Parameters
+    ----------
+    visits : `pd.DataFrame`
+        DataFrame containing visit data in opsim format.
+
+    Returns
+    -------
+    visits : `pd.DataFrame`
+        Processed DataFrame ready for plotting on visit maps.
+    """
+    if visits.empty:
+        logger.warning("No visits data provided.")
+        return pd.DataFrame()
+
+    # drop visits with no RA/Dec, since we can't plot them on the sky
+    visits.dropna(subset=["s_ra"], inplace=True)
+    opsdb = rn_sim.consdb_to_opsim(visits)
+    opsdb_rec = opsdb.to_records()
+    for stacker in NIGHT_STACKERS:
+        opsdb_rec = stacker.run(opsdb_rec)
+    visits = pd.DataFrame(opsdb_rec)
+    visits = add_coords_tuple(visits)
+    return visits
