@@ -26,10 +26,8 @@ import itertools
 import traceback
 import warnings
 from abc import ABC
-from collections import defaultdict
 from urllib.parse import urlencode
 
-import pandas as pd
 import requests
 
 import lsst.ts.logging_and_reporting.exceptions as ex
@@ -229,23 +227,6 @@ class SourceAdapter(ABC):
             print(f"DEBUG protected_get: FAIL: {result=}")
         return ok, result, code
 
-    def hack_reconnect_after_idle(self):
-        """Do a dummy query to a service to force a DB reconnect.
-
-        When a connection has been idle for some time, it disconnects
-        such that the following API call returns zero records. This
-        HACK gets around this problem.
-
-        TODO After DM-43835 is fixed, remove this hack.
-        """
-        endpoint = f"{self.server}/{self.service}/{self.primary_endpoint}"
-        qparams = dict(limit=2)  # API requires > 1 !
-        url = f"{endpoint}?{urlencode(qparams)}"
-        try:
-            requests.get(url, timeout=self.timeout, headers=ut.get_auth_header(self.token))
-        except Exception:
-            pass  # this is a hack to force reconnect. Response irrelevent.
-
     def get_status(self, endpoint=None):
         return self.status.get(endpoint or self.primary_endpoint)
 
@@ -317,7 +298,6 @@ class SourceAdapter(ABC):
         return used
 
     def check_endpoints(self, verbose=True):
-        self.hack_reconnect_after_idle()
         if verbose:
             msg = f"Try to connect ({self.timeout=}) to each endpoint of "
             msg += f"{self.server}/{self.service} "
@@ -403,11 +383,6 @@ class NightReportAdapter(SourceAdapter):
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
 
-        # Load the data (records) we need from relevant endpoints
-        if self.min_date:
-            self.hack_reconnect_after_idle()
-            self.status[self.primary_endpoint] = self.get_records()
-
     @property
     def sources(self):
         return {"Nightreport API": (f"{self.server}/{self.service}/{self.primary_endpoint}")}
@@ -475,14 +450,6 @@ class NightReportAdapter(SourceAdapter):
 
         return status
 
-    def nightly_tickets(self):
-        tickets = defaultdict(set)  # tickets[day_obs] = {ticket_url, ...}
-        for r in self.records:
-            ticket_url = r["confluence_url"]
-            if ticket_url:
-                tickets[r["day_obs"]].add(ticket_url)
-        return {dayobs: list(urls) for dayobs, urls in tickets.items()}
-
 
 class NarrativelogAdapter(SourceAdapter):
     abbrev = "NAR"
@@ -505,14 +472,6 @@ class NarrativelogAdapter(SourceAdapter):
         "urls",
         "user_agent",
         "user_id",
-        # ## The following are deprecated. Removed in v1.0.0.
-        # ## Use 'components_path' (components_json) instead
-        # "subsystems",
-        # "systems",
-        # "cscs",
-        # "components",
-        # "primary_hardware_components",
-        # "primary_software_components",
         "components_json",
     }
     default_record_limit = 1000  # Adapter specific default
@@ -548,11 +507,6 @@ class NarrativelogAdapter(SourceAdapter):
 
         # status[endpoint] = dict(endpoint_url, number_of_records, error)
         self.status = dict()
-
-        # Load the data (records) we need from relevant endpoints
-        if self.min_date:
-            self.hack_reconnect_after_idle()
-            self.status[self.primary_endpoint] = self.get_records()
 
     @property
     def sources(self):
@@ -684,14 +638,6 @@ class NarrativelogAdapter(SourceAdapter):
         self.records = self.add_instrument(recs)
         return status
 
-    def verify_records(self):
-        telescope_fault_loss = [
-            (r["date_added"], r["time_lost"], r["time_lost_type"], r["components"])
-            for r in self.records
-            if r["time_lost"] > 0
-        ]
-        return telescope_fault_loss
-
     # END: class NarrativelogAdapter
 
 
@@ -754,10 +700,8 @@ class ExposurelogAdapter(SourceAdapter):
         self.instruments = dict()  # dict[instrument] = registry
 
         self.exposures = dict()  # dd[instrument] = [rec, ...]
-
         # Load the data (records) we need from relevant endpoints
         # in dependency order.
-        self.hack_reconnect_after_idle()
         self.status["instruments"] = self.get_instruments()
         for instrument in self.instruments.keys():
             endpoint = f"exposures.{instrument}"
@@ -796,55 +740,7 @@ class ExposurelogAdapter(SourceAdapter):
         rurls = [r.get("urls", []) for r in self.records]
         return set(itertools.chain.from_iterable(rurls))
 
-    # /exposurelog/exposures?instrument=LSSTComCamSim
-    def exposure_detail(
-        self,
-        instrument,
-        science_program=None,
-        observation_type=None,
-        observation_reason=None,
-    ):
-        fields = [
-            "exposure_flag",  # joined from exposures.messages
-            "obs_id",
-            "timespan_begin",  # 'time',
-            "seq_num",
-            "observation_type",
-            "observation_reason",
-            "science_program",
-            "exposure_time",
-            # 'physical_filter',
-            # 'nimage',
-            # 'hasPD',
-            # 'metadata',
-        ]
-        program = science_program and science_program.lower()
-        otype = observation_type and observation_type.lower()
-        reason = observation_reason and observation_reason.lower()
-        recs = [
-            r
-            for r in self.exposures[instrument]
-            if ((program is None) or (r["science_program"].lower() == program))
-            and ((otype is None) or (r["observation_type"].lower() == otype))
-            and ((reason is None) or (r["observation_reason"].lower() == reason))
-        ]
-        if self.verbose:
-            print(
-                f"exposure_detail({instrument}, "
-                f"{science_program=},{observation_type=},{observation_reason=}):"
-            )
-            print(
-                f"{program=} {otype=} {reason=} "
-                f"pre-filter={len(self.exposures[instrument])} "
-                f"post-filter={len(recs)}"
-            )
-        if len(recs) > 0:
-            return pd.DataFrame(recs)[fields]
-        else:
-            return pd.DataFrame()
-
     def check_endpoints(self, verbose=True):
-        self.hack_reconnect_after_idle()
         if verbose:
             msg = "Try to connect ({self.timeout=}) to each endpoint of "
             msg += f"{self.server}/{self.service} "
