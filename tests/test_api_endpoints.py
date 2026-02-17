@@ -1003,7 +1003,6 @@ def mock_conditions():
 @patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
 @patch("lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps")
 def test_visit_maps_applet_mode_planisphere_only(
-    # mock_add_coords,
     mock_create_skymaps,
     mock_observatory,
     mock_prepare_visit_maps_data,

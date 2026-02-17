@@ -210,6 +210,7 @@ def get_context_feed(
 
 def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: str):
     """Get visits from rubin-nights for a given dayObs range and instrument.
+
     Parameters
     ----------
     dayObsStart : int
@@ -220,6 +221,7 @@ def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: st
         The name of the instrument for which to retrieve visits.
     auth_token : str
         Authentication token to connect to consdb.
+
     Returns
     -------
     pd.DataFrame
