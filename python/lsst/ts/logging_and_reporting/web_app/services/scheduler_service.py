@@ -1127,3 +1127,65 @@ def prepare_visit_maps_data(
     visits = pd.DataFrame(opsdb_rec)
     visits = add_coords_tuple(visits)
     return visits
+
+
+def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False):
+    from rubin_scheduler.scheduler.utils import get_current_footprint
+
+    from lsst.ts.logging_and_reporting.web_app.services.visit_map_builder import VisitMapBuilder
+
+    nside = 64
+    footprint_depth_by_band, footprint_regions = get_current_footprint(nside)
+
+    maps = [ArmillarySphere, Planisphere] if not applet_mode else [Planisphere]
+    figure_specs = {"match_aspect": True, "border_fill_color": "#262626", "background_fill_color": "#262626"}
+    if applet_mode:
+        figure_specs.update({"width": 340, "height": 220})
+
+    tooltips = """
+            <div style="padding:5px; font-size:12px; line-height:1.2">
+                <div><strong>Observation ID:</strong> @observationId</div>
+                <div><strong>Start Timestamp:</strong> @start_timestamp{%F %T} UTC</div>
+                <div><strong>Band:</strong> @band</div>
+                <div><strong>RA, Dec:</strong> @fieldRA{0.000}, @fieldDec{0.000}</div>
+                <div><strong>Observation Reason:</strong> @observation_reason</div>
+                <div><strong>Science Program:</strong> @science_program</div>
+                <div><strong>Para Angle:</strong> @paraAngle\u00b0</div>
+                <div><strong>azimulth, Altitude:</strong> @azimuth\u00b0, @altitude\u00b0</div>
+            </div>
+            """
+
+    builder = (
+        VisitMapBuilder(
+            visits,
+            mjd=visits["observationStartMJD"].max(),
+            map_classes=maps,
+            visit_fill_colors=DARK_BAND_COLORS,
+            figure_kwargs=figure_specs,
+        )
+        .add_footprint_outlines(footprint_regions, line_width=5)
+        .show_up_selector()
+        .hide_horizon_sliders()
+        .add_eq_sliders()
+        .add_graticules()
+        .add_ecliptic()
+        .add_galactic_plane()
+        .add_datetime_slider()
+        .hide_mjd_slider()
+        .add_visit_patches()
+        .hide_future_and_other_night_visits()
+        # .hide_future_visits()
+        .highlight_recent_visits()
+        .add_body("sun", size=15, color="yellow", alpha=1.0)
+        .add_body("moon", size=15, color="orange", alpha=0.8)
+        .add_horizon(color="#E5E5E5", line_width=5)
+        .add_horizon(zd=70, color="red", line_width=5)
+        .add_hovertext(visit_tooltips=tooltips)
+        # .make_up_north()
+    )
+    # style the sliders according to the theme
+    for slider_key in builder.spheremaps[0].sliders:
+        builder.spheremaps[0].sliders[slider_key].styles = {"color": "#E5E5E5"}
+
+    viewable = builder.build()
+    return viewable

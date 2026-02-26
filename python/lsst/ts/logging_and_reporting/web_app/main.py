@@ -36,6 +36,7 @@ from .services.rubin_nights_service import (
     get_time_accounting,
     get_visits,
 )
+<<<<<<< HEAD
 from .services.scheduler_service import create_visit_skymaps, get_expected_exposures, prepare_visit_maps_data
 from .services.zephyr_service import get_test_cases
 
@@ -43,6 +44,13 @@ from .services.zephyr_service import get_test_cases
 rsp_auth = get_access_token()
 jira_auth = get_access_token("jira")
 zephyr_auth = get_access_token("zephyr")
+=======
+from .services.scheduler_service import (
+    build_visit_maps_using_builder,
+    get_expected_exposures,
+    prepare_visit_maps_data,
+)
+>>>>>>> 5997d16 (first attempt using the VisitMapBuilder)
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -410,6 +418,7 @@ async def multi_night_visit_maps(
         f"and instrument: {instrument} in appletMode: {appletMode}, "
         f"planisphereOnly: {planisphereOnly}"
     )
+
     try:
         v_map = await run_in_threadpool(
             _build_multi_night_visit_map,
