@@ -46,7 +46,7 @@ requirements:
         - pydantic
         - uvicorn
         - rubin-scheduler =3.21
-        - rubin-nights =0.10
+        - rubin-nights =0.12
         - schedview =0.20
         - rubin-sim =2.6
         - bokeh =3
