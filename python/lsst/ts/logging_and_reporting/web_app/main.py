@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime, timedelta
+from typing import List
 
 from bokeh.embed import json_item
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -26,6 +27,7 @@ from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import get_context_feed, get_open_close_dome, get_time_accounting
 from .services.scheduler_service import create_visit_skymaps, get_expected_exposures
+from .services.zephyr_service import get_test_cases
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -482,4 +484,45 @@ async def survey_progress_map(
         return {"static": json_item(s_map) if s_map is not None else {}}
     except Exception as e:
         logger.error(f"Error in /survey-progress-map: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/test-cases")
+async def read_test_cases(
+    request: Request,
+    testCaseKeys: List[str] = Query(...),
+    auth_token: str = Depends(get_access_token),
+):
+    """Retrieve Zephyr Scale test case details for a list of test case keys.
+
+    Parameters
+    ----------
+    request : `Request`
+        FastAPI request object.
+    testCaseKeys : `List[str]`
+        List of Zephyr test case keys (e.g., ``BLOCK-T123`` or
+        ``BLOCK-T123_a``) provided as query parameters.
+    auth_token : `str`
+        Authentication token (injected by FastAPI dependency).
+
+    Returns
+    -------
+    `dict`
+        A dictionary containing a ``data`` field that maps each valid
+        input test case key to its corresponding Zephyr test case name.
+
+    Raises
+    ------
+    HTTPException
+        Raised with status code 500 if an unexpected error occurs while
+        retrieving test case details.
+    """
+    logger.info(f"Getting Zephyr test case details for {testCaseKeys}")
+    try:
+        test_cases = await get_test_cases(testCaseKeys)
+        return {
+            "data": test_cases,
+        }
+    except Exception as e:
+        logger.error(f"Error in /test-cases: {e}")
         raise HTTPException(status_code=500, detail=str(e))
