@@ -7,6 +7,7 @@ from lsst.ts.logging_and_reporting.web_app.services import (
     consdb_service,
     jira_service,
     scheduler_service,
+    zephyr_service,
 )
 
 
@@ -356,3 +357,98 @@ class TestGetJiraTickets:
             )
 
             assert not match
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_returns_names():
+    """Valid keys should return mapping of key -> test case name."""
+
+    class DummyZephyr:
+        async def get_test_case(self, key):
+            return {"name": f"Name for {key}"}
+
+    keys = ["BLOCK-T123", "BLOCK-T456"]
+
+    result = await zephyr_service.get_test_cases(
+        keys,
+        zephyr=DummyZephyr(),
+    )
+
+    assert result == {
+        "BLOCK-T123": "Name for BLOCK-T123",
+        "BLOCK-T456": "Name for BLOCK-T456",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_filters_invalid_keys():
+    """Invalid keys should be ignored."""
+
+    class DummyZephyr:
+        async def get_test_case(self, key):
+            return {"name": "Should not matter"}
+
+    keys = ["BLOCK-T123", "INVALID-1", "BLOCK-XYZ"]
+
+    result = await zephyr_service.get_test_cases(
+        keys,
+        zephyr=DummyZephyr(),
+    )
+
+    assert result == {
+        "BLOCK-T123": "Should not matter",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_uses_parent_key_for_suffix():
+    """Keys with suffix should query parent but return original key."""
+
+    called_with = []
+
+    class DummyZephyr:
+        async def get_test_case(self, key):
+            called_with.append(key)
+            return {"name": "Parent name"}
+
+    keys = ["BLOCK-T123_a"]
+
+    result = await zephyr_service.get_test_cases(
+        keys,
+        zephyr=DummyZephyr(),
+    )
+
+    assert called_with == ["BLOCK-T123"]
+    assert result == {"BLOCK-T123_a": "Parent name"}
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_skips_failed_retrieval():
+    """If Zephyr raises for a key, it should be skipped."""
+
+    class DummyZephyr:
+        async def get_test_case(self, key):
+            if key == "BLOCK-T123":
+                raise Exception("fail")
+            return {"name": "OK"}
+
+    keys = ["BLOCK-T123", "BLOCK-T456"]
+
+    result = await zephyr_service.get_test_cases(
+        keys,
+        zephyr=DummyZephyr(),
+    )
+
+    assert result == {"BLOCK-T456": "OK"}
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_empty_input():
+    """Empty key list should return empty dict."""
+
+    result = await zephyr_service.get_test_cases(
+        [],
+        zephyr=object(),  # not used
+    )
+
+    assert result == {}
