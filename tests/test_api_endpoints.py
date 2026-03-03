@@ -1209,3 +1209,82 @@ def test_expected_exposures_endpoint_passes_correct_params(monkeypatch):
 
     assert response.status_code == 200
     assert called == {"start": 20240101, "end": 20240102}
+
+
+def test_test_cases_endpoint_success(monkeypatch):
+    endpoint = "/test-cases?key=BLOCK-T123&key=BLOCK-T456"
+
+    # Dummy response for get_test_cases
+    async def dummy_get_test_cases(keys, zephyr=None):
+        return {k: f"Name for {k}" for k in keys}
+
+    # Patch service
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
+        dummy_get_test_cases,
+    )
+
+    # Override auth token
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    # Make request
+    response = client.get(endpoint)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "data" in data
+    assert data["data"] == {
+        "BLOCK-T123": "Name for BLOCK-T123",
+        "BLOCK-T456": "Name for BLOCK-T456",
+    }
+
+    # Clean up
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_test_cases_endpoint_invalid_keys(monkeypatch):
+    """Invalid keys should be filtered out."""
+
+    endpoint = "/test-cases?key=BLOCK-T123&key=INVALID-1"
+
+    async def dummy_get_test_cases(keys, zephyr=None):
+        # Valid keys only
+        return {"BLOCK-T123": "Name for BLOCK-T123"}
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
+        dummy_get_test_cases,
+    )
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    data = response.json()
+    # Only valid key returned
+    assert "BLOCK-T123" in data["data"]
+    assert "INVALID-1" not in data["data"]
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_test_cases_endpoint_service_failure(monkeypatch):
+    """Simulate exception in get_test_cases → HTTP 500"""
+
+    endpoint = "/test-cases?key=BLOCK-T123"
+
+    async def raise_error(keys, zephyr=None):
+        raise Exception("Zephyr API failure")
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
+        raise_error,
+    )
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Zephyr API failure"
+
+    app.dependency_overrides.pop(get_access_token, None)
