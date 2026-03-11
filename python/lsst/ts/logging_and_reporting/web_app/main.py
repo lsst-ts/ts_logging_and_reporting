@@ -24,6 +24,7 @@ from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
     get_context_feed,
+    get_obs_status,
     get_open_close_dome,
     get_time_accounting,
     get_visits,
@@ -320,6 +321,23 @@ async def read_context_feed(
         }
     except Exception as e:
         logger.error(f"Error in /context-feed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/obs-status")
+async def read_obs_status(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    auth_token: str = Depends(get_access_token),
+):
+    try:
+        obs_status = get_obs_status(dayObsStart, dayObsEnd, auth_token=auth_token)
+        return {
+            "data": obs_status,
+        }
+    except Exception as e:
+        logger.error(f"Error in /obs-status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

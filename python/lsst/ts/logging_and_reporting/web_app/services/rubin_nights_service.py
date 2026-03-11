@@ -247,3 +247,40 @@ def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: st
     except Exception as e:
         logger.error(f"Error getting visits using rubin-nights: {e}", exc_info=True)
         return pd.DataFrame()
+
+
+def get_obs_status(
+    dayobs_start: int,
+    dayobs_end: int,
+    auth_token: str = None,
+) -> list:
+    logger.info(f"Getting observatory status data for start: {dayobs_start}, end: {dayobs_end}")
+    try:
+        # Get connections to rubin_nights services
+        endpoints = get_clients(auth_token=auth_token)
+
+        # Convert dayobs_start and dayobs_end to t_start and t_end
+        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayobs_start)}T12:00:00", format="isot", scale="utc")
+        t_end = Time(
+            f"{rn_dayobs.day_obs_int_to_str(dayobs_end)}T12:00:00",
+            format="isot",
+            scale="utc",
+        ) + TimeDelta(1, format="jd")
+
+        # Add ObservatoryStatus from
+        # lsst.sal.Scheduler.logevent_observatoryStatus
+        efd_client = endpoints["efd"]
+        topic = "lsst.sal.Scheduler.logevent_observatoryStatus"
+        fields = ["status", "note", "statusLabels"]
+        obs_status_messages: pd.DataFrame = efd_client.select_time_series(topic, fields, t_start, t_end)
+
+        # Set timestamp as a column instead of the index
+        # toi preserve it in subsequent list transformation
+        time_as_col = obs_status_messages.reset_index(names="time")
+        records = time_as_col.to_dict(orient="records")
+
+        return records
+
+    except Exception as e:
+        logger.error(f"Error retrieving Context Feed data from rubin_nights: {e}", exc_info=True)
+        return []
