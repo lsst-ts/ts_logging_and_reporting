@@ -1,3 +1,12 @@
+v0.12.1 (2026-03-12)
+====================
+
+Other Changes and Additions
+---------------------------
+
+- Bump rubin-nights to v0.12 (`OSW-1876 <https://rubinobs.atlassian.net//browse/OSW-1876>`_)
+
+
 v0.12.0 (2026-02-19)
 ====================
 
