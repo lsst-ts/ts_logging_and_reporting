@@ -191,7 +191,7 @@ def get_context_feed(
         ) + TimeDelta(1, format="jd")
 
         # Returns pandas dataframe and list
-        df, cols = get_consolidated_messages(t_start, t_end, endpoints)
+        df, cols = get_consolidated_messages(t_start, t_end, endpoints, all_tracebacks=True)
 
         # Discard all columns that are not listed in cols
         df_cols_only = df[df.columns.intersection(cols)]
