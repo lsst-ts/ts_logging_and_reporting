@@ -19,6 +19,8 @@ from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 #   "query": "SELECT * FROM cdb_lsstcomcam.exposure LIMIT 2"
 # }'
 
+import logging
+logger = logging.getLogger(__name__)
 
 class ConsdbAdapter(SourceAdapter):
     abbrev = "CDB"
@@ -47,6 +49,11 @@ class ConsdbAdapter(SourceAdapter):
         warning=True,
         auth_token=None,
     ):
+        if server_url == ut.Server.usdfdev:
+            # ConsDB's usdf-rsp-dev data is unstable, use int for integration
+            server_url = ut.Server.usdfint
+        logger.info(f"ConsDB Adapter Server URL {server_url}")
+
         super().__init__(
             server_url=server_url,
             max_dayobs=max_dayobs,
@@ -56,6 +63,7 @@ class ConsdbAdapter(SourceAdapter):
             warning=warning,
             auth_token=auth_token,
         )
+        logger.info(f"ConsDB Adapter SELF Server URL {self.server}")
 
         self.status = dict()
         self.exposures = dict()  # dd[instrument] = [rec, ...]
