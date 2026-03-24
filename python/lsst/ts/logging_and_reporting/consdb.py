@@ -1,5 +1,6 @@
 # Used efd.py as a starting point.  Layered in consolidated_database.py
 
+import logging
 import traceback
 import warnings
 from collections import defaultdict
@@ -19,8 +20,8 @@ from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 #   "query": "SELECT * FROM cdb_lsstcomcam.exposure LIMIT 2"
 # }'
 
-import logging
 logger = logging.getLogger(__name__)
+
 
 class ConsdbAdapter(SourceAdapter):
     abbrev = "CDB"

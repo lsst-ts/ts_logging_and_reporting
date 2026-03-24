@@ -364,13 +364,13 @@ def get_consdb_access_token(request: Request = None):
         return lsst.rsp.utils.get_info()
         # If in usdf-rsp-dev we're unable to access ConsDB from usdf-rsp-int
     except ImportError:
-
         active_environment = Server.get_url()
         env_token_int = os.getenv("ACCESS_TOKEN_INT")
         if active_environment is Server.usdfdev and env_token_int is not None:
             import logging
+
             logger = logging.getLogger("__name__")
-            logger.warning('Valerie you are in usdf-rsp-dev, we are accessing the int var though')
+            logger.warning("Valerie you are in usdf-rsp-dev, we are accessing the int var though")
             # Switch to providing the usdf-rsp-int access env var
             return env_token_int
 
