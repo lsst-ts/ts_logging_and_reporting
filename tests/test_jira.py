@@ -10,6 +10,7 @@ from lsst.ts.logging_and_reporting.jira import (
     OBS_SYSTEMS_FIELD,
     TIME_LOST_FIELD,
     JiraAdapter,
+    JiraClient,
     ex,
     get_system_names,
 )
@@ -291,3 +292,48 @@ def test_get_obs_issues_is_new_boundaries(
 
     assert result[3]["key"] == "OBS-BEFORE"
     assert result[3]["isNew"] is False  # before start -> False
+
+
+# ------------------------
+# Tests for fetch_block_ticket_summaries
+# ------------------------
+@patch("lsst.ts.logging_and_reporting.jira.requests.get")
+def test_fetch_block_ticket_summaries_success(mock_get):
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "issues": [
+            {"key": "BLOCK-1", "fields": {"summary": "First ticket"}},
+            {"key": "BLOCK-2", "fields": {"summary": "Second ticket"}},
+        ]
+    }
+    mock_response.raise_for_status.return_value = None
+    mock_get.return_value = mock_response
+
+    client = JiraClient()
+    result = client.fetch_block_ticket_summaries(["BLOCK-1", "BLOCK-2"])
+
+    assert result == {
+        "BLOCK-1": "First ticket",
+        "BLOCK-2": "Second ticket",
+    }
+
+
+def test_fetch_block_ticket_summaries_empty_input():
+    client = JiraClient()
+    result = client.fetch_block_ticket_summaries([])
+
+    assert result == {}
+
+
+@patch("lsst.ts.logging_and_reporting.jira.requests.get")
+def test_search_http_error(mock_get):
+    mock_response = Mock()
+    mock_response.raise_for_status.side_effect = Exception("HTTP error")
+    mock_response.status_code = 500
+    mock_response.text = "Internal error"
+    mock_get.return_value = mock_response
+
+    client = JiraClient()
+
+    with pytest.raises(Exception):  # optionally ex.BaseLogrepError if imported
+        client._search("some jql", "summary")
