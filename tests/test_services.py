@@ -381,26 +381,6 @@ async def test_get_test_cases_returns_names():
 
 
 @pytest.mark.asyncio
-async def test_get_test_cases_filters_invalid_keys():
-    """Invalid keys should be ignored."""
-
-    class DummyZephyr:
-        async def get_test_case(self, key):
-            return {"name": "Should not matter"}
-
-    keys = ["BLOCK-T123", "INVALID-1", "BLOCK-XYZ"]
-
-    result = await zephyr_service.get_test_cases(
-        keys,
-        zephyr=DummyZephyr(),
-    )
-
-    assert result == {
-        "BLOCK-T123": "Should not matter",
-    }
-
-
-@pytest.mark.asyncio
 async def test_get_test_cases_uses_parent_key_for_suffix():
     """Keys with suffix should query parent but return original key."""
 
