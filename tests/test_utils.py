@@ -6,7 +6,14 @@ import pandas as pd
 from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
-from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe, stringify_special_floats
+from lsst.ts.logging_and_reporting.utils import (
+    JIRA_BLOCK_BASE_URL,
+    ZEPHYR_BLOCK_BASE_URL,
+    build_block_response,
+    get_access_token,
+    make_json_safe,
+    stringify_special_floats,
+)
 
 app = FastAPI()
 
@@ -172,3 +179,68 @@ def test_make_json_safe_json_serializable():
     result = make_json_safe(obj)
     json_str = json.dumps(result)  # Should not raise
     assert json_str is not None
+
+
+# Test the constructor that unifies responses from Jira and Zephyr
+# for BLOCK details.
+def test_build_block_response_combines_sources():
+    zephyr_data = {
+        "BLOCK-T123": "Zephyr summary",
+    }
+    jira_data = {
+        "BLOCK-456": "Jira summary",
+    }
+
+    result = build_block_response(zephyr_data, jira_data)
+
+    assert result == {
+        "BLOCK-T123": {
+            "key": "BLOCK-T123",
+            "summary": "Zephyr summary",
+            "source": "zephyr",
+            "url": f"{ZEPHYR_BLOCK_BASE_URL}BLOCK-T123",
+        },
+        "BLOCK-456": {
+            "key": "BLOCK-456",
+            "summary": "Jira summary",
+            "source": "jira",
+            "url": f"{JIRA_BLOCK_BASE_URL}BLOCK-456",
+        },
+    }
+
+
+def test_build_block_response_zephyr_suffix_stripped():
+    zephyr_data = {
+        "BLOCK-T123_a": "Zephyr summary",
+    }
+
+    result = build_block_response(zephyr_data, {})
+
+    assert result["BLOCK-T123_a"]["url"] == f"{ZEPHYR_BLOCK_BASE_URL}BLOCK-T123"
+
+
+def test_build_block_response_empty_inputs():
+    result = build_block_response({}, {})
+    assert result == {}
+
+
+def test_build_block_response_zephyr_only():
+    zephyr_data = {
+        "BLOCK-T123": "Zephyr summary",
+    }
+
+    result = build_block_response(zephyr_data, {})
+
+    assert "BLOCK-T123" in result
+    assert result["BLOCK-T123"]["source"] == "zephyr"
+
+
+def test_build_block_response_jira_only():
+    jira_data = {
+        "BLOCK-456": "Jira summary",
+    }
+
+    result = build_block_response({}, jira_data)
+
+    assert "BLOCK-456" in result
+    assert result["BLOCK-456"]["source"] == "jira"

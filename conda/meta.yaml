@@ -51,6 +51,7 @@ requirements:
         - rubin-sim =2.6
         - bokeh =3
         - lsst-efd-client =0.12
+        - ts-planning-tool =0.1
         - scikit-learn
         - psycopg2 =2.9
         - astropy-iers-data
