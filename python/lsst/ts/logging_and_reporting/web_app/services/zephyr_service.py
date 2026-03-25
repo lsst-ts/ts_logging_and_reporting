@@ -1,14 +1,10 @@
 import logging
 import os
-import re
 
 from lsst.ts.planning.tool import ZephyrInterface
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
-
-# Zephyr Scale keys have the form BLOCK-T###[_#]
-VALID_KEY_RE = re.compile(r"^BLOCK-T\d+(?:_[A-Za-z0-9]+)?$")
 
 
 async def get_test_cases(
@@ -17,11 +13,9 @@ async def get_test_cases(
 ) -> dict:
     """
     Retrieve Zephyr Scale test case names for a list of candidate keys.
-    Filters the provided keys against `VALID_KEY_RE` (expected format:
-    ``BLOCK-T###`` or ``BLOCK-T###_<suffix>``). For keys that include a
-    suffix (e.g. ``_a``), only the parent portion (``BLOCK-T###``) is used
-    when querying Zephyr Scale, as suffixed variants are not stored as
-    independent test cases.
+    For keys that include a suffix (e.g. ``_a``), only the parent
+    portion (``BLOCK-T###``) is used when querying Zephyr Scale, as
+    suffixed variants are not stored as independent test cases.
     Authentication credentials are read from the environment variables:
     ``JIRA_USERNAME``, ``JIRA_API_TOKEN``, and ``ZEPHYR_API_TOKEN``.
     Parameters
@@ -33,11 +27,9 @@ async def get_test_cases(
     -------
     `dict`
         A dictionary mapping each valid input key to its corresponding
-        Zephyr test case name. Invalid keys or keys that fail retrieval
-        are skipped.
+        Zephyr test case name. Keys that fail retrieval are skipped.
     """
-    valid_keys = [k for k in keys if VALID_KEY_RE.match(k)]
-    logger.info(f"Getting Zephyr test case details for valid keys {valid_keys}")
+    logger.info(f"Getting Zephyr test case details for BLOCK keys {keys}")
 
     # Only construct real ZephyrInterface if not injected
     if zephyr is None:
@@ -49,7 +41,7 @@ async def get_test_cases(
 
     test_cases = {}
 
-    for key in valid_keys:
+    for key in keys:
         try:
             # Test cases with _# at the end are represented in
             # Zephyr Scale without the _# at the end.

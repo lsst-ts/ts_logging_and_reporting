@@ -11,7 +11,11 @@ from rubin_nights.connections import get_clients
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
-from lsst.ts.logging_and_reporting.utils import get_access_token
+from lsst.ts.logging_and_reporting.utils import (
+    JIRA_BLOCK_BASE_URL,
+    ZEPHYR_BLOCK_BASE_URL,
+    get_access_token,
+)
 from lsst.ts.logging_and_reporting.web_app.main import app
 
 client = TestClient(app)
@@ -1211,17 +1215,27 @@ def test_expected_exposures_endpoint_passes_correct_params(monkeypatch):
     assert called == {"start": 20240101, "end": 20240102}
 
 
-def test_test_cases_endpoint_success(monkeypatch):
-    endpoint = "/test-cases?key=BLOCK-T123&key=BLOCK-T456"
+def test_block_details_endpoint_success(monkeypatch):
+    endpoint = "/block-details?key=BLOCK-T123&key=BLOCK-456"
 
-    # Dummy response for get_test_cases
+    # Dummy response for get_test_cases (Zephyr)
     async def dummy_get_test_cases(keys, zephyr=None):
-        return {k: f"Name for {k}" for k in keys}
+        return {k: f"Description of {k}" for k in keys}
 
-    # Patch service
+    # Dummy response for get_block_ticket_summaries (Jira)
+    def dummy_get_block_ticket_summaries(keys):
+        return {k: f"Description of {k}" for k in keys}
+
+    # Patch Zephyr service
     monkeypatch.setattr(
         "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
         dummy_get_test_cases,
+    )
+
+    # Patch Jira service
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_block_ticket_summaries",
+        dummy_get_block_ticket_summaries,
     )
 
     # Override auth token
@@ -1233,24 +1247,39 @@ def test_test_cases_endpoint_success(monkeypatch):
 
     data = response.json()
     assert "data" in data
+    assert "errors" in data
+    # Success for both services
     assert data["data"] == {
-        "BLOCK-T123": "Name for BLOCK-T123",
-        "BLOCK-T456": "Name for BLOCK-T456",
+        "BLOCK-T123": {
+            "key": "BLOCK-T123",
+            "summary": "Description of BLOCK-T123",
+            "url": f"{ZEPHYR_BLOCK_BASE_URL}BLOCK-T123",
+            "source": "zephyr",
+        },
+        "BLOCK-456": {
+            "key": "BLOCK-456",
+            "summary": "Description of BLOCK-456",
+            "url": f"{JIRA_BLOCK_BASE_URL}BLOCK-456",
+            "source": "jira",
+        },
     }
+    # No errors collected
+    assert data["errors"] == {}
 
     # Clean up
     app.dependency_overrides.pop(get_access_token, None)
 
 
-def test_test_cases_endpoint_invalid_keys(monkeypatch):
+def test_block_details_endpoint_mixed_invalid_keys(monkeypatch):
     """Invalid keys should be filtered out."""
 
-    endpoint = "/test-cases?key=BLOCK-T123&key=INVALID-1"
+    endpoint = "/block-details?key=BLOCK-T123&key=INVALID-1"
 
+    # Dummy response for get_test_cases (Zephyr)
     async def dummy_get_test_cases(keys, zephyr=None):
-        # Valid keys only
-        return {"BLOCK-T123": "Name for BLOCK-T123"}
+        return {k: f"Description of {k}" for k in keys}
 
+    # Patch Zephyr service
     monkeypatch.setattr(
         "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
         dummy_get_test_cases,
@@ -1261,30 +1290,284 @@ def test_test_cases_endpoint_invalid_keys(monkeypatch):
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.json()
+    assert "data" in data
+    assert "errors" in data
     # Only valid key returned
     assert "BLOCK-T123" in data["data"]
     assert "INVALID-1" not in data["data"]
+    # No errors collected
+    assert data["errors"] == {}
 
     app.dependency_overrides.pop(get_access_token, None)
 
 
-def test_test_cases_endpoint_service_failure(monkeypatch):
+def test_block_details_endpoint_all_invalid_keys(monkeypatch):
+    """No invalid keys should return an empty dict."""
+
+    endpoint = "/block-details?key=unknown&key=INVALID-1"
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert "errors" in data
+    # No keys returned
+    assert "unknown" not in data["data"]
+    assert "INVALID-1" not in data["data"]
+    # No errors collected
+    assert data["errors"] == {}
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_block_details_endpoint_duplicate_keys(monkeypatch):
+    """Duplicate keys should be filtered out."""
+
+    endpoint = "/block-details?key=BLOCK-T123&key=BLOCK-T123"
+
+    # Dummy response for get_test_cases (Zephyr)
+    async def dummy_get_test_cases(keys, zephyr=None):
+        return {k: f"Description of {k}" for k in keys}
+
+    # Patch Zephyr service
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
+        dummy_get_test_cases,
+    )
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert "errors" in data
+    # Only one key returned
+    assert data["data"] == {
+        "BLOCK-T123": {
+            "key": "BLOCK-T123",
+            "summary": "Description of BLOCK-T123",
+            "url": f"{ZEPHYR_BLOCK_BASE_URL}BLOCK-T123",
+            "source": "zephyr",
+        },
+    }
+    # No errors collected
+    assert data["errors"] == {}
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_block_details_endpoint_zephyr_keys_only(monkeypatch):
+    """Fetching only Zephyr keys should return successfully,
+    and without errors."""
+
+    endpoint = "/block-details?key=BLOCK-T123&key=BLOCK-T123_a"
+
+    # Dummy response for get_test_cases (Zephyr)
+    async def dummy_get_test_cases(keys, zephyr=None):
+        return {k: f"Description of {k}" for k in keys}
+
+    # Patch Zephyr service
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
+        dummy_get_test_cases,
+    )
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert "errors" in data
+    # Zephyr keys returned successfully
+    assert data["data"] == {
+        "BLOCK-T123": {
+            "key": "BLOCK-T123",
+            "summary": "Description of BLOCK-T123",
+            "url": f"{ZEPHYR_BLOCK_BASE_URL}BLOCK-T123",
+            "source": "zephyr",
+        },
+        "BLOCK-T123_a": {
+            "key": "BLOCK-T123_a",
+            "summary": "Description of BLOCK-T123_a",
+            "url": f"{ZEPHYR_BLOCK_BASE_URL}BLOCK-T123",
+            "source": "zephyr",
+        },
+    }
+    # No errors collected from lack of Jira keys
+    assert data["errors"] == {}
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_block_details_endpoint_jira_keys_only(monkeypatch):
+    """Fetching only Jira keys should return successfully,
+    and without errors."""
+
+    endpoint = "/block-details?key=BLOCK-456&key=BLOCK-789"
+
+    # Dummy response for get_test_cases (Zephyr)
+    def dummy_get_block_ticket_summaries(keys):
+        return {k: f"Description of {k}" for k in keys}
+
+    # Patch Zephyr service
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_block_ticket_summaries",
+        dummy_get_block_ticket_summaries,
+    )
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert "errors" in data
+    # Jira keys returned successfully
+    assert data["data"] == {
+        "BLOCK-456": {
+            "key": "BLOCK-456",
+            "summary": "Description of BLOCK-456",
+            "url": f"{JIRA_BLOCK_BASE_URL}BLOCK-456",
+            "source": "jira",
+        },
+        "BLOCK-789": {
+            "key": "BLOCK-789",
+            "summary": "Description of BLOCK-789",
+            "url": f"{JIRA_BLOCK_BASE_URL}BLOCK-789",
+            "source": "jira",
+        },
+    }
+    # No errors collected from lack of Zephyr keys
+    assert data["errors"] == {}
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_block_details_endpoint_zephyr_service_failure(monkeypatch):
     """Simulate exception in get_test_cases → HTTP 500"""
 
-    endpoint = "/test-cases?key=BLOCK-T123"
+    endpoint = "/block-details?key=BLOCK-T123&key=BLOCK-456"
 
-    async def raise_error(keys, zephyr=None):
+    # Zephyr failure
+    async def raise_zephyr_error(keys, zephyr=None):
         raise Exception("Zephyr API failure")
 
     monkeypatch.setattr(
         "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
-        raise_error,
+        raise_zephyr_error,
+    )
+
+    # Jira success
+    def dummy_get_block_ticket_summaries(keys):
+        return {k: f"Description of {k}" for k in keys}
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_block_ticket_summaries",
+        dummy_get_block_ticket_summaries,
+    )
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "data" in data
+    assert "errors" in data
+    # Jira key returned successfully
+    assert data["data"] == {
+        "BLOCK-456": {
+            "key": "BLOCK-456",
+            "summary": "Description of BLOCK-456",
+            "url": f"{JIRA_BLOCK_BASE_URL}BLOCK-456",
+            "source": "jira",
+        }
+    }
+    # Check expected error has been collected
+    assert "zephyr" in data["errors"]
+    assert data["errors"]["zephyr"] == "Zephyr API failure"
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_block_details_endpoint_jira_service_failure(monkeypatch):
+    """Simulate exception in get_block_ticket_summaries → HTTP 500"""
+
+    endpoint = "/block-details?key=BLOCK-T123&key=BLOCK-456"
+
+    # Jira failure
+    def raise_jira_error(keys):
+        raise Exception("Jira API failure")
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_block_ticket_summaries",
+        raise_jira_error,
+    )
+
+    # Zephyr success
+    async def dummy_get_test_cases(keys, zephyr=None):
+        return {k: f"Description of {k}" for k in keys}
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
+        dummy_get_test_cases,
+    )
+
+    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "data" in data
+    assert "errors" in data
+    # Zephyr key returned successfully
+    assert data["data"] == {
+        "BLOCK-T123": {
+            "key": "BLOCK-T123",
+            "summary": "Description of BLOCK-T123",
+            "url": f"{ZEPHYR_BLOCK_BASE_URL}BLOCK-T123",
+            "source": "zephyr",
+        },
+    }
+    # Check expected error collected
+    assert "jira" in data["errors"]
+    assert data["errors"]["jira"] == "Jira API failure"
+
+    app.dependency_overrides.pop(get_access_token, None)
+
+
+def test_block_details_endpoint_both_services_failure(monkeypatch):
+    """Simulate exceptions in get_test_cases → HTTP 500 and
+    get_block_ticket_summaries → HTTP 500.
+    """
+
+    endpoint = "/block-details?key=BLOCK-T123&key=BLOCK-456"
+
+    async def raise_zephyr_error(keys, zephyr=None):
+        raise Exception("Zephyr API failure")
+
+    def raise_jira_error(keys):
+        raise Exception("Jira API failure")
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_test_cases",
+        raise_zephyr_error,
+    )
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_block_ticket_summaries",
+        raise_jira_error,
     )
 
     app.dependency_overrides[get_access_token] = lambda: "dummy-token"
 
     response = client.get(endpoint)
     assert response.status_code == 500
-    assert response.json()["detail"] == "Zephyr API failure"
+    assert response.json()["detail"] == "Both Zephyr and Jira requests failed."
 
     app.dependency_overrides.pop(get_access_token, None)

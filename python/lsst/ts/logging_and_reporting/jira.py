@@ -171,3 +171,54 @@ class JiraAdapter(SourceAdapter):
             }
             for issue in issues
         ]
+
+
+# Separate stateless Jira Adapter that does not require a dayobs range.
+class JiraClient:
+    def __init__(self):
+        self.base_url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}"
+        self.headers = {
+            "Authorization": f"Basic {os.environ.get('JIRA_API_TOKEN')}",
+            "content-type": "application/json",
+        }
+
+    def _search(self, jql_query, fields):
+        url = f"{self.base_url}/rest/api/latest/search/jql?jql={quote(jql_query)}&fields={fields}"
+
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as err:
+            msg = f"Error querying Jira: {response.status_code} - {response.text}"
+            traceback.print_exc()
+            raise ex.BaseLogrepError(msg) from err
+        except requests.exceptions.ConnectionError as err:
+            msg = f"Error connecting to Jira. {str(err)}"
+            traceback.print_exc()
+            raise ex.BaseLogrepError(msg) from err
+
+        return response.json().get("issues", [])
+
+    def fetch_block_ticket_summaries(self, ticket_keys):
+        """
+        Fetch summary fields for a list of BLOCK tickets.
+
+        Parameters
+        ----------
+        ticket_keys : list[str]
+            List of Jira issue keys (e.g. ["BLOCK-123", "BLOCK-456"])
+
+        Returns
+        -------
+        dict
+            Mapping of ticket key -> summary
+        """
+        if not ticket_keys:
+            return {}
+
+        keys_str = ",".join(ticket_keys)
+        jql_query = f"project = BLOCK AND key in ({keys_str})"
+
+        issues = self._search(jql_query, fields="summary")
+
+        return {issue["key"]: issue["fields"]["summary"] for issue in issues}
