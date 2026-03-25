@@ -383,3 +383,63 @@ async def test_get_test_cases_empty_input():
     )
 
     assert result == {}
+
+
+class TestGetBlockTicketSummaries:
+    """Tests for the get_block_ticket_summaries function."""
+
+    def test_returns_empty_dict_when_no_ticket_keys(self, monkeypatch):
+        """Test that an empty dict is returned when no ticket keys are
+        provided.
+        """
+
+        class DummyJiraClient:
+            def fetch_block_ticket_summaries(self, ticket_keys):
+                return {"SHOULD": "NOT BE CALLED"}
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraClient",
+            DummyJiraClient,
+        )
+
+        result = jira_service.get_block_ticket_summaries([])
+        assert result == {}
+
+    def test_returns_empty_dict_when_fetch_returns_none(self, monkeypatch):
+        """Test that an empty dict is returned when
+        fetch_block_ticket_summaries returns an empty dict.
+        """
+
+        class DummyJiraClient:
+            def fetch_block_ticket_summaries(self, ticket_keys):
+                return {}
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraClient",
+            DummyJiraClient,
+        )
+
+        result = jira_service.get_block_ticket_summaries(["BLOCK-1"])
+        assert result == {}
+
+    def test_returns_ticket_summaries_correctly(self, monkeypatch):
+        """Test that the function returns the expected ticket summaries."""
+
+        class DummyJiraClient:
+            def fetch_block_ticket_summaries(self, ticket_keys):
+                return {key: f"Summary for {key}" for key in ticket_keys}
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraClient",
+            DummyJiraClient,
+        )
+
+        ticket_keys = ["BLOCK-1", "BLOCK-2"]
+        result = jira_service.get_block_ticket_summaries(ticket_keys)
+
+        expected = {
+            "BLOCK-1": "Summary for BLOCK-1",
+            "BLOCK-2": "Summary for BLOCK-2",
+        }
+
+        assert result == expected
