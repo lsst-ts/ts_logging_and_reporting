@@ -1,0 +1,1 @@
+Allow ConsDB at usdf-rsp-int to be queried when we are using usdf-rsp-dev as our EXTERNAL_INSTANCE_URL

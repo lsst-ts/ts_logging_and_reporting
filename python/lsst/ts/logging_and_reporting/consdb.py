@@ -47,6 +47,10 @@ class ConsdbAdapter(SourceAdapter):
         warning=True,
         auth_token=None,
     ):
+        if server_url == ut.Server.usdfdev:
+            # ConsDB's usdf-rsp-dev data is unstable, use int for integration
+            server_url = ut.Server.usdfint
+
         super().__init__(
             server_url=server_url,
             max_dayobs=max_dayobs,

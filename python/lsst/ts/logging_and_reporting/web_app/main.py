@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from rubin_scheduler.scheduler.model_observatory import ModelObservatory
 
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
-from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe
+from lsst.ts.logging_and_reporting.utils import get_access_token, get_consdb_access_token, make_json_safe
 
 from .. import __version__
 from .services.almanac_service import get_almanac
@@ -83,11 +83,13 @@ async def read_exposures(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
+    cdb_auth_token: str = Depends(get_consdb_access_token),
     auth_token: str = Depends(get_access_token),
 ):
     logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
-        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        # ConsDB only token
+        exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=cdb_auth_token)
         on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky")]
         total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
         total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
@@ -99,7 +101,6 @@ async def read_exposures(
             dayObsEnd,
             instrument,
             exposures,
-            auth_token,
         )
 
         if not exposures_df.empty:
@@ -176,11 +177,11 @@ async def read_data_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    cdb_auth_token: str = Depends(get_consdb_access_token),
 ):
     logger.info(f"Getting data log for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
-        records = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        records = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token=cdb_auth_token)
         return jsonable_encoder({"data_log": records})
 
     except ConsdbQueryError as ce:
