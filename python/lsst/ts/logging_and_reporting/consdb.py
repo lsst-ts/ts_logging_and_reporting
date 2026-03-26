@@ -1,6 +1,5 @@
 # Used efd.py as a starting point.  Layered in consolidated_database.py
 
-import logging
 import traceback
 import warnings
 from collections import defaultdict
@@ -19,8 +18,6 @@ from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 #   -d '{
 #   "query": "SELECT * FROM cdb_lsstcomcam.exposure LIMIT 2"
 # }'
-
-logger = logging.getLogger(__name__)
 
 
 class ConsdbAdapter(SourceAdapter):
@@ -53,7 +50,6 @@ class ConsdbAdapter(SourceAdapter):
         if server_url == ut.Server.usdfdev:
             # ConsDB's usdf-rsp-dev data is unstable, use int for integration
             server_url = ut.Server.usdfint
-        logger.info(f"ConsDB Adapter Server URL {server_url}")
 
         super().__init__(
             server_url=server_url,
@@ -64,7 +60,6 @@ class ConsdbAdapter(SourceAdapter):
             warning=warning,
             auth_token=auth_token,
         )
-        logger.info(f"ConsDB Adapter SELF Server URL {self.server}")
 
         self.status = dict()
         self.exposures = dict()  # dd[instrument] = [rec, ...]

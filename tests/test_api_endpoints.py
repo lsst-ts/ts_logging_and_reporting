@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
+from urllib.parse import urlparse
 
 import pandas as pd
 import pytest
@@ -9,9 +10,8 @@ from bokeh.plotting import figure
 from fastapi.testclient import TestClient
 from rubin_nights.connections import get_clients
 
-import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
-from lsst.ts.logging_and_reporting.utils import get_access_token
+from lsst.ts.logging_and_reporting.utils import get_access_token, get_consdb_access_token
 from lsst.ts.logging_and_reporting.web_app.main import app
 
 client = TestClient(app)
@@ -594,7 +594,8 @@ def mock_get_response():
 
     def response_json_payload():
         called_url = requests.get.call_args[0][0]
-        endpoint = called_url.replace(ut.Server.get_url(), "").split("?")[0]
+        url_parts = urlparse(called_url)
+        endpoint = url_parts.path
         return SERVICE_ENDPOINT_MOCK_RESPONSES[endpoint]
 
     response_get.json = response_json_payload
@@ -635,7 +636,8 @@ def mock_post_response():
 
     def response_json_payload():
         called_url = requests.post.call_args[0][0]
-        endpoint = called_url.replace(ut.Server.get_url(), "").split("?")[0]
+        url_parts = urlparse(called_url)
+        endpoint = url_parts.path
         return SERVICE_ENDPOINT_MOCK_RESPONSES[endpoint]
 
     response_post.json = response_json_payload
@@ -645,6 +647,7 @@ def mock_post_response():
 def _test_endpoint_auth_header(endpoint):
     headers = {"Authorization": "Bearer header-token"}
     response = client.get(endpoint, headers=headers)
+    print(f"{response=}")
     assert response.status_code == 200
 
 
@@ -826,6 +829,7 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
             }
         )
         app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+        app.dependency_overrides[get_consdb_access_token] = lambda: "dummy-consdb-token"
         app.dependency_overrides[get_clients] = lambda: {"efd": Mock()}
 
         response = client.get(endpoint)

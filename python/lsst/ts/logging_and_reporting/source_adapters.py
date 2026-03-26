@@ -23,7 +23,6 @@
 import copy
 import datetime as dt
 import itertools
-import logging
 import traceback
 import warnings
 from abc import ABC
@@ -33,8 +32,6 @@ import requests
 
 import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.utils as ut
-
-logger = logging.getLogger(__name__)
 
 MAX_CONNECT_TIMEOUT = 7.05  # seconds
 MAX_READ_TIMEOUT = 180  # seconds
@@ -71,11 +68,6 @@ class SourceAdapter(ABC):
         range large or you will use lots of memory. Tens of days is probably
         ok.
         """
-        if not server_url:
-            logging.warning(
-                f"""\n{self.__class__.__name__}\'s Server URL not set at
-                Source Adapter level, using {ut.Server.get_url()}\n"""
-            )
 
         self.server = server_url or ut.Server.get_url()
         self.verbose = verbose

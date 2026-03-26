@@ -312,8 +312,6 @@ def get_access_token(request: Request = None):
         import lsst.rsp.utils
 
         return lsst.rsp.utils.get_info()
-        # TODO: OSW-2050 Do we intend to keep supporting use of nd
-        # in personal notebooks in RSP ?
     except ImportError:
         env_token = os.getenv("ACCESS_TOKEN")
         if env_token is not None:
