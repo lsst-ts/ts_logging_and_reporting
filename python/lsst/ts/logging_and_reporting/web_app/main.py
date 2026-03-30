@@ -11,7 +11,12 @@ from fastapi.responses import JSONResponse
 from rubin_scheduler.scheduler.model_observatory import ModelObservatory
 
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
-from lsst.ts.logging_and_reporting.utils import build_block_response, get_access_token, make_json_safe
+from lsst.ts.logging_and_reporting.utils import (
+    build_block_response,
+    get_access_token,
+    get_jira_hostname,
+    make_json_safe,
+)
 
 from .. import __version__
 from .services.almanac_service import get_almanac
@@ -86,7 +91,7 @@ async def read_exposures(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
@@ -179,7 +184,7 @@ async def read_data_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     logger.info(f"Getting data log for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
@@ -195,12 +200,19 @@ async def read_data_log(
 
 
 @app.get("/jira-tickets")
-async def read_jira_tickets(request: Request, dayObsStart: int, dayObsEnd: int, instrument: str):
+async def read_jira_tickets(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    auth_token: str = Depends(get_access_token("jira")),
+    jira_hostname: str = Depends(get_jira_hostname),
+):
     logger.info(
         f"Getting jira tickets for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}"
     )
     try:
-        tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
+        tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument, auth_token, jira_hostname)
         return {"issues": tickets}
     except BaseLogrepError as ble:
         logger.error(f"Jira API error in /jira-tickets: {ble}")
@@ -227,7 +239,7 @@ async def read_narrative_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     logger.info(
         f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
@@ -253,7 +265,7 @@ async def read_exposure_flags(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     logger.info(
         f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
@@ -275,7 +287,7 @@ async def read_exposure_entries(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     logger.info(
         f"Getting Exposure Log entries for dayObsStart: {dayObsStart}, "
@@ -296,7 +308,7 @@ async def read_nightreport(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     try:
         records = get_night_reports(dayObsStart, dayObsEnd, auth_token=auth_token)
@@ -313,7 +325,7 @@ async def read_context_feed(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     try:
         (efd_and_messages, cols) = get_context_feed(dayObsStart, dayObsEnd, auth_token=auth_token)
@@ -334,7 +346,7 @@ async def multi_night_visit_maps(
     instrument: str,
     planisphereOnly: bool = False,
     appletMode: bool = False,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(get_access_token()),
 ):
     """Generate multi-night visit maps using Bokeh.
     Parameters
@@ -394,7 +406,6 @@ async def survey_progress_map(
     request: Request,
     dayObs: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
 ):
     """Generate a survey progress map for a given night using Bokeh.
 
@@ -406,8 +417,6 @@ async def survey_progress_map(
         Date in YYYYMMDD format.
     instrument : `str`
         Instrument name (e.g., 'lsstCam', 'latiss', etc.).
-    auth_token : `str`
-        Authentication token (injected by FastAPI dependency).
 
     Returns
     -------
@@ -483,7 +492,9 @@ async def survey_progress_map(
 async def read_block_details(
     request: Request,
     key: List[str] = Query(...),
-    auth_token: str = Depends(get_access_token),
+    zephyr_token: str = Depends(get_access_token("zephyr")),
+    jira_token: str = Depends(get_access_token("jira")),
+    jira_hostname: str = Depends(get_jira_hostname),
 ):
     """Retrieve BLOCK details from Zephyr/Jira for a list of keys.
     Parameters
@@ -493,8 +504,12 @@ async def read_block_details(
     key : `List[str]`
         List of BLOCK keys (e.g., ``BLOCK-704`` or
         ``BLOCK-T123_a``) provided as query parameters.
-    auth_token : `str`
-        Authentication token (injected by FastAPI dependency).
+    zephyr_token : `str`
+        Authentication token for Zephyr (injected by FastAPI dependency).
+    jira_token : `str`
+        Authentication token for Jira (injected by FastAPI dependency).
+    jira_hostname : `str`
+        Authentication hostname for Jira (injected by FastAPI dependency).
     Returns
     -------
     `dict`
@@ -533,7 +548,11 @@ async def read_block_details(
         if zephyr_keys:
             try:
                 logger.info(f"Getting Test Case BLOCK details from Zephyr for {zephyr_keys}")
-                zephyr_blocks = await get_test_cases(zephyr_keys)
+                zephyr_blocks = await get_test_cases(
+                    zephyr_keys,
+                    zephyr_token=zephyr_token,
+                    jira_token=jira_token,
+                )
             except Exception as e:
                 logger.error(f"Zephyr error in /block-details: {e}", exc_info=True)
                 errors["zephyr"] = str(e)
@@ -542,7 +561,11 @@ async def read_block_details(
         if jira_keys:
             try:
                 logger.info(f"Getting BLOCK ticket summaries from Jira for {jira_keys}")
-                jira_blocks = get_block_ticket_summaries(jira_keys)
+                jira_blocks = get_block_ticket_summaries(
+                    jira_keys,
+                    jira_token=jira_token,
+                    jira_hostname=jira_hostname,
+                )
             except Exception as e:
                 logger.error(f"Jira error in /block-details: {e}", exc_info=True)
                 errors["jira"] = str(e)

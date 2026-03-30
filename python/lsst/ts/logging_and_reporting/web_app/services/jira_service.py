@@ -1,6 +1,6 @@
 import logging
 
-from lsst.ts.logging_and_reporting.jira import JiraAdapter, JiraClient
+from lsst.ts.logging_and_reporting.jira import JiraAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +85,65 @@ def filter_tickets_without_instrument_match(tickets, instrument):
     return [ticket for ticket in tickets if not_matches(ticket)]
 
 
-def get_jira_tickets(dayobs_start: int, dayobs_end: int, telescope: str) -> list[dict]:
+def get_jira_tickets(
+    dayobs_start: int,
+    dayobs_end: int,
+    telescope: str,
+    jira_token: str = None,
+    jira_hostname: str = None,
+) -> list[dict]:
+    """Retrieve and filter Jira tickets for a given dayobs range and telescope.
+
+    This service queries Jira for observation-related tickets within the
+    specified dayobs range, then applies instrument-based filtering logic
+    to return only relevant tickets for the requested telescope.
+
+    Parameters
+    ----------
+    dayobs_start : `int`
+        The start of the dayobs range (inclusive), formatted as YYYYMMDD.
+    dayobs_end : `int`
+        The end of the dayobs range (exclusive), formatted as YYYYMMDD.
+    telescope : `str`
+        The telescope or instrument name used to filter returned tickets.
+    jira_token : `str`, optional
+        Authentication token for Jira API access.
+    jira_hostname : `str`, optional
+        Hostname for the Jira API.
+
+    Returns
+    -------
+    list of `dict`
+        A list of Jira ticket objects matching the specified criteria.
+        Returns an empty list if no tickets are found.
+
+    Notes
+    -----
+    - Tickets are initially retrieved using the Jira adapter over the
+      full dayobs range.
+    - If ``telescope`` is present in ``INSTRUMENT_EXCLUDE_MAP``, tickets
+      are filtered by excluding those matching specified instruments.
+    - Otherwise, only tickets matching the given ``telescope`` are included.
+    - Filtering is performed using helper functions that match or exclude
+      tickets based on instrument/system fields.
+
+    Raises
+    ------
+    None
+        This function does not raise exceptions directly, but may propagate
+        exceptions raised by the Jira adapter or underlying network calls.
+    """
     logger.info(f"Jira service: start: {dayobs_start}, end: {dayobs_end} and telescope: {telescope}")
 
     jira = JiraAdapter(
-        max_dayobs=dayobs_end,
-        min_dayobs=dayobs_start,
+        jira_token=jira_token,
+        jira_hostname=jira_hostname,
     )
-    logger.info(f"max_dayobs: {jira.max_dayobs}, min_dayobs: {jira.min_dayobs}, telescope: {telescope}")
-    tickets = jira.fetch_issues()
+
+    tickets = jira.get_obs_issues(
+        min_dayobs=dayobs_start,
+        max_dayobs=dayobs_end,
+    )
     if not tickets:
         logger.warning("No Jira tickets found for the specified date range and telescope.")
         return []
@@ -118,14 +168,23 @@ def get_jira_tickets(dayobs_start: int, dayobs_end: int, telescope: str) -> list
     return system_tickets
 
 
-def get_block_ticket_summaries(ticket_keys: list[str]) -> dict:
+def get_block_ticket_summaries(
+    ticket_keys: list[str],
+    jira_token: str = None,
+    jira_hostname: str = None,
+) -> dict:
     """
     Fetch summaries for a list of BLOCK Jira tickets.
 
     Parameters
     ----------
-    ticket_keys : list[str]
+    ticket_keys : `list[str]`
         List of Jira issue keys (e.g. ["BLOCK-123", "BLOCK-456"])
+    jira_token : `str`, optional
+        Authentication token used when connecting to Rubin Observatory's
+        Jira services.
+    jira_hostname : `str`, optional
+        Hostname for the Jira API.
 
     Returns
     -------
@@ -138,7 +197,10 @@ def get_block_ticket_summaries(ticket_keys: list[str]) -> dict:
         logger.warning("No BLOCK ticket keys provided.")
         return {}
 
-    jira = JiraClient()
+    jira = JiraAdapter(
+        jira_token=jira_token,
+        jira_hostname=jira_hostname,
+    )
 
     summaries = jira.fetch_block_ticket_summaries(ticket_keys)
 
