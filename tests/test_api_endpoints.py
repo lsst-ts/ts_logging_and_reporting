@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
 
@@ -11,8 +10,8 @@ from rubin_nights.connections import get_clients
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
-from lsst.ts.logging_and_reporting.utils import get_access_token
-from lsst.ts.logging_and_reporting.web_app.main import app
+from lsst.ts.logging_and_reporting.utils import get_jira_hostname
+from lsst.ts.logging_and_reporting.web_app.main import app, jira_auth, rsp_auth
 
 client = TestClient(app)
 
@@ -642,44 +641,37 @@ def mock_post_response():
     return response_post
 
 
-def _test_endpoint_auth_header(endpoint):
-    headers = {"Authorization": "Bearer header-token"}
-    response = client.get(endpoint, headers=headers)
+def _test_endpoint_authentication(endpoint, monkeypatch):
+    # Header auth
+    response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
     assert response.status_code == 200
 
-
-def _test_endpoint_auth_env_var(endpoint):
-    os.environ["ACCESS_TOKEN"] = "env-token"
+    # Env auth
+    monkeypatch.setenv("ACCESS_TOKEN", "env-token")
     response = client.get(endpoint)
     assert response.status_code == 200
-    del os.environ["ACCESS_TOKEN"]
+    monkeypatch.delenv("ACCESS_TOKEN", raising=False)
 
+    # RSP utils (RSPDiscovery)
+    mock_rspdiscovery = Mock()
+    mock_rspdiscovery.get_token.return_value = "mocked-discovery-token"
 
-def _test_endpoint_auth_rsp_utils(endpoint):
     mock_lsst = Mock()
-    mock_lsst.rsp.utils.get_info.return_value = "mocked-token"
+    mock_lsst.rsp._services.RSPDiscovery = mock_rspdiscovery
 
     with patch.dict(
         "sys.modules",
         {
             "lsst": mock_lsst,
-            "lsst.rsp.utils": mock_lsst.rsp.utils,
+            "lsst.rsp._services": mock_lsst.rsp._services,
         },
     ):
         response = client.get(endpoint)
         assert response.status_code == 200
 
-
-def _test_endpoint_no_auth(endpoint):
+    # No auth --> 401
     response = client.get(endpoint)
     assert response.status_code == 401
-
-
-def _test_endpoint_authentication(endpoint):
-    _test_endpoint_auth_header(endpoint)
-    _test_endpoint_auth_env_var(endpoint)
-    _test_endpoint_auth_rsp_utils(endpoint)
-    _test_endpoint_no_auth(endpoint)
 
 
 @pytest.fixture
@@ -714,11 +706,11 @@ def test_version_endpoint():
     assert data["version"] == __version__
 
 
-def test_nightreport_endpoint(mock_requests_get):
+def test_nightreport_endpoint(mock_requests_get, monkeypatch):
     endpoint = "/night-reports?dayObsStart=20250730&dayObsEnd=20250731"
-    _test_endpoint_authentication(endpoint)
+    _test_endpoint_authentication(endpoint, monkeypatch)
 
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.json()
@@ -745,14 +737,14 @@ def test_nightreport_endpoint(mock_requests_get):
     ]
     for param in expected_params:
         assert param in report, f"Missing {param} in night report: {report}"
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
 
-def test_exposure_entries_endpoint(mock_requests_get):
+def test_exposure_entries_endpoint(mock_requests_get, monkeypatch):
     endpoint = "/exposure-entries?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    _test_endpoint_authentication(endpoint)
+    _test_endpoint_authentication(endpoint, monkeypatch)
 
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.json()
@@ -778,12 +770,12 @@ def test_exposure_entries_endpoint(mock_requests_get):
     for entry in data["exposure_entries"]:
         for param in expected_entry_params:
             assert param in entry, f"Missing {param} in exposure entry: {entry}"
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
 
-def test_exposures_endpoint(mock_requests_get, mock_requests_post):
+def test_exposures_endpoint(mock_requests_get, mock_requests_post, monkeypatch):
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    _test_endpoint_authentication(endpoint)
+    _test_endpoint_authentication(endpoint, monkeypatch)
 
     with (
         patch("lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome") as mock_open_close,
@@ -825,7 +817,7 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
                 "visit_gap": [3],
             }
         )
-        app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+        app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
         app.dependency_overrides[get_clients] = lambda: {"efd": Mock()}
 
         response = client.get(endpoint)
@@ -857,8 +849,65 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post):
         assert data["exposures_count"] == 1
         assert data["open_dome_times"] == []
 
-        app.dependency_overrides.pop(get_access_token, None)
+        app.dependency_overrides.pop(rsp_auth, None)
         app.dependency_overrides.pop(get_clients, None)
+
+
+def test_jira_endpoint_authentication(monkeypatch):
+    endpoint = "/jira-tickets?dayObsStart=1&dayObsEnd=2&instrument=LATISS"
+
+    # Mock service
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_jira_tickets",
+        lambda *args, **kwargs: [],
+    )
+
+    monkeypatch.setenv("JIRA_API_HOSTNAME", "https://fake-jira-host")
+
+    # Header auth
+    response = client.get(endpoint, headers={"Authorization": "Bearer test"})
+    assert response.status_code == 200
+
+    # Env auth
+    monkeypatch.setenv("JIRA_API_TOKEN", "env-token")
+    response = client.get(endpoint)
+    assert response.status_code == 200
+
+    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+    monkeypatch.delenv("JIRA_API_HOSTNAME", raising=False)
+
+    # No auth --> 401
+    response = client.get(endpoint)
+    assert response.status_code == 401
+
+
+def test_jira_tickets_endpoint(mock_requests_get, monkeypatch):
+    endpoint = "/jira-tickets?dayObsStart=20250730&dayObsEnd=20250731&instrument=LATISS"
+
+    # Mock service layer
+    mock_tickets = [{"key": "OBS-1", "summary": "Test ticket"}]
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_jira_tickets",
+        lambda *args, **kwargs: mock_tickets,
+    )
+
+    # Override dependencies
+    app.dependency_overrides[jira_auth] = lambda: "dummy-token"
+    app.dependency_overrides[get_jira_hostname] = lambda: "mock-host"
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "issues" in data
+    assert data["issues"] == mock_tickets
+    assert isinstance(data["issues"], list)
+
+    # Cleanup
+    app.dependency_overrides.pop(jira_auth, None)
+    app.dependency_overrides.pop(get_jira_hostname, None)
 
 
 def test_almanac_endpoint(monkeypatch):
@@ -912,11 +961,11 @@ def test_context_feed_endpoint(monkeypatch):
     )
 
     # Authentication test --
-    _test_endpoint_authentication(endpoint)
+    _test_endpoint_authentication(endpoint, monkeypatch)
 
     # API test --
     # Override token-fetching dependency
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
     # Make request
     response = client.get(endpoint)
@@ -934,7 +983,7 @@ def test_context_feed_endpoint(monkeypatch):
             assert col in record
 
     # Remove override
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
     # Error-path API test --
     # Simulate a service failure by patching get_context_feed
@@ -948,7 +997,7 @@ def test_context_feed_endpoint(monkeypatch):
     )
 
     # Override token again
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
     # Expect API to return 500 with exception message
     response = client.get(endpoint)
@@ -956,7 +1005,7 @@ def test_context_feed_endpoint(monkeypatch):
     assert response.json()["detail"] == "failure"
 
     # Clean up override
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
 
 @pytest.fixture
@@ -1018,7 +1067,7 @@ def test_visit_maps_applet_mode_planisphere_only(
     mock_observatory_instance = MagicMock()
     mock_observatory.return_value = mock_observatory_instance
 
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
     response = client.get(
         "/multi-night-visit-maps",
@@ -1046,7 +1095,7 @@ def test_visit_maps_applet_mode_planisphere_only(
     assert call_kwargs["applet_mode"] is True
     assert call_kwargs["timezone"] == "UTC"
 
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
 
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
@@ -1069,7 +1118,7 @@ def test_visit_maps_full_mode_both_maps(
     mock_observatory_instance = MagicMock()
     mock_observatory.return_value = mock_observatory_instance
 
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
     response = client.get(
         "/multi-night-visit-maps",
@@ -1095,7 +1144,7 @@ def test_visit_maps_full_mode_both_maps(
     assert call_kwargs["planisphere_only"] is False
     assert call_kwargs["applet_mode"] is False
 
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
 
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
@@ -1109,7 +1158,7 @@ def test_visit_maps_no_visits_data(
     mock_observatory_instance = MagicMock()
     mock_observatory.return_value = mock_observatory_instance
 
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
     response = client.get(
         "/multi-night-visit-maps",
@@ -1126,7 +1175,7 @@ def test_visit_maps_no_visits_data(
     assert "interactive" in data
     assert data["interactive"] is None
 
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
 
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
@@ -1140,7 +1189,7 @@ def test_visit_maps_read_visits_exception(
     mock_observatory_instance = MagicMock()
     mock_observatory.return_value = mock_observatory_instance
 
-    app.dependency_overrides[get_access_token] = lambda: "dummy-token"
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
     response = client.get(
         "/multi-night-visit-maps",
@@ -1154,7 +1203,7 @@ def test_visit_maps_read_visits_exception(
     assert response.status_code == 500
     assert "Database connection error" in response.json()["detail"]
 
-    app.dependency_overrides.pop(get_access_token, None)
+    app.dependency_overrides.pop(rsp_auth, None)
 
 
 def test_expected_exposures_endpoint(monkeypatch):
