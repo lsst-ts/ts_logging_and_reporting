@@ -34,13 +34,13 @@ class BaseLogrepError(Warning):
     def __init__(self, error_message, error_code=None, status_code=None):
         Exception.__init__(self)
         self.error_message = error_message
-        if error_code:
-            if len(error_code) > 8:
+        if error_code is not None:
+            if isinstance(error_code, str) and len(error_code) > 8:
                 raise ValueError(f'error_code "{error_code}" too big')
             self.error_code = error_code
+        else:
+            self.error_code = None
 
-        if error_code is not None:
-            self.error_code = error_code
         if status_code is not None:
             self.status_code = status_code or self.status_code
 
