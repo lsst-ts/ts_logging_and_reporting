@@ -1,0 +1,1 @@
+Refactor Jira adapter and generalise get_access_token to be token-agnostic.
