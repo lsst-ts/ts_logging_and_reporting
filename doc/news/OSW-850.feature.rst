@@ -1,1 +1,1 @@
-Add Zephyr test case service and API endpoint
+Add Zephyr/Jira BLOCK services and API endpoint

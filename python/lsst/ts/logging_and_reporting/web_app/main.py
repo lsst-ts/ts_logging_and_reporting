@@ -517,7 +517,7 @@ async def read_block_details(
     ------
     HTTPException
         Raised with status code 500 if an unexpected error occurs while
-        retrieving test case details.
+        retrieving BLOCK details.
     """
     logger.info(f"Getting BLOCK details from Zephyr/Jira for {key}")
     try:
