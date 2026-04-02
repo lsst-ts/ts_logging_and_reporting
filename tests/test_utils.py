@@ -7,14 +7,113 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from lsst.ts.logging_and_reporting.utils import (
+    AUTH_SOURCES,
     get_access_token,
     get_auth_header,
     get_jira_hostname,
     make_json_safe,
+    retrieve_access_token,
     stringify_special_floats,
 )
 
 app = FastAPI()
+
+
+def test_retrieve_access_token_env(monkeypatch):
+    config = AUTH_SOURCES["rsp"]
+    monkeypatch.setenv(config["env_var"], "env_token")
+
+    token = retrieve_access_token(config)
+    assert token == "env_token"
+
+
+def test_retrieve_access_token_header(monkeypatch):
+    config = AUTH_SOURCES["rsp"]
+    monkeypatch.delenv(config["env_var"], raising=False)
+
+    class MockRequest:
+        headers = {"Authorization": "Bearer header_token"}
+
+    token = retrieve_access_token(config, request=MockRequest())
+    assert token == "header_token"
+
+
+# RSP notebook: Preferred RSPDiscovery path
+def test_retrieve_access_token_rsp_discovery():
+    config = AUTH_SOURCES["rsp"]
+
+    # Mock hierarchy
+    mock_services = Mock()
+    mock_services.RSPDiscovery.get_token.return_value = "rsp-token"
+
+    mock_rsp = Mock()
+    mock_rsp._services = mock_services
+
+    mock_lsst = Mock()
+    mock_lsst.rsp = mock_rsp
+
+    with patch.dict(
+        "sys.modules",
+        {
+            "lsst": mock_lsst,
+            "lsst.rsp": mock_rsp,
+            "lsst.rsp._services": mock_services,
+        },
+    ):
+        token = retrieve_access_token(config)
+        assert token == "rsp-token"
+        mock_services.RSPDiscovery.get_token.assert_called_once()
+
+
+# RSP notebook: RSPDiscovery fails --> fallback to env var
+def test_retrieve_access_token_rsp_fallback_to_env(monkeypatch):
+    config = AUTH_SOURCES["rsp"]
+
+    mock_services = Mock()
+    mock_services.RSPDiscovery.get_token.side_effect = Exception("no token")
+
+    mock_rsp = Mock()
+    mock_rsp._services = mock_services
+
+    mock_lsst = Mock()
+    mock_lsst.rsp = mock_rsp
+
+    monkeypatch.setenv("ACCESS_TOKEN", "env_token")
+
+    with patch.dict(
+        "sys.modules",
+        {
+            "lsst": mock_lsst,
+            "lsst.rsp": mock_rsp,
+            "lsst.rsp._services": mock_services,
+        },
+    ):
+        token = retrieve_access_token(config)
+        assert token == "env_token"
+
+
+# Fallback to deprecated lsst.utils
+def test_retrieve_access_token_lsst_utils():
+    config = AUTH_SOURCES["rsp"]
+
+    mock_utils = Mock()
+    mock_utils.get_access_token.return_value = "lsst-token"
+
+    mock_rsp = Mock()
+    mock_rsp.utils = mock_utils
+
+    mock_lsst = Mock()
+    mock_lsst.rsp = mock_rsp
+
+    with patch.dict(
+        "sys.modules",
+        {
+            "lsst": mock_lsst,
+            "lsst.rsp.utils": mock_utils,
+        },
+    ):
+        token = retrieve_access_token(config)
+        assert token == "lsst-token"
 
 
 @app.get("/test-default-access-token")
@@ -47,82 +146,6 @@ def test_get_access_token_jira_env_variable(monkeypatch):
     dependency = get_access_token("jira")
     token = dependency()
     assert token == "jira-token"
-
-
-# RSP notebook: Preferred RSPDiscovery path
-def test_get_access_token_rsp_discovery():
-    # Mock hierarchy
-    mock_services = Mock()
-    mock_services.RSPDiscovery.get_token.return_value = "rsp-token"
-
-    mock_rsp = Mock()
-    mock_rsp._services = mock_services
-
-    mock_lsst = Mock()
-    mock_lsst.rsp = mock_rsp
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "lsst": mock_lsst,
-            "lsst.rsp": mock_rsp,
-            "lsst.rsp._services": mock_services,
-        },
-    ):
-        dependency = get_access_token()
-        token = dependency()
-        assert token == "rsp-token"
-        mock_services.RSPDiscovery.get_token.assert_called_once()
-
-
-# RSP notebook: RSPDiscovery fails --> fallback to env var
-def test_get_access_token_rsp_fallback_to_env(monkeypatch):
-    # Mock hierarchy
-    mock_services = Mock()
-    mock_services.RSPDiscovery.get_token.side_effect = Exception("no token")
-
-    mock_rsp = Mock()
-    mock_rsp._services = mock_services
-
-    mock_lsst = Mock()
-    mock_lsst.rsp = mock_rsp
-
-    monkeypatch.setenv("ACCESS_TOKEN", "env_token")
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "lsst": mock_lsst,
-            "lsst.rsp": mock_rsp,
-            "lsst.rsp._services": mock_services,
-        },
-    ):
-        dependency = get_access_token()
-        token = dependency()
-        assert token == "env_token"
-
-
-# Fallback to deprecated lsst.utils
-def test_get_access_token_lsst_utils():
-    mock_utils = Mock()
-    mock_utils.get_access_token.return_value = "lsst-token"
-
-    mock_rsp = Mock()
-    mock_rsp.utils = mock_utils
-
-    mock_lsst = Mock()
-    mock_lsst.rsp = mock_rsp
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "lsst": mock_lsst,
-            "lsst.rsp.utils": mock_utils,
-        },
-    ):
-        dependency = get_access_token()
-        token = dependency()
-        assert token == "lsst-token"
 
 
 def test_get_access_token_request_headers(monkeypatch):
