@@ -442,13 +442,16 @@ class TestGetBlockTicketSummaries:
         provided.
         """
 
-        class DummyJiraClient:
+        class DummyJiraAdapter:
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
+
             def fetch_block_ticket_summaries(self, ticket_keys):
                 return {"SHOULD": "NOT BE CALLED"}
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraClient",
-            DummyJiraClient,
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
         )
 
         result = jira_service.get_block_ticket_summaries([])
@@ -459,13 +462,16 @@ class TestGetBlockTicketSummaries:
         fetch_block_ticket_summaries returns an empty dict.
         """
 
-        class DummyJiraClient:
+        class DummyJiraAdapter:
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
+
             def fetch_block_ticket_summaries(self, ticket_keys):
                 return {}
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraClient",
-            DummyJiraClient,
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
         )
 
         result = jira_service.get_block_ticket_summaries(["BLOCK-1"])
@@ -474,13 +480,16 @@ class TestGetBlockTicketSummaries:
     def test_returns_ticket_summaries_correctly(self, monkeypatch):
         """Test that the function returns the expected ticket summaries."""
 
-        class DummyJiraClient:
+        class DummyJiraAdapter:
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
+
             def fetch_block_ticket_summaries(self, ticket_keys):
                 return {key: f"Summary for {key}" for key in ticket_keys}
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraClient",
-            DummyJiraClient,
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
         )
 
         ticket_keys = ["BLOCK-1", "BLOCK-2"]

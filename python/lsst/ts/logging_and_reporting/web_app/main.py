@@ -12,10 +12,10 @@ from rubin_scheduler.scheduler.model_observatory import ModelObservatory
 
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
+    build_block_response,
     get_access_token,
     get_jira_hostname,
     make_json_safe,
-    build_block_response,
 )
 
 from .. import __version__
@@ -41,6 +41,7 @@ from .services.zephyr_service import get_test_cases
 # Auth dependencies (instantiated once for reuse and testing)
 rsp_auth = get_access_token()
 jira_auth = get_access_token("jira")
+zephyr_auth = get_access_token("zephyr")
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -495,31 +496,40 @@ async def survey_progress_map(
 @app.get("/block-details")
 async def read_block_details(
     request: Request,
-    key: List[str] = Query(...),
-    auth_token: str = Depends(get_access_token),
+    keys: List[str] = Query(..., alias="key"),
+    zephyr_token: str = Depends(zephyr_auth),
+    jira_token: str = Depends(jira_auth),
+    jira_hostname: str = Depends(get_jira_hostname),
 ):
     """Retrieve BLOCK details from Zephyr/Jira for a list of keys.
+
     Parameters
     ----------
-    request : `Request`
+    request : `fastapi.Request`
         FastAPI request object.
-    key : `List[str]`
+    key : `list` [`str`]
         List of BLOCK keys (e.g., ``BLOCK-704`` or
         ``BLOCK-T123_a``) provided as query parameters.
-    auth_token : `str`
-        Authentication token (injected by FastAPI dependency).
+    zephyr_token : `str`
+        Authentication token for Zephyr (injected by FastAPI dependency).
+    jira_token : `str`
+        Authentication token for Jira (injected by FastAPI dependency).
+    jira_hostname : `str`
+        Authentication hostname for Jira (injected by FastAPI dependency).
+
     Returns
     -------
     `dict`
         A dictionary containing a ``data`` field that maps each valid BLOCK key
         to its associated summary, URL, and source (e.g., Zephyr or Jira).
+
     Raises
     ------
     HTTPException
         Raised with status code 500 if an unexpected error occurs while
         retrieving BLOCK details.
     """
-    logger.info(f"Getting BLOCK details from Zephyr/Jira for {key}")
+    logger.info(f"Getting BLOCK details from Zephyr/Jira for: {keys}")
     try:
         ZEPHYR_BLOCK_RE = re.compile(r"^BLOCK-T\d+(?:_[A-Za-z0-9]+)?$")
         JIRA_BLOCK_RE = re.compile(r"^BLOCK-\d+$")
@@ -528,7 +538,7 @@ async def read_block_details(
         jira_keys = []
 
         # Remove duplicates
-        key = list(dict.fromkeys(key))
+        key = list(dict.fromkeys(keys))
 
         # Sort keys by data source
         for k in key:
@@ -546,7 +556,11 @@ async def read_block_details(
         if zephyr_keys:
             try:
                 logger.info(f"Getting Test Case BLOCK details from Zephyr for {zephyr_keys}")
-                zephyr_blocks = await get_test_cases(zephyr_keys)
+                zephyr_blocks = await get_test_cases(
+                    zephyr_keys,
+                    zephyr_token=zephyr_token,
+                    jira_token=jira_token,
+                )
             except Exception as e:
                 logger.error(f"Zephyr error in /block-details: {e}", exc_info=True)
                 errors["zephyr"] = str(e)
@@ -555,13 +569,17 @@ async def read_block_details(
         if jira_keys:
             try:
                 logger.info(f"Getting BLOCK ticket summaries from Jira for {jira_keys}")
-                jira_blocks = get_block_ticket_summaries(jira_keys)
+                jira_blocks = get_block_ticket_summaries(
+                    jira_keys,
+                    jira_token=jira_token,
+                    jira_hostname=jira_hostname,
+                )
             except Exception as e:
                 logger.error(f"Jira error in /block-details: {e}", exc_info=True)
                 errors["jira"] = str(e)
 
         # If both failed → hard fail
-        if ("zephyr" in errors) and ("jira" in errors):
+        if "zephyr" in errors and "jira" in errors:
             raise HTTPException(status_code=500, detail="Both Zephyr and Jira requests failed.")
 
         # Flesh out response dict with source type and URL

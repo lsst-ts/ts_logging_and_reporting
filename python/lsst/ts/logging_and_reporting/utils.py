@@ -59,8 +59,8 @@ AUTH_SOURCES = {
 }
 
 # Base urls for BLOCK links
-ZEPHYR_BLOCK_BASE_URL = "https://rubinobs.atlassian.net/projects/BLOCK?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/v2/testCase/"
-JIRA_BLOCK_BASE_URL = "https://rubinobs.atlassian.net/browse/"
+ZEPHYR_BLOCK_BASE_URL = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/projects/BLOCK?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/v2/testCase/"
+JIRA_BLOCK_BASE_URL = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/"
 
 
 def date_hr_min(iso_dt_str):
@@ -329,7 +329,7 @@ def retrieve_access_token(config: dict, request: Request = None) -> str:
 
     Returns
     -------
-    str
+    `str`
         The resolved authentication token.
 
     Raises
@@ -430,7 +430,7 @@ def get_access_token(source: str = "rsp"):
 
         Returns
         -------
-        str
+        `str`
             Authentication token retrieved using ``retrieve_access_token``.
 
         Raises
@@ -453,7 +453,7 @@ def get_auth_header(token: str | None):
 
     Returns
     -------
-    dict
+    `dict`
         A dictionary containing the ``Authorization`` header with the
         bearer token.
 
@@ -482,7 +482,7 @@ def get_jira_hostname():
 
     Returns
     -------
-    str
+    `str`
         The Jira API hostname.
 
     Raises

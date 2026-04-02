@@ -10,13 +10,13 @@ from lsst.ts.logging_and_reporting.utils import (
     AUTH_SOURCES,
     JIRA_BLOCK_BASE_URL,
     ZEPHYR_BLOCK_BASE_URL,
+    build_block_response,
     get_access_token,
     get_auth_header,
     get_jira_hostname,
     make_json_safe,
     retrieve_access_token,
     stringify_special_floats,
-    build_block_response,
 )
 
 app = FastAPI()
@@ -119,6 +119,30 @@ def test_retrieve_access_token_lsst_utils():
         assert token == "lsst-token"
 
 
+# Fetch default (RSP) token via env var
+def test_get_access_token_default_env_variable(monkeypatch):
+    monkeypatch.setenv("ACCESS_TOKEN", "env_token")
+    dependency = get_access_token()
+    token = dependency()
+    assert token == "env_token"
+
+
+# Fetch Jira token via env var
+def test_get_access_token_jira_env_variable(monkeypatch):
+    monkeypatch.setenv("JIRA_API_TOKEN", "jira-token")
+    dependency = get_access_token("jira")
+    token = dependency()
+    assert token == "jira-token"
+
+
+# Fetch Zephyr token via env var
+def test_get_access_token_zephyr_env_variable(monkeypatch):
+    monkeypatch.setenv("ZEPHYR_API_TOKEN", "zephyr-token")
+    dependency = get_access_token("zephyr")
+    token = dependency()
+    assert token == "zephyr-token"
+
+
 @app.get("/test-default-access-token")
 def access_token_endpoint(
     request: Request = None,
@@ -135,20 +159,12 @@ def jira_access_token_endpoint(
     return {"token": auth_token}
 
 
-# Fetch default (RSP) token via env var
-def test_get_access_token_default_env_variable(monkeypatch):
-    monkeypatch.setenv("ACCESS_TOKEN", "env_token")
-    dependency = get_access_token()
-    token = dependency()
-    assert token == "env_token"
-
-
-# Fetch Jira token via env var
-def test_get_access_token_jira_env_variable(monkeypatch):
-    monkeypatch.setenv("JIRA_API_TOKEN", "jira-token")
-    dependency = get_access_token("jira")
-    token = dependency()
-    assert token == "jira-token"
+@app.get("/test-zephyr-access-token")
+def zephyr_access_token_endpoint(
+    request: Request = None,
+    auth_token: str = Depends(get_access_token("zephyr")),
+):
+    return {"token": auth_token}
 
 
 def test_get_access_token_request_headers(monkeypatch):
@@ -173,6 +189,14 @@ def test_get_access_token_no_jira_token(monkeypatch):
     response = client.get("/test-jira-access-token")
     assert response.status_code == 401
     assert response.json() == {"detail": "Jira authentication token could not be retrieved by any method."}
+
+
+def test_get_access_token_no_zephyr_token(monkeypatch):
+    monkeypatch.delenv("ZEPHYR_API_TOKEN", raising=False)
+    client = TestClient(app)
+    response = client.get("/test-zephyr-access-token")
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Zephyr authentication token could not be retrieved by any method."}
 
 
 def test_get_auth_header_valid():
