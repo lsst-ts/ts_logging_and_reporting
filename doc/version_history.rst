@@ -1,3 +1,19 @@
+v0.12.2-alpha.2 (2026-04-02)
+============================
+
+New Features
+------------
+
+- Add Zephyr/Jira BLOCK services and API endpoint (`OSW-850 <https://rubinobs.atlassian.net//browse/OSW-850>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Enable fetching all tracebacks from rubin-nights for the Context Feed. (`OSW-1257 <https://rubinobs.atlassian.net//browse/OSW-1257>`_)
+- Refactor Jira adapter and generalise get_access_token to be token-agnostic. (`OSW-2058 <https://rubinobs.atlassian.net//browse/OSW-2058>`_)
+
+
 v0.12.1 (2026-03-12)
 ====================
 
