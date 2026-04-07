@@ -179,7 +179,8 @@ def get_context_feed(
     """
     logger.info(f"Getting context feed data for start: {dayobs_start}, end: {dayobs_end}")
     try:
-        # Get connections to rubin_nights services
+        # Get connections to rubin_nights services,
+        # EFD, obsenv, narrative_log, and exposure_log used here
         endpoints = get_clients(auth_token=auth_token)
 
         # Convert dayobs_start and dayobs_end to t_start and t_end

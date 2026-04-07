@@ -245,11 +245,12 @@ class Timer:
 class Server:
     """Do I need a class for this instead of just using line 262?"""
 
-    summit = "https://summit-lsp.lsst.codes"
-    usdfdev = "https://usdf-rsp-dev.slac.stanford.edu"
-    usdf = "https://usdf-rsp.slac.stanford.edu"
-    tucson = "https://tucson-teststand.lsst.codes"
     base = "https://base-lsp.lsst.codes"
+    summit = "https://summit-lsp.lsst.codes"
+    tucson = "https://tucson-teststand.lsst.codes"
+    usdf = "https://usdf-rsp.slac.stanford.edu"
+    usdfdev = "https://usdf-rsp-dev.slac.stanford.edu"
+    usdfint = "https://usdf-rsp-int.slac.stanford.edu"
 
     @classmethod
     def get_all(cls):
@@ -263,16 +264,18 @@ class Server:
         current = os.environ.get(env_var_name)
 
         match current:
-            case Server.summit:
-                return Server.summit
-            case Server.usdfdev:
-                return Server.usdfdev
-            case Server.usdf:
-                return Server.usdf
-            case Server.tucson:
-                return Server.tucson
             case Server.base:
                 return Server.base
+            case Server.summit:
+                return Server.summit
+            case Server.tucson:
+                return Server.tucson
+            case Server.usdf:
+                return Server.usdf
+            case Server.usdfdev:
+                return Server.usdfdev
+            case Server.usdfint:
+                return Server.usdfint
             case _:
                 raise ValueError(f"Unset or invalid {env_var_name}: {current}")
 
@@ -310,6 +313,65 @@ def get_access_token(request: Request = None):
 
         return lsst.rsp.utils.get_info()
     except ImportError:
+        env_token = os.getenv("ACCESS_TOKEN")
+        if env_token is not None:
+            return env_token
+
+        if request is not None:
+            auth_header = request.headers.get("Authorization")
+            if auth_header is not None and " " in auth_header:
+                return auth_header.split(" ")[1]
+
+    raise HTTPException(
+        status_code=401, detail="RSP authentication token could not be retrieved by any method."
+    )
+
+
+def get_consdb_access_token(request: Request = None):
+    """ConsDB's nightly digest integration data will now be on usdf-rsp-int
+    So if the rest of the application is on usdf-rsp-dev, we need to feed
+    a different ACCESS_TOKEN through to ConsDB
+
+    Returns access token to be sent in headers as Auth Bearer
+
+    When called from the FastAPI web server in local development
+    the token is read from the `ACCESS_TOKEN` environment variable.
+
+    Otherwise we assume this is called from the FastAPI web server running
+    on the RSP and the token is read from the request headers.
+
+    Parameters
+    ----------
+    request : `fastapi.Request`, optional
+        The request object, if available. Used to
+        extract the token from headers.
+
+    Raises
+    ------
+    HTTPException
+        If the access token cannot be retrieved by any method.
+
+    Returns
+    -------
+    str or None
+        The access token if available, otherwise None.
+    """
+    try:
+        import lsst.rsp.utils
+
+        return lsst.rsp.utils.get_info()
+        # If in usdf-rsp-dev we're unable to access ConsDB from usdf-rsp-int
+    except ImportError:
+        active_environment = Server.get_url()
+        env_token_int = os.getenv("ACCESS_TOKEN_INT")
+        if active_environment is Server.usdfdev and env_token_int is not None:
+            import logging
+
+            logger = logging.getLogger("__name__")
+            logger.warning("Valerie you are in usdf-rsp-dev, we are accessing the int var though")
+            # Switch to providing the usdf-rsp-int access env var
+            return env_token_int
+
         env_token = os.getenv("ACCESS_TOKEN")
         if env_token is not None:
             return env_token
