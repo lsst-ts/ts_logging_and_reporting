@@ -1,3 +1,12 @@
+0.12.2-alpha.3 (2026-04-07)
+===========================
+
+Other Changes and Additions
+---------------------------
+
+- Bump rubin-nights to v0.13. (`OSW-2143 <https://rubinobs.atlassian.net//browse/OSW-2143>`_)
+
+
 v0.12.2-alpha.2 (2026-04-02)
 ============================
 
