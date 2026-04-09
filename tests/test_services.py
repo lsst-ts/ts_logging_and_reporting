@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import pytest
 
 from lsst.ts.logging_and_reporting.web_app.services import (
@@ -212,15 +214,56 @@ def dummy_tickets():
 class TestGetJiraTickets:
     """Tests for the get_jira_tickets function."""
 
+    def test_get_jira_tickets_passes_correct_args_to_adapter(self, monkeypatch):
+        """Ensure JiraAdapter is instantiated and called with correct
+        arguments.
+        """
+
+        # Mock the adapter class
+        mock_adapter_cls = Mock()
+
+        # Mock the instance returned by the adapter
+        mock_adapter_instance = Mock()
+        mock_adapter_instance.get_obs_issues.return_value = []
+
+        # When JiraAdapter(...) is called, return our mock instance
+        mock_adapter_cls.return_value = mock_adapter_instance
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            mock_adapter_cls,
+        )
+
+        # Call the function
+        jira_service.get_jira_tickets(
+            20240101,
+            20240102,
+            "LATISS",
+            jira_token="abc",
+            jira_hostname="jira.example.com",
+        )
+
+        # Assert constructor was called correctly
+        mock_adapter_cls.assert_called_once_with(
+            jira_token="abc",
+            jira_hostname="jira.example.com",
+        )
+
+        # Assert method was called correctly
+        mock_adapter_instance.get_obs_issues.assert_called_once_with(
+            min_dayobs=20240101,
+            max_dayobs=20240102,
+        )
+
     def test_get_jira_tickets_returns_empty_list_when_no_tickets(self, monkeypatch):
         """Test that an empty list is returned when no tickets are found."""
 
         class DummyJiraAdapter:
-            def __init__(self, max_dayobs, min_dayobs):
-                self.max_dayobs = max_dayobs
-                self.min_dayobs = min_dayobs
+            def __init__(self, jira_token=None, jira_hostname=None):
+                self.jira_token = jira_token
+                self.jira_hostname = jira_hostname
 
-            def fetch_issues(self):
+            def get_obs_issues(self, min_dayobs, max_dayobs):
                 return []
 
         monkeypatch.setattr(
@@ -232,15 +275,15 @@ class TestGetJiraTickets:
         assert result == []
 
     def test_get_jira_tickets_returns_empty_list_when_fetch_returns_none(self, monkeypatch):
-        """Test that an empty list is returned when
-        fetch_issues returns None."""
+        """Test that an empty list is returned when get_obs_issues
+        returns None.
+        """
 
         class DummyJiraAdapter:
-            def __init__(self, max_dayobs, min_dayobs):
-                self.max_dayobs = max_dayobs
-                self.min_dayobs = min_dayobs
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
 
-            def fetch_issues(self):
+            def get_obs_issues(self, min_dayobs, max_dayobs):
                 return None
 
         monkeypatch.setattr(
@@ -252,15 +295,15 @@ class TestGetJiraTickets:
         assert result == []
 
     def test_get_jira_tickets_filters_by_instrument_included(self, monkeypatch, dummy_tickets):
-        """Test that tickets are filtered to include
-        only specified instruments."""
+        """Test that tickets are filtered to include only specified
+        instruments.
+        """
 
         class DummyJiraAdapter:
-            def __init__(self, max_dayobs, min_dayobs):
-                self.max_dayobs = max_dayobs
-                self.min_dayobs = min_dayobs
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
 
-            def fetch_issues(self):
+            def get_obs_issues(self, min_dayobs, max_dayobs):
                 return dummy_tickets
 
         monkeypatch.setattr(
@@ -271,25 +314,28 @@ class TestGetJiraTickets:
         not_excluding_instruments = (
             jira_service.INSTRUMENTS.keys() - jira_service.INSTRUMENT_EXCLUDE_MAP.keys()
         )
+
         for instrument in not_excluding_instruments:
             result = jira_service.get_jira_tickets(20240101, 20240102, instrument)
+
             included_systems = (
                 instrument,
                 jira_service.INSTRUMENTS[instrument],
             )
+
             for ticket in result:
                 assert any(included in system for included in included_systems for system in ticket["system"])
 
     def test_get_jira_tickets_filters_by_instrument_excluded(self, monkeypatch, dummy_tickets):
-        """Test that tickets are filtered to exclude
-        specified instruments (defined in INSTRUMENT_EXCLUDE_MAP)."""
+        """Test that tickets are filtered to exclude specified instruments
+        (defined in INSTRUMENT_EXCLUDE_MAP).
+        """
 
         class DummyJiraAdapter:
-            def __init__(self, max_dayobs, min_dayobs):
-                self.max_dayobs = max_dayobs
-                self.min_dayobs = min_dayobs
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
 
-            def fetch_issues(self):
+            def get_obs_issues(self, min_dayobs, max_dayobs):
                 return dummy_tickets
 
         monkeypatch.setattr(
@@ -299,11 +345,14 @@ class TestGetJiraTickets:
 
         for instrument in jira_service.INSTRUMENT_EXCLUDE_MAP:
             result = jira_service.get_jira_tickets(20240101, 20240102, instrument)
+
             excluded_systems = jira_service.INSTRUMENT_EXCLUDE_MAP[instrument]
+
             match = any(
                 excluded in system
                 for excluded in excluded_systems
                 for ticket in result
                 for system in ticket["system"]
             )
+
             assert not match

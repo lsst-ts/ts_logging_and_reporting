@@ -1,4 +1,10 @@
-import os
+"""
+For more information on the REST API endpoints refer to:
+- https://developer.atlassian.com/cloud/jira/platform/rest/v3
+- https://developer.atlassian.com/cloud/jira/platform/\
+    basic-auth-for-rest-apis/
+"""
+
 import traceback
 from datetime import datetime
 from urllib.parse import quote
@@ -8,10 +14,13 @@ from pytz import timezone
 
 import lsst.ts.logging_and_reporting.exceptions as ex
 import lsst.ts.logging_and_reporting.utils as ut
-from lsst.ts.logging_and_reporting.source_adapters import SourceAdapter
 
 OBS_SYSTEMS_FIELD = "customfield_10476"
 TIME_LOST_FIELD = "customfield_10106"
+
+dayobs_str_format = "%Y-%m-%d %H:%M"
+timestamp_input_format = "%Y-%m-%dT%H:%M:%S.%f%z"
+timestamp_output_format = "%Y-%m-%d %H:%M:%S"
 
 
 def get_system_names(jira_system_field):
@@ -34,7 +43,7 @@ def get_system_names(jira_system_field):
     return systems
 
 
-class JiraAdapter(SourceAdapter):
+class JiraAdapter:
     EXCLUDED_STATUSES = ["Cancelled"]
     ISSUE_FIELDS = [
         "key",
@@ -50,123 +59,113 @@ class JiraAdapter(SourceAdapter):
     def __init__(
         self,
         *,
-        min_dayobs=None,
-        max_dayobs=None,
-        limit=None,
-        verbose=False,
-        warning=True,
+        jira_token=None,
+        jira_hostname=None,
     ):
-        super().__init__(
-            max_dayobs=max_dayobs,
-            min_dayobs=min_dayobs,
-            limit=limit,
-            verbose=verbose,
-            warning=warning,
-        )
-        self.issues = None
+        self.jira_token = jira_token
+        self.jira_hostname = jira_hostname
+        self.base_url = f"https://{self.jira_hostname}"
+        self.headers = {
+            "Authorization": f"Basic {self.jira_token}",
+            "content-type": "application/json",
+        }
 
-    def fetch_issues(self):
-        """Query JIRA issues for the configured dayobs range, save and
-        return them via self.issues."""
-        if self.issues is None:
-            self.issues = self.get_jira_obs_report()
-        return self.issues
+    def get_users_timezone(self):
+        users_url = f"{self.base_url}/rest/api/latest/myself"
+        response = requests.get(users_url, headers=self.headers)
+        if response.status_code == 200:
+            return timezone(response.json()["timeZone"])
+        else:
+            raise Exception(
+                f"Error getting user timezone from {self.jira_hostname}: "
+                f"{response.status_code} - {response.text}"
+            )
 
-    def get_jira_obs_report(self):
-        """From LOVE-Manager, connect to the Rubin Observatory JIRA Cloud
-        REST API to query all issues of the OBS project for a certain obs day.
+    def _search(self, jql_query, fields):
+        url = f"{self.base_url}/rest/api/latest/search/jql?jql={quote(jql_query)}&fields={fields}"
 
-        For more information on the REST API endpoints refer to:
-        - https://developer.atlassian.com/cloud/jira/platform/rest/v3
-        - https://developer.atlassian.com/cloud/jira/platform/\
-            basic-auth-for-rest-apis/
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as err:
+            msg = f"Error querying Jira: {response.status_code} - {response.text}"
+            traceback.print_exc()
+            raise ex.BaseLogrepError(msg) from err
+        except requests.exceptions.ConnectionError as err:
+            msg = f"Error connecting to Jira. {str(err)}"
+            traceback.print_exc()
+            raise ex.BaseLogrepError(msg) from err
+
+        return response.json().get("issues", [])
+
+    def get_obs_issues(self, min_dayobs, max_dayobs):
+        """Query all issues of the OBS project for a specified range
+        of observation dates.
 
         Notes
         -----
         The JIRA REST API query is based on the user timezone so
-        we need to specify UTC timezone and we expect max_dayobs
-        and min_dayobs to be given in UTC.
+        we need to specify UTC timezone and we expect min_dayobs
+        and max_dayobs to be given in UTC.
 
         Returns
         -------
         List
-            List of dictionaries containing the following keys:
+            List of issue dictionaries containing the following keys:
             - key: The issue key
             - summary: The issue summary
-            - time_lost: The time lost in the issue
-            - reporter: The issue reporter
+            - updated: The timestamp of the most recent update
             - created: The issue creation date
+            - status: The current status of issue
+            - system: The relevant system, e.g. "Simonyi"
+            - isNew: True if created within specified range
+            - url: The URl of the issue
+            - time_lost: The time lost in the issue
         """
-        try:
-            headers = {
-                "Authorization": f"Basic {os.environ.get('JIRA_API_TOKEN')}",
-                "content-type": "application/json",
-            }
+        user_timezone = self.get_users_timezone()
 
-            # needs to be tai, is not yet tai
-            start_dayobs_utc = ut.get_utc_datetime_from_dayobs_str(self.min_dayobs)
-            end_dayobs_utc = ut.get_utc_datetime_from_dayobs_str(self.max_dayobs)
+        # A bunch of date formatting stuff that could maybe be collected
+        # in a function.
+        start_dayobs_utc = ut.get_utc_datetime_from_dayobs_str(min_dayobs)
+        end_dayobs_utc = ut.get_utc_datetime_from_dayobs_str(max_dayobs)
 
-            # Get user's timezone
-            url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/myself"
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                user_timezone = timezone(response.json()["timeZone"])
-            else:
-                raise Exception(
-                    f"Error getting user timezone from {os.environ.get('JIRA_API_HOSTNAME')}: "
-                    f"{response.status_code} - {response.text}"
-                )
+        # convert the utc times to user timezone
+        start_dayobs_user = start_dayobs_utc.astimezone(user_timezone)
+        end_dayobs_user = end_dayobs_utc.astimezone(user_timezone)
 
-            # convert the utc times to user timezone
-            start_dayobs_user = start_dayobs_utc.astimezone(user_timezone)
-            end_dayobs_user = end_dayobs_utc.astimezone(user_timezone)
+        start_dayobs_str = start_dayobs_user.strftime(dayobs_str_format)
+        end_dayobs_str = end_dayobs_user.strftime(dayobs_str_format)
 
-            start_dayobs_str = start_dayobs_user.strftime("%Y-%m-%d %H:%M")
-            end_dayobs_str = end_dayobs_user.strftime("%Y-%m-%d %H:%M")
+        # JQL query to get all issues in the OBS project created between
+        # the specified dayobs range, excluding certain statuses
+        status_exclusions = " ".join(f'AND status != "{s}"' for s in self.EXCLUDED_STATUSES)
+        jql_query = (
+            f"project = OBS {status_exclusions} "
+            f'AND ((created >= "{start_dayobs_str}" '
+            f'AND created < "{end_dayobs_str}") '
+            f'OR (updated >= "{start_dayobs_str}" '
+            f'AND updated < "{end_dayobs_str}"))'
+        )
+        fields = ",".join(self.ISSUE_FIELDS)
 
-            # JQL query to get all issues in the OBS project created between
-            # the specified dayobs range, excluding certain statuses
-            status_exclusions = " ".join(f'AND status != "{s}"' for s in self.EXCLUDED_STATUSES)
-            jql_query = (
-                f"project = OBS {status_exclusions} "
-                f'AND ((created >= "{start_dayobs_str}" '
-                f'AND created < "{end_dayobs_str}") '
-                f'OR (updated >= "{start_dayobs_str}" '
-                f'AND updated < "{end_dayobs_str}"))'
-            )
-            fields = ",".join(self.ISSUE_FIELDS)
-            url = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/rest/api/latest/search/jql?jql={quote(jql_query)}&fields={fields}"
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as err:
-            # Invalid URL?, etc.
-            msg = f"Error getting issues from {os.environ.get('JIRA_API_HOSTNAME')}: "
-            f"{response.status_code} - {response.text}"
-            traceback.print_exc()
-            raise ex(f"Upstream error: {msg}") from err
-        except requests.exceptions.ConnectionError as err:
-            msg = f"Error connecting to Jira.{str(err)}."
-            traceback.print_exc()
-            raise ex.BaseLogrepError(msg) from err
+        issues = self._search(jql_query, fields=fields)
 
-        issues = response.json()["issues"]
         return [
             {
                 "key": issue["key"],
                 "summary": issue["fields"]["summary"],
-                "updated": datetime.strptime(issue["fields"]["updated"], "%Y-%m-%dT%H:%M:%S.%f%z").strftime(
-                    "%Y-%m-%d %H:%M:%S"
+                "updated": datetime.strptime(issue["fields"]["updated"], timestamp_input_format).strftime(
+                    timestamp_output_format
                 ),
-                "created": datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z").strftime(
-                    "%Y-%m-%d %H:%M:%S"
+                "created": datetime.strptime(issue["fields"]["created"], timestamp_input_format).strftime(
+                    timestamp_output_format
                 ),
                 "status": issue["fields"]["status"]["name"],
                 "system": get_system_names(issue["fields"][OBS_SYSTEMS_FIELD]),
-                "isNew": datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                "isNew": datetime.strptime(issue["fields"]["created"], timestamp_input_format)
                 >= start_dayobs_user
-                and datetime.strptime(issue["fields"]["created"], "%Y-%m-%dT%H:%M:%S.%f%z") < end_dayobs_user,
-                "url": f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/{issue['key']}",
+                and datetime.strptime(issue["fields"]["created"], timestamp_input_format) < end_dayobs_user,
+                "url": f"{self.base_url}/browse/{issue['key']}",
                 "time_lost": issue["fields"][TIME_LOST_FIELD],
             }
             for issue in issues

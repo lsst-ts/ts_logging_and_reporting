@@ -9,7 +9,11 @@ from fastapi.responses import JSONResponse
 from rubin_scheduler.scheduler.model_observatory import ModelObservatory
 
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
-from lsst.ts.logging_and_reporting.utils import get_access_token, make_json_safe
+from lsst.ts.logging_and_reporting.utils import (
+    get_access_token,
+    get_jira_hostname,
+    make_json_safe,
+)
 
 from .. import __version__
 from .services.almanac_service import get_almanac
@@ -29,6 +33,10 @@ from .services.rubin_nights_service import (
     get_visits,
 )
 from .services.scheduler_service import create_visit_skymaps, get_expected_exposures, prepare_visit_maps_data
+
+# Auth dependencies (instantiated once for reuse and testing)
+rsp_auth = get_access_token()
+jira_auth = get_access_token("jira")
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -83,7 +91,7 @@ async def read_exposures(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
@@ -176,7 +184,7 @@ async def read_data_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     logger.info(f"Getting data log for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
@@ -192,12 +200,19 @@ async def read_data_log(
 
 
 @app.get("/jira-tickets")
-async def read_jira_tickets(request: Request, dayObsStart: int, dayObsEnd: int, instrument: str):
+async def read_jira_tickets(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    auth_token: str = Depends(jira_auth),
+    jira_hostname: str = Depends(get_jira_hostname),
+):
     logger.info(
         f"Getting jira tickets for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}"
     )
     try:
-        tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument)
+        tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument, auth_token, jira_hostname)
         return {"issues": tickets}
     except BaseLogrepError as ble:
         logger.error(f"Jira API error in /jira-tickets: {ble}")
@@ -224,7 +239,7 @@ async def read_narrative_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     logger.info(
         f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
@@ -250,7 +265,7 @@ async def read_exposure_flags(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     logger.info(
         f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
@@ -272,7 +287,7 @@ async def read_exposure_entries(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     logger.info(
         f"Getting Exposure Log entries for dayObsStart: {dayObsStart}, "
@@ -293,7 +308,7 @@ async def read_nightreport(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     try:
         records = get_night_reports(dayObsStart, dayObsEnd, auth_token=auth_token)
@@ -310,7 +325,7 @@ async def read_context_feed(
     request: Request,
     dayObsStart: int,
     dayObsEnd: int,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     try:
         (efd_and_messages, cols) = get_context_feed(dayObsStart, dayObsEnd, auth_token=auth_token)
@@ -331,7 +346,7 @@ async def multi_night_visit_maps(
     instrument: str,
     planisphereOnly: bool = False,
     appletMode: bool = False,
-    auth_token: str = Depends(get_access_token),
+    auth_token: str = Depends(rsp_auth),
 ):
     """Generate multi-night visit maps using Bokeh.
     Parameters
@@ -391,7 +406,6 @@ async def survey_progress_map(
     request: Request,
     dayObs: int,
     instrument: str,
-    auth_token: str = Depends(get_access_token),
 ):
     """Generate a survey progress map for a given night using Bokeh.
 
@@ -403,8 +417,6 @@ async def survey_progress_map(
         Date in YYYYMMDD format.
     instrument : `str`
         Instrument name (e.g., 'lsstCam', 'latiss', etc.).
-    auth_token : `str`
-        Authentication token (injected by FastAPI dependency).
 
     Returns
     -------

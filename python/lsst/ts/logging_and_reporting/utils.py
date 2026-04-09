@@ -40,6 +40,25 @@ from fastapi import HTTPException, Request
 # in a Database or API query string.
 
 
+AUTH_SOURCES = {
+    "rsp": {
+        "env_var": "ACCESS_TOKEN",
+        "label": "RSP",
+        "use_rsp_utils": True,
+    },
+    "jira": {
+        "env_var": "JIRA_API_TOKEN",
+        "label": "Jira",
+        "use_rsp_utils": False,
+    },
+    "zephyr": {
+        "env_var": "ZEPHYR_API_TOKEN",
+        "label": "Zephyr",
+        "use_rsp_utils": False,
+    },
+}
+
+
 def date_hr_min(iso_dt_str):
     # return YYYY-MM-DD HH:MM
     return str(dt.datetime.fromisoformat(iso_dt_str))[:16]
@@ -277,57 +296,209 @@ class Server:
                 raise ValueError(f"Unset or invalid {env_var_name}: {current}")
 
 
-def get_access_token(request: Request = None):
-    """Return access token to be sent in headers as Auth Bearer
+def retrieve_access_token(config: dict, request: Request = None) -> str:
+    """Retrieve an authentication token using a configurable sequence of
+    fallback methods.
 
-    When calling from a notebook on the RSP `lsst.rsp.utils.get_access_token`
-    is used to get the token from the active client session.
+    This function is framework-agnostic and can be used anywhere token
+    retrieval is needed, without relying on FastAPI.
 
-    When called from the FastAPI web server in local development
-    the token is read from the `ACCESS_TOKEN` environment variable.
-
-    Otherwise we assume this is called from the FastAPI web server running
-    on the RSP and the token is read from the request headers.
+    Retrieval order
+    ---------------
+    1. Preferred RSP notebook API
+    (``lsst.rsp._services.RSPDiscovery.get_token``) if enabled.
+    2. Fallback notebook API (``lsst.rsp.utils.get_access_token``) for
+    backward compatibility.
+    3. Environment variable specified in the config.
+    4. Authorization header from the provided request, if any.
 
     Parameters
     ----------
+    config : `dict`
+        Configuration for the authentication source. Must contain keys:
+        - ``"use_rsp_utils"`` (`bool`)
+        - ``"env_var"`` (`str`)
+        - ``"label"`` (`str`)
     request : `fastapi.Request`, optional
-        The request object, if available. Used to
-        extract the token from headers.
+        FastAPI request object used to extract the token from headers.
+        Default is None.
+
+    Returns
+    -------
+    str
+        The resolved authentication token.
 
     Raises
     ------
     HTTPException
-        If the access token cannot be retrieved by any method.
-
-    Returns
-    -------
-    str or None
-        The access token if available, otherwise None.
+        If no token could be retrieved by any method.
     """
-    try:
-        import lsst.rsp.utils
 
-        return lsst.rsp.utils.get_info()
-    except ImportError:
-        env_token = os.getenv("ACCESS_TOKEN")
-        if env_token is not None:
-            return env_token
+    # Try RSP notebook utils (only if enabled)
+    if config.get("use_rsp_utils"):
+        # Preferred API
+        try:
+            from lsst.rsp._services import RSPDiscovery
 
-        if request is not None:
-            auth_header = request.headers.get("Authorization")
-            if auth_header is not None and " " in auth_header:
-                return auth_header.split(" ")[1]
+            token = RSPDiscovery.get_token()
+            if token:
+                return token
+        except (ImportError, Exception):
+            pass
+
+        # Backward compatibility fallback
+        try:
+            import lsst.rsp.utils
+
+            token = lsst.rsp.utils.get_access_token()
+            if token:
+                return token
+        except ImportError:
+            pass
+
+    # Try env variable
+    env_token = os.getenv(config["env_var"])
+    if env_token is not None:
+        return env_token
+
+    # Try request headers
+    if request is not None:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and " " in auth_header:
+            return auth_header.split(" ")[1]
 
     raise HTTPException(
-        status_code=401, detail="RSP authentication token could not be retrieved by any method."
+        status_code=401,
+        detail=f"{config['label']} authentication token could not be retrieved by any method.",
     )
 
 
-def get_auth_header(token=None):
-    """return dict obj for request auth headers"""
-    bearer_token = token if token is not None else get_access_token()
-    return {"Authorization": f"Bearer {bearer_token}"}
+def get_access_token(source: str = "rsp"):
+    """FastAPI dependency factory that provides an authentication token for a
+    given source.
+
+    This is a thin wrapper around ``retrieve_access_token`` that returns a
+    callable suitable for ``fastapi.Depends``. Each call to the dependency
+    will attempt to resolve a token according to the configured source.
+
+    Parameters
+    ----------
+    source : `str`, optional
+        The authentication source identifier. Must be a key in
+        ``AUTH_SOURCES``. Defaults to ``"rsp"``.
+
+    Returns
+    -------
+    callable
+        A dependency function that FastAPI will call per request. The returned
+        function accepts an optional ``fastapi.Request`` and returns a token.
+
+    Raises
+    ------
+    HTTPException
+        If a token cannot be retrieved by any method. The exception message
+        includes the configured source label for clarity.
+
+    Notes
+    -----
+    This function is a factory and must be called when used with
+    ``fastapi.Depends``, e.g. ``Depends(get_access_token("jira"))``.
+
+    Usage in FastAPI routes:
+
+        from fastapi import Depends
+
+        @app.get("/example")
+        def endpoint(auth_token: str = Depends(get_access_token("jira"))):
+            return {"token": auth_token}
+    """
+    config = AUTH_SOURCES[source]
+
+    def dependency(request: Request = None):
+        """
+        FastAPI dependency function for retrieving an authentication token.
+
+        Parameters
+        ----------
+        request : `fastapi.Request`, optional
+            The incoming request object, used to extract the token from
+            headers.
+
+        Returns
+        -------
+        str
+            Authentication token retrieved using ``retrieve_access_token``.
+
+        Raises
+        ------
+        HTTPException
+            If no token could be resolved.
+        """
+        return retrieve_access_token(config, request)
+
+    return dependency
+
+
+def get_auth_header(token: str | None):
+    """Construct an HTTP Authorization header using a bearer token.
+
+    Parameters
+    ----------
+    token : `str` or `None`
+        The authentication token to include in the header.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the ``Authorization`` header with the
+        bearer token.
+
+    Raises
+    ------
+    ValueError
+        If ``token`` is None or empty.
+
+    Notes
+    -----
+    This function does not retrieve tokens. Token acquisition should be
+    handled upstream (e.g. via FastAPI dependencies).
+    """
+    if not token:
+        raise ValueError("Auth token is required")
+    return {"Authorization": f"Bearer {token}"}
+
+
+def get_jira_hostname():
+    """Retrieve the Jira API hostname from environment configuration.
+
+    This function is intended for use as a FastAPI dependency to supply the
+    Jira service hostname to endpoints or downstream clients.
+
+    The hostname is read from the ``JIRA_API_HOSTNAME`` environment variable.
+
+    Returns
+    -------
+    str
+        The Jira API hostname.
+
+    Raises
+    ------
+    HTTPException
+        If the hostname is not defined in the environment. Returns a 500
+        status code indicating a server configuration error.
+
+    Notes
+    -----
+    This function only retrieves configuration and does not perform any
+    network validation of the hostname.
+    """
+    hostname = os.getenv("JIRA_API_HOSTNAME")
+    if not hostname:
+        raise HTTPException(
+            status_code=500,
+            detail="Jira hostname not configured",
+        )
+    return hostname
 
 
 def stringify_special_floats(val):
