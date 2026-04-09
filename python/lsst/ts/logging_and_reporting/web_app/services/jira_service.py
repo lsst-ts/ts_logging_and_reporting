@@ -166,3 +166,46 @@ def get_jira_tickets(
         )
 
     return system_tickets
+
+
+def get_block_ticket_summaries(
+    ticket_keys: list[str],
+    jira_token: str = None,
+    jira_hostname: str = None,
+) -> dict:
+    """Fetch summaries for a list of BLOCK Jira tickets.
+
+    Parameters
+    ----------
+    ticket_keys : `list` [`str`]
+        List of Jira issue keys (e.g. ["BLOCK-123", "BLOCK-456"]).
+    jira_token : `str`, optional
+        Authentication token used when connecting to Rubin Observatory's
+        Jira services.
+    jira_hostname : `str`, optional
+        Hostname for the Jira API.
+
+    Returns
+    -------
+    `dict`
+        Mapping of ticket key -> summary.
+    """
+    logger.info(f"Jira service (BLOCK): fetching summaries for {len(ticket_keys)} tickets")
+
+    if not ticket_keys:
+        logger.warning("No BLOCK ticket keys provided.")
+        return {}
+
+    jira = JiraAdapter(
+        jira_token=jira_token,
+        jira_hostname=jira_hostname,
+    )
+
+    summaries = jira.fetch_block_ticket_summaries(ticket_keys)
+
+    if not summaries:
+        logger.warning("No BLOCK ticket summaries found.")
+    else:
+        logger.info(f"Fetched {len(summaries)} BLOCK ticket summaries.")
+
+    return summaries

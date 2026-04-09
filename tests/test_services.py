@@ -7,6 +7,7 @@ from lsst.ts.logging_and_reporting.web_app.services import (
     consdb_service,
     jira_service,
     scheduler_service,
+    zephyr_service,
 )
 
 
@@ -356,3 +357,147 @@ class TestGetJiraTickets:
             )
 
             assert not match
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_returns_names():
+    """Valid keys should return mapping of key -> test case name."""
+
+    class DummyZephyr:
+        async def get_test_case(self, key):
+            return {"name": f"Name for {key}"}
+
+    keys = ["BLOCK-T123", "BLOCK-T456"]
+
+    result = await zephyr_service.get_test_cases(
+        keys,
+        zephyr=DummyZephyr(),
+    )
+
+    assert result == {
+        "BLOCK-T123": "Name for BLOCK-T123",
+        "BLOCK-T456": "Name for BLOCK-T456",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_uses_parent_key_for_suffix():
+    """Keys with suffix should query parent but return original key."""
+
+    called_with = []
+
+    class DummyZephyr:
+        async def get_test_case(self, key):
+            called_with.append(key)
+            return {"name": "Parent name"}
+
+    keys = ["BLOCK-T123_a"]
+
+    result = await zephyr_service.get_test_cases(
+        keys,
+        zephyr=DummyZephyr(),
+    )
+
+    assert called_with == ["BLOCK-T123"]
+    assert result == {"BLOCK-T123_a": "Parent name"}
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_skips_failed_retrieval():
+    """If Zephyr raises for a key, it should be skipped."""
+
+    class DummyZephyr:
+        async def get_test_case(self, key):
+            if key == "BLOCK-T123":
+                raise Exception("fail")
+            return {"name": "OK"}
+
+    keys = ["BLOCK-T123", "BLOCK-T456"]
+
+    result = await zephyr_service.get_test_cases(
+        keys,
+        zephyr=DummyZephyr(),
+    )
+
+    assert result == {"BLOCK-T456": "OK"}
+
+
+@pytest.mark.asyncio
+async def test_get_test_cases_empty_input():
+    """Empty key list should return empty dict."""
+
+    result = await zephyr_service.get_test_cases(
+        [],
+        zephyr=object(),  # not used
+    )
+
+    assert result == {}
+
+
+class TestGetBlockTicketSummaries:
+    """Tests for the get_block_ticket_summaries function."""
+
+    def test_returns_empty_dict_when_no_ticket_keys(self, monkeypatch):
+        """Test that an empty dict is returned when no ticket keys are
+        provided.
+        """
+
+        class DummyJiraAdapter:
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
+
+            def fetch_block_ticket_summaries(self, ticket_keys):
+                return {"SHOULD": "NOT BE CALLED"}
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
+        )
+
+        result = jira_service.get_block_ticket_summaries([])
+        assert result == {}
+
+    def test_returns_empty_dict_when_fetch_returns_none(self, monkeypatch):
+        """Test that an empty dict is returned when
+        fetch_block_ticket_summaries returns an empty dict.
+        """
+
+        class DummyJiraAdapter:
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
+
+            def fetch_block_ticket_summaries(self, ticket_keys):
+                return {}
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
+        )
+
+        result = jira_service.get_block_ticket_summaries(["BLOCK-1"])
+        assert result == {}
+
+    def test_returns_ticket_summaries_correctly(self, monkeypatch):
+        """Test that the function returns the expected ticket summaries."""
+
+        class DummyJiraAdapter:
+            def __init__(self, jira_token=None, jira_hostname=None):
+                pass
+
+            def fetch_block_ticket_summaries(self, ticket_keys):
+                return {key: f"Summary for {key}" for key in ticket_keys}
+
+        monkeypatch.setattr(
+            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            DummyJiraAdapter,
+        )
+
+        ticket_keys = ["BLOCK-1", "BLOCK-2"]
+        result = jira_service.get_block_ticket_summaries(ticket_keys)
+
+        expected = {
+            "BLOCK-1": "Summary for BLOCK-1",
+            "BLOCK-2": "Summary for BLOCK-2",
+        }
+
+        assert result == expected

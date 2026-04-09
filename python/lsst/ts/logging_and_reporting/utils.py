@@ -58,6 +58,10 @@ AUTH_SOURCES = {
     },
 }
 
+# Base urls for BLOCK links
+ZEPHYR_BLOCK_BASE_URL = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/projects/BLOCK?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/v2/testCase/"
+JIRA_BLOCK_BASE_URL = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/"
+
 
 def date_hr_min(iso_dt_str):
     # return YYYY-MM-DD HH:MM
@@ -325,7 +329,7 @@ def retrieve_access_token(config: dict, request: Request = None) -> str:
 
     Returns
     -------
-    str
+    `str`
         The resolved authentication token.
 
     Raises
@@ -426,7 +430,7 @@ def get_access_token(source: str = "rsp"):
 
         Returns
         -------
-        str
+        `str`
             Authentication token retrieved using ``retrieve_access_token``.
 
         Raises
@@ -449,7 +453,7 @@ def get_auth_header(token: str | None):
 
     Returns
     -------
-    dict
+    `dict`
         A dictionary containing the ``Authorization`` header with the
         bearer token.
 
@@ -478,7 +482,7 @@ def get_jira_hostname():
 
     Returns
     -------
-    str
+    `str`
         The Jira API hostname.
 
     Raises
@@ -609,3 +613,53 @@ def make_json_safe(obj):
         return None if (math.isnan(obj) or math.isinf(obj)) else obj
 
     return obj
+
+
+def build_block_response(zephyr_data, jira_data):
+    """Construct a unified response object for BLOCK details.
+
+    Combines Zephyr and Jira BLOCK data into a single dictionary keyed by
+    BLOCK identifier. Each entry includes the key, summary, source, and a
+    correctly formatted URL. Zephyr BLOCK URLs are derived from the parent
+    key (i.e., suffixes after "_" are removed), while Jira BLOCK URLs use
+    the full key.
+
+    Parameters
+    ----------
+    zephyr_data : dict
+        Mapping of Zephyr BLOCK keys to summaries.
+    jira_data : dict
+        Mapping of Jira BLOCK keys to summaries.
+
+    Returns
+    -------
+    dict
+        A dictionary mapping each BLOCK key to a JSON-serializable object
+        containing:
+        - "key": str
+        - "summary": str
+        - "source": "zephyr" or "jira"
+        - "url": str
+    """
+    result = {}
+
+    for key, summary in zephyr_data.items():
+        # Test cases with _# at the end are represented in
+        # Zephyr Scale without the _# at the end.
+        parent_key = key.split("_", 1)[0]
+        result[key] = {
+            "key": key,
+            "summary": summary,
+            "source": "zephyr",
+            "url": f"{ZEPHYR_BLOCK_BASE_URL}{parent_key}",
+        }
+
+    for key, summary in jira_data.items():
+        result[key] = {
+            "key": key,
+            "summary": summary,
+            "source": "jira",
+            "url": f"{JIRA_BLOCK_BASE_URL}{key}",
+        }
+
+    return result

@@ -170,3 +170,26 @@ class JiraAdapter:
             }
             for issue in issues
         ]
+
+    def fetch_block_ticket_summaries(self, ticket_keys):
+        """Fetch summary fields for a list of BLOCK tickets.
+
+        Parameters
+        ----------
+        ticket_keys : `list` [`str`]
+            List of Jira issue keys (e.g. ["BLOCK-123", "BLOCK-456"]).
+
+        Returns
+        -------
+        `dict`
+            Mapping of ticket key -> summary.
+        """
+        if not ticket_keys:
+            return {}
+
+        keys_str = ",".join(ticket_keys)
+        jql_query = f"project = BLOCK AND key in ({keys_str})"
+
+        issues = self._search(jql_query, fields="summary")
+
+        return {issue["key"]: issue["fields"]["summary"] for issue in issues}
