@@ -1,6 +1,6 @@
 import logging
 
-from lsst.ts.logging_and_reporting.source_adapters import ExposurelogAdapter
+from lsst.ts.logging_and_reporting.exposure_log import ExposurelogAdapter
 
 logger = logging.getLogger(__name__)
 
