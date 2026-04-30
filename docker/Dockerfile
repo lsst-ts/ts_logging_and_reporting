@@ -11,6 +11,7 @@ USER saluser
 RUN source /home/saluser/.setup_dev.sh && \
 	pip uninstall -y lsst-resources lsst-utils && \
 	pip install --upgrade schedview==0.23.0 && \
+	pip install lsst-resources lsst-utils && \
 	# install this package
 	pip install -e .
 
