@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
@@ -1037,90 +1037,24 @@ def sample_visit_data_for_visit_maps():
     return pd.DataFrame(visits_list)
 
 
-@pytest.fixture
-def mock_conditions():
-    mock_cond = MagicMock()
-    mock_cond.mjd = 60000.0
-    mock_cond.sun_ra = 0.5
-    mock_cond.sun_dec = -0.5
-    mock_cond.moon_ra = 1.0
-    mock_cond.moon_dec = 0.2
-    mock_cond.sun_n12_setting = 60000.0
-    mock_cond.sun_n12_rising = 60000.5
-
-    return mock_cond
-
-
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
-@patch("lsst.ts.logging_and_reporting.web_app.main.prepare_visit_maps_data")
-@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
-@patch("lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps")
-def test_visit_maps_applet_mode_planisphere_only(
-    mock_create_skymaps,
-    mock_observatory,
-    mock_prepare_visit_maps_data,
-    mock_get_visits,
-    sample_visit_data_for_visit_maps,
-):
-    mock_get_visits.return_value = sample_visit_data_for_visit_maps
-    mock_prepare_visit_maps_data.return_value = sample_visit_data_for_visit_maps
-
-    dummy_fig = figure(title="Test Figure")
-    mock_create_skymaps.return_value = (dummy_fig, {})
-
-    mock_observatory_instance = MagicMock()
-    mock_observatory.return_value = mock_observatory_instance
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-
-    response = client.get(
-        "/multi-night-visit-maps",
-        params={
-            "dayObsStart": 20240101,
-            "dayObsEnd": 20240103,
-            "instrument": "lsstCam",
-            "planisphereOnly": True,
-            "appletMode": True,
-        },
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert "interactive" in data
-    assert isinstance(data["interactive"], dict)
-    assert "target_id" in data["interactive"]
-    assert "root_id" in data["interactive"]
-
-    mock_get_visits.assert_called_once()
-    mock_create_skymaps.assert_called_once()
-
-    call_kwargs = mock_create_skymaps.call_args[1]
-    assert call_kwargs["planisphere_only"] is True
-    assert call_kwargs["applet_mode"] is True
-    assert call_kwargs["timezone"] == "UTC"
-
-    app.dependency_overrides.pop(rsp_auth, None)
-
-
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
-@patch("lsst.ts.logging_and_reporting.web_app.main.prepare_visit_maps_data")
-@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
-@patch("lsst.ts.logging_and_reporting.web_app.main.create_visit_skymaps")
+@patch("lsst.ts.logging_and_reporting.web_app.main.build_visit_maps_using_builder")
 def test_visit_maps_full_mode_both_maps(
-    mock_create_skymaps,
-    mock_observatory,
-    mock_prepare_visit_maps_data,
+    mock_build_visitmaps_using_builder,
     mock_get_visits,
     sample_visit_data_for_visit_maps,
 ):
     mock_get_visits.return_value = sample_visit_data_for_visit_maps
-    mock_prepare_visit_maps_data.return_value = sample_visit_data_for_visit_maps
 
+    # dummy figure with mock data to return from the builder function
     dummy_fig = figure(title="Test Figure")
-    mock_create_skymaps.return_value = (dummy_fig, {})
-
-    mock_observatory_instance = MagicMock()
-    mock_observatory.return_value = mock_observatory_instance
+    dummy_fig.scatter(
+        x=[180.0, 181.0],
+        y=[-30.0, -29.5],
+        size=10,
+        color=["navy", "firebrick"],
+    )
+    mock_build_visitmaps_using_builder.return_value = dummy_fig
 
     app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
@@ -1130,7 +1064,6 @@ def test_visit_maps_full_mode_both_maps(
             "dayObsStart": 20240101,
             "dayObsEnd": 20240104,
             "instrument": "latiss",
-            "planisphereOnly": False,
             "appletMode": False,
         },
     )
@@ -1144,23 +1077,18 @@ def test_visit_maps_full_mode_both_maps(
     mock_get_visits.assert_called_once()
     call_kwargs = mock_get_visits.call_args[1]
 
-    call_kwargs = mock_create_skymaps.call_args[1]
-    assert call_kwargs["planisphere_only"] is False
+    call_kwargs = mock_build_visitmaps_using_builder.call_args[1]
     assert call_kwargs["applet_mode"] is False
 
     app.dependency_overrides.pop(rsp_auth, None)
 
 
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
-@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
 def test_visit_maps_no_visits_data(
-    mock_observatory,
     mock_get_visits,
 ):
     # empty visits DataFrame
     mock_get_visits.return_value = pd.DataFrame()
-    mock_observatory_instance = MagicMock()
-    mock_observatory.return_value = mock_observatory_instance
 
     app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
@@ -1183,15 +1111,10 @@ def test_visit_maps_no_visits_data(
 
 
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
-@patch("lsst.ts.logging_and_reporting.web_app.main.ModelObservatory")
 def test_visit_maps_read_visits_exception(
-    mock_observatory,
     mock_get_visits,
 ):
     mock_get_visits.side_effect = Exception("Database connection error")
-
-    mock_observatory_instance = MagicMock()
-    mock_observatory.return_value = mock_observatory_instance
 
     app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
