@@ -63,11 +63,7 @@ class ExposurelogAdapter(SourceAdapter):
     def get_messages(
         self,
         instrument,
-        group_names=None,
-        observation_reasons=None,
-        observation_types=None,
         is_human=None,
-        is_valid=None,
         order_by=None,
         offset=None,
         limit=None,
@@ -75,11 +71,7 @@ class ExposurelogAdapter(SourceAdapter):
     ):
         parameters = dict(
             instrument=instrument,
-            group_names=group_names,
-            observation_reasons=observation_reasons,
-            observation_types=observation_types,
-            is_human=is_human or "true",
-            is_valid=is_valid or "true",
+            is_human=is_human if is_human is not None else "true",
             order_by=order_by or "-date_added",
             offset=offset,
             limit=limit or self.limit,
@@ -97,8 +89,6 @@ class ExposurelogAdapter(SourceAdapter):
         filtered_params = {key: val for key, val in parameters.items() if val is not None}
         endpoint += urlencode(filtered_params)
 
-        # for debugging
-        logger.warning(f"{endpoint = }")
         # TODO: pool paginate
         # Protected get returns a tuple...
         status, messages, code = self.protected_get(endpoint)

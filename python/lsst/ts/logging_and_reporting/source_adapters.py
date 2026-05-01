@@ -166,7 +166,6 @@ class SourceAdapter(ABC):
 
         if self.verbose and not ok:
             print(f"DEBUG protected_post: FAIL: {result=}")
-
         # when ok=True, result is records (else error message)
         return ok, result, code
 
@@ -184,10 +183,10 @@ class SourceAdapter(ABC):
         # Is this function useful anymore? we are now more separated
         # towards each applet requesting its own data separately,
         # one applet won't hold up another
+        # TODO we should handle retries here
         ok = True
         code = 200
         timeout = timeout or self.timeout
-        print(f"DEBUG protected_get({url=},{timeout=})")
         if self.verbose:
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
