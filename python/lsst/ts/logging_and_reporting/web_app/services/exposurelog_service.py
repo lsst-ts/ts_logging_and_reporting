@@ -42,7 +42,6 @@ def get_exposure_flags(
         min_dayobs=min_dayobs,
         max_dayobs=max_dayobs,
         limit=limit,
-        verbose=verbose,
         auth_token=auth_token,
     )
 
@@ -101,7 +100,6 @@ def get_exposurelog_entries(
         min_dayobs=min_dayobs,
         max_dayobs=max_dayobs,
         limit=limit,
-        verbose=verbose,
         auth_token=auth_token,
     )
 

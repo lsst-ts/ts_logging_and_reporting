@@ -39,8 +39,6 @@ class ExposurelogAdapter(SourceAdapter):
         min_dayobs=None,  # Inclusive
         max_dayobs=None,  # Exclusive
         limit=None,
-        verbose=False,
-        warning=False,
         auth_token=None,
     ):
         default_record_limit = 2500  # Adapter specific default
@@ -49,8 +47,6 @@ class ExposurelogAdapter(SourceAdapter):
             max_dayobs=max_dayobs,  # handled here not in the function
             min_dayobs=min_dayobs,
             limit=limit or default_record_limit,
-            verbose=verbose,
-            warning=warning,
             auth_token=auth_token,
         )
         # The main point of us having a class here is to use SourceAdapter
@@ -63,28 +59,18 @@ class ExposurelogAdapter(SourceAdapter):
     def get_messages(
         self,
         instrument,
-        group_names=None,
-        observation_reasons=None,
-        observation_types=None,
         is_human=None,
-        is_valid=None,
         order_by=None,
         offset=None,
         limit=None,
-        **optional_params,
     ):
         parameters = dict(
             instrument=instrument,
-            group_names=group_names,
-            observation_reasons=observation_reasons,
-            observation_types=observation_types,
-            is_human=is_human or "true",
-            is_valid=is_valid or "true",
+            is_human=is_human if is_human is not None else "true",
             order_by=order_by or "-date_added",
             offset=offset,
             limit=limit or self.limit,
         )
-        parameters.update(optional_params)
 
         if self.min_dayobs:
             parameters["min_day_obs"] = utils.dayobs_int(self.min_dayobs)
@@ -97,8 +83,6 @@ class ExposurelogAdapter(SourceAdapter):
         filtered_params = {key: val for key, val in parameters.items() if val is not None}
         endpoint += urlencode(filtered_params)
 
-        # for debugging
-        logger.warning(f"{endpoint = }")
         # TODO: pool paginate
         # Protected get returns a tuple...
         status, messages, code = self.protected_get(endpoint)

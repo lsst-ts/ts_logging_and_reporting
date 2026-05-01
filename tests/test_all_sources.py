@@ -20,11 +20,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 # #############################################################################
 
-# EXAMPLE:
-#   pytest tests/test_all_sources.py
-# Use FactoryBoy https://factoryboy.readthedocs.io/
-# to generate faux source records
-
 import datetime as dt
 import unittest
 
