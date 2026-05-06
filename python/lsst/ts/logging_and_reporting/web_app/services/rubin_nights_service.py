@@ -275,7 +275,7 @@ def get_obs_status(
         obs_status_messages: pd.DataFrame = efd_client.select_time_series(topic, fields, t_start, t_end)
 
         # Set timestamp as a column instead of the index
-        # toi preserve it in subsequent list transformation
+        # to preserve it in subsequent list transformation
         time_as_col = obs_status_messages.reset_index(names="time")
         records = time_as_col.to_dict(orient="records")
 
