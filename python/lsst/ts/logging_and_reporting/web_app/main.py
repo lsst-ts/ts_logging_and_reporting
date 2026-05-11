@@ -610,3 +610,71 @@ async def read_block_details(
     except Exception as e:
         logger.error(f"Error in /block-details: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/static-visit-map")
+async def static_visit_map(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    auth_token: str = Depends(rsp_auth),
+):
+    logger.info(
+        f"Generating static map for the visits between start: "
+        f"{dayObsStart}, end: {dayObsEnd} "
+        f"and instrument: {instrument}"
+    )
+    try:
+        import time
+
+        from rubin_sim import maf
+
+        logger.debug("Getting visits for static map generation")
+        start_time = time.perf_counter()
+
+        v = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        map_data = v.dropna(subset=["s_ra", "s_dec", "sky_rotation", "obs_start_mjd"], axis=0).to_records()
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        logger.debug(f"get_visits() executed in {elapsed_time:.6f} seconds")
+        logger.debug(
+            f"Number of visits retrieved: {len(v)}, number of visits with valid coordinates: {len(map_data)}"
+        )
+        logger.debug("Starting static map generation using maf.MetricBundleGroup")
+
+        plotting_start_time = time.perf_counter()
+        nvisits = {}
+        m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
+        s = maf.HealpixSlicer(nside=32, lon_col="s_ra", lat_col="s_dec", rot_sky_pos_col_name="sky_rotation")
+        constraint = ""
+        nvisits = maf.MetricBundle(
+            m_nvis,
+            s,
+            constraint,
+            plot_funcs=[maf.HealpixSkyMap()],
+            plot_dict={
+                "title": f"Visits {dayObsStart} to {dayObsEnd}",
+                "percentile_clip": 98,
+                "n_ticks": 7,
+                "extend": "max",
+            },
+        )
+        g = maf.MetricBundleGroup({"nvisits": nvisits}, None, save_early=False)
+        if len(map_data) > 0:
+            logger.debug("Running metric bundle group for static map generation")
+            g.run_current(constraint, map_data)
+        plot = nvisits.plot()
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        plotting_elapsed_time = end_time - plotting_start_time
+        logger.debug(f"Plotting elapsed time: {plotting_elapsed_time:.6f} seconds")
+        logger.debug(f"Static map generation executed in {elapsed_time:.6f} seconds")
+        print(plot)
+        return {
+            "static1": f"static map placeholder generated in {elapsed_time:.6f} seconds",
+        }
+
+    except Exception as e:
+        logger.error(f"Error in /static-visit-map: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
