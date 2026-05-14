@@ -36,7 +36,7 @@ from .services.rubin_nights_service import (
     get_time_accounting,
     get_visits,
 )
-from .services.scheduler_service import create_visit_skymaps, get_expected_exposures, prepare_visit_maps_data
+from .services.scheduler_service import build_visit_maps_using_builder, get_expected_exposures
 from .services.zephyr_service import get_test_cases
 
 # Auth dependencies (instantiated once for reuse and testing)
@@ -348,7 +348,6 @@ def _build_multi_night_visit_map(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    planisphereOnly: bool,
     appletMode: bool,
     auth_token: str,
 ):
@@ -357,15 +356,9 @@ def _build_multi_night_visit_map(
     v_map = None
 
     if len(visits):
-        visits = prepare_visit_maps_data(visits)
-        observatory = ModelObservatory(init_load_length=1)
-        v_map, _ = create_visit_skymaps(
+        v_map = build_visit_maps_using_builder(
             visits=visits,
-            timezone="UTC",
-            observatory=observatory,
-            planisphere_only=planisphereOnly,
             applet_mode=appletMode,
-            theme="DARK",
         )
 
     return v_map
@@ -377,7 +370,6 @@ async def multi_night_visit_maps(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    planisphereOnly: bool = False,
     appletMode: bool = False,
     auth_token: str = Depends(rsp_auth),
 ):
@@ -392,8 +384,6 @@ async def multi_night_visit_maps(
         End date in YYYYMMDD format.
     instrument : `str`
         Instrument name (e.g., 'lsstCam', 'latiss', etc.).
-    planisphereOnly : `bool`, optional
-        If True, generate only the planisphere map. Default is False.
     appletMode : `bool`, optional
         If True, generate maps suitable for applet display. Default is False.
     auth_token : `str`
@@ -408,15 +398,14 @@ async def multi_night_visit_maps(
         f"Getting multi night visit maps for start: "
         f"{dayObsStart}, end: {dayObsEnd} "
         f"and instrument: {instrument} in appletMode: {appletMode}, "
-        f"planisphereOnly: {planisphereOnly}"
     )
+
     try:
         v_map = await run_in_threadpool(
             _build_multi_night_visit_map,
             dayObsStart,
             dayObsEnd,
             instrument,
-            planisphereOnly,
             appletMode,
             auth_token,
         )
