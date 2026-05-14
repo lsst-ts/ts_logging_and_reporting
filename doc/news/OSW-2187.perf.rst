@@ -1,0 +1,1 @@
+Run visits map process in its own threadpool so it don't block the main thread and other requests can be resolved fine.

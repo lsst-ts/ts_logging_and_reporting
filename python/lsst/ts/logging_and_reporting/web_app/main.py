@@ -5,6 +5,7 @@ from typing import List
 
 from bokeh.embed import json_item
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -343,6 +344,33 @@ async def read_context_feed(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _build_multi_night_visit_map(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    planisphereOnly: bool,
+    appletMode: bool,
+    auth_token: str,
+):
+    """Run blocking map generation logic outside the event loop."""
+    visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+    v_map = None
+
+    if len(visits):
+        visits = prepare_visit_maps_data(visits)
+        observatory = ModelObservatory(init_load_length=1)
+        v_map, _ = create_visit_skymaps(
+            visits=visits,
+            timezone="UTC",
+            observatory=observatory,
+            planisphere_only=planisphereOnly,
+            applet_mode=appletMode,
+            theme="DARK",
+        )
+
+    return v_map
+
+
 @app.get("/multi-night-visit-maps")
 async def multi_night_visit_maps(
     request: Request,
@@ -383,20 +411,15 @@ async def multi_night_visit_maps(
         f"planisphereOnly: {planisphereOnly}"
     )
     try:
-        visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        v_map = None
-
-        if len(visits):
-            visits = prepare_visit_maps_data(visits)
-            observatory = ModelObservatory(init_load_length=1)
-            v_map, _ = create_visit_skymaps(
-                visits=visits,
-                timezone="UTC",
-                observatory=observatory,
-                planisphere_only=planisphereOnly,
-                applet_mode=appletMode,
-                theme="DARK",
-            )
+        v_map = await run_in_threadpool(
+            _build_multi_night_visit_map,
+            dayObsStart,
+            dayObsEnd,
+            instrument,
+            planisphereOnly,
+            appletMode,
+            auth_token,
+        )
         return {
             "interactive": json_item(v_map) if v_map is not None else None,
         }
