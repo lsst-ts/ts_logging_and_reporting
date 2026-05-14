@@ -1,3 +1,12 @@
+v0.13.2-alpha.1 (2026-05-14)
+============================
+
+Other Changes and Additions
+---------------------------
+
+- Use Schedview VisitMapBuilder to generate visit maps and  plotting code cleanup. (`OSW-1234 <https://rubinobs.atlassian.net//browse/OSW-1234>`_)
+
+
 v0.13.1 (2026-05-14)
 ====================
 
