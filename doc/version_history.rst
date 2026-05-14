@@ -1,3 +1,12 @@
+v0.13.1 (2026-05-14)
+====================
+
+Performance Enhancement
+-----------------------
+
+- Run visits map process in its own threadpool so it doesn't block the main thread and other requests can be resolved fine. (`OSW-2187 <https://rubinobs.atlassian.net//browse/OSW-2187>`_)
+
+
 v0.13.0 (2026-04-16)
 ====================
 
