@@ -1,0 +1,1 @@
+Refactor exposure log adapter with goal of speeding up queries.

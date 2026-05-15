@@ -1,6 +1,6 @@
 import logging
 
-from lsst.ts.logging_and_reporting.source_adapters import ExposurelogAdapter
+from lsst.ts.logging_and_reporting.exposure_log import ExposurelogAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -47,25 +47,17 @@ def get_exposure_flags(
     )
 
     logger.info(f"Fetching exposure flags for instrument: {instrument}")
+    messages = adapter.get_messages(instrument=instrument)
 
-    status = adapter.status.get("messages")
-    logger.debug(f"ExposureLogAdapter status: {status}")
-
-    if status is None or status.get("error") is not None:
-        raise Exception(
-            f"Error getting exposure log messages from {status.get('endpoint_url')}: {status.get('error')}"
-        )
-
-    records = adapter.messages.get(instrument, [])
-    if not records:
+    if not messages:
         verbose and logger.debug("No messages for this instrument.")
         return []
 
     flags = {"questionable", "junk"}
     flagged = [
-        {"obs_id": rec["obs_id"], "exposure_flag": rec["exposure_flag"]}
-        for rec in records
-        if rec.get("exposure_flag") and rec["exposure_flag"] in flags
+        {"obs_id": entry["obs_id"], "exposure_flag": entry["exposure_flag"]}
+        for entry in messages
+        if entry.get("exposure_flag") and entry["exposure_flag"] in flags
     ]
 
     if verbose:
@@ -114,9 +106,10 @@ def get_exposurelog_entries(
     )
 
     # Get records
-    records = adapter.messages.get(instrument, [])
+    # Are we paralellizing this from the front end? call this in pools?
+    messages = adapter.get_messages(instrument=instrument)
 
     if verbose:
-        logger.debug(f"Fetched {len(records)} Exposure Log records for {instrument}")
+        logger.debug(f"Fetched {len(messages)} Exposure Log records for {instrument}")
 
-    return records
+    return messages
