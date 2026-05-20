@@ -204,6 +204,13 @@ def get_utc_datetime_from_dayobs_str(dayobs):
 dayobs2dt = get_utc_datetime_from_dayobs_str
 
 
+def add_dayobs_day(dayobs: int) -> int:
+    """Add one day to a YYYYMMDD dayobs integer."""
+    date = dt.datetime.strptime(str(dayobs), "%Y%m%d")
+    next_date = date + dt.timedelta(days=1)
+    return int(next_date.strftime("%Y%m%d"))
+
+
 def hhmmss(decimal_hours):
     if pd.isna(decimal_hours):
         return decimal_hours
