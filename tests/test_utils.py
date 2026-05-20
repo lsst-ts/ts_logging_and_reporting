@@ -1,3 +1,25 @@
+#
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import json
 from unittest.mock import Mock, patch
 
@@ -10,6 +32,7 @@ from lsst.ts.logging_and_reporting.utils import (
     AUTH_SOURCES,
     JIRA_BLOCK_BASE_URL,
     ZEPHYR_BLOCK_BASE_URL,
+    add_dayobs_day,
     build_block_response,
     get_access_token,
     get_auth_header,
@@ -421,3 +444,23 @@ def test_build_block_response_jira_only():
 
     assert "BLOCK-456" in result
     assert result["BLOCK-456"]["source"] == "jira"
+
+
+def test_add_dayobs_day_regular():
+    assert add_dayobs_day(20260519) == 20260520
+
+
+def test_add_dayobs_day_month_rollover():
+    assert add_dayobs_day(20260531) == 20260601
+
+
+def test_add_dayobs_day_year_rollover():
+    assert add_dayobs_day(20251231) == 20260101
+
+
+def test_add_dayobs_day_leap_year():
+    assert add_dayobs_day(20240228) == 20240229
+
+
+def test_add_dayobs_day_non_leap_year():
+    assert add_dayobs_day(20230228) == 20230301
