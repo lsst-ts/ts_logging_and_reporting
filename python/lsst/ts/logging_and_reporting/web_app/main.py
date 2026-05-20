@@ -1,3 +1,25 @@
+#
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import logging
 import re
 from datetime import datetime, timedelta
@@ -32,6 +54,7 @@ from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
     get_context_feed,
+    get_obs_status,
     get_open_close_dome,
     get_time_accounting,
     get_visits,
@@ -341,6 +364,34 @@ async def read_context_feed(
         }
     except Exception as e:
         logger.error(f"Error in /context-feed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/obs-status")
+async def read_obs_status(
+    request: Request,
+    dayObsStart: int,
+    dayObsEnd: int,
+    includeEntries: bool = True,
+    includeIntervals: bool = False,
+    metrics: list[str] | None = Query(
+        None,
+        alias="metric",
+    ),
+    auth_token: str = Depends(rsp_auth),
+):
+    try:
+        return get_obs_status(
+            dayObsStart,
+            dayObsEnd,
+            includeEntries,
+            includeIntervals,
+            metrics,
+            auth_token=auth_token,
+        )
+
+    except Exception as e:
+        logger.error(f"Error in /obs-status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
