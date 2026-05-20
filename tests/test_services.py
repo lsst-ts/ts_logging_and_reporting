@@ -715,7 +715,6 @@ class TestIntervals:
         assert result[0]["changed_mask"] == 3
 
     def test_get_obs_status_intervals_no_events(self):
-
         assert rubin_nights_service.get_obs_status_intervals([]) == []
 
     def test_decode_states_single_bitmask(self):
@@ -1056,7 +1055,6 @@ class TestGetObsStatus:
         assert result["metrics"] == {}
 
     def test_get_obs_status_failure_returns_empty_dict(self, monkeypatch):
-
         def raise_error(*args, **kwargs):
             raise Exception("fail")
 
