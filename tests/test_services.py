@@ -1,5 +1,28 @@
+#
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from unittest.mock import Mock
 
+import pandas as pd
 import pytest
 from matplotlib import pyplot as plt
 
@@ -7,6 +30,7 @@ from lsst.ts.logging_and_reporting.web_app.services import (
     almanac_service,
     consdb_service,
     jira_service,
+    rubin_nights_service,
     scheduler_service,
     zephyr_service,
 )
@@ -561,3 +585,481 @@ class TestGetBlockTicketSummaries:
         }
 
         assert result == expected
+
+
+def make_event(status=1, time_ms=0, time="t", note="n", labels=None):
+    return {
+        "status": status,
+        "time_ms": time_ms,
+        "time": time,
+        "note": note,
+        "statusLabels": labels or [],
+    }
+
+
+def make_interval_event(start_state=1, start_time_ms=0, end_time_ms=3600000):
+    return {
+        "start_state": start_state,
+        "start_time_ms": start_time_ms,
+        "end_time_ms": end_time_ms,
+    }
+
+
+# must be in sync with make_almanac
+def make_night(start=0, end=3600000):
+    return {"start_ms": start, "end_ms": end}
+
+
+# must be in sync with make_night
+def make_almanac():
+    return [
+        {
+            "twilight_evening": "1970-01-01 00:00:00",
+            "twilight_morning": "1970-01-01 01:00:00",
+        }
+    ]
+
+
+def patch_events(monkeypatch, events):
+    monkeypatch.setattr(
+        rubin_nights_service,
+        "get_obs_status_events",
+        lambda *args, **kwargs: events,
+    )
+
+
+def patch_almanac(monkeypatch, almanac):
+    monkeypatch.setattr(
+        rubin_nights_service,
+        "get_almanac",
+        lambda *args, **kwargs: almanac,
+    )
+
+
+class TestObsStatusEvents:
+    """Tests for get_obs_status_events."""
+
+    def test_get_obs_status_events_returns_records(self, monkeypatch):
+        class DummyEfd:
+            def select_time_series(self, topic, fields, t_start, t_end):
+                return pd.DataFrame(
+                    [
+                        {
+                            "status": 1,
+                            "note": "n",
+                            "statusLabels": [],
+                        }
+                    ],
+                    index=[pd.Timestamp("1970-01-01T00:00:00")],
+                )
+
+        class DummyClients:
+            def __getitem__(self, key):
+                return DummyEfd()
+
+        monkeypatch.setattr(
+            rubin_nights_service,
+            "get_clients",
+            lambda auth_token=None: {"efd": DummyClients()["efd"]},
+        )
+
+        result = rubin_nights_service.get_obs_status_events(
+            19700101,
+            19700101,
+            auth_token=None,
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "time_ms" in result[0]
+
+    def test_get_obs_status_events_returns_empty_list_on_error(self, monkeypatch):
+        monkeypatch.setattr(
+            rubin_nights_service,
+            "get_clients",
+            lambda auth_token=None: (_ for _ in ()).throw(Exception("fail")),
+        )
+
+        result = rubin_nights_service.get_obs_status_events(
+            19700101,
+            19700101,
+        )
+
+        assert result == []
+
+
+class TestIntervals:
+    """Tests for interval construction and overlap logic."""
+
+    def test_get_obs_status_intervals_single(self):
+        events = [
+            make_event(status=1, time_ms=0),
+            make_event(status=2, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        assert len(result) == 1
+        assert result[0]["interval_length_ms"] == 1000
+        assert result[0]["start_state"] == 1
+        assert result[0]["end_state"] == 2
+        assert result[0]["changed_mask"] == 3
+
+    def test_get_obs_status_intervals_no_events(self):
+
+        assert rubin_nights_service.get_obs_status_intervals([]) == []
+
+    def test_decode_states_single_bitmask(self):
+        mask = rubin_nights_service.OBSERVATORY_STATES["FAULT"]
+
+        decoded = rubin_nights_service.decode_states(mask)
+
+        assert "FAULT" in decoded
+        assert isinstance(decoded, list)
+
+    def test_decode_states_combined_bitmask(self):
+        mask = (
+            rubin_nights_service.OBSERVATORY_STATES["FAULT"]
+            | rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
+        )
+
+        decoded = rubin_nights_service.decode_states(mask)
+
+        assert "FAULT" in decoded
+        assert "WEATHER" in decoded
+
+    def test_decode_states_unknown(self):
+        mask = rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"]
+
+        decoded = rubin_nights_service.decode_states(mask)
+
+        assert "UNKNOWN" in decoded
+        assert isinstance(decoded, list)
+
+    # TODO: WEATHER (8) == WEATHER | UNKNOWN (8) ?
+    def test_decode_states_weather_implies_unknown(self):
+        mask = rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
+
+        decoded = rubin_nights_service.decode_states(mask)
+
+        assert "WEATHER" in decoded
+        assert "UNKNOWN" in decoded
+
+
+class TestAlmanacHandling:
+    """Tests for almanac conversion to ms intervals."""
+
+    def test_build_ms_night_intervals(self):
+        result = rubin_nights_service.build_ms_night_intervals(make_almanac())
+
+        assert result == [make_night()]
+
+    def test_almanac_to_unix_ms(self):
+        ts = "1970-01-01 00:00:00"
+
+        result = rubin_nights_service.almanac_to_unix_ms(ts)
+
+        assert result == 0
+
+
+class TestPredicates:
+    """Tests for status predicate functions."""
+
+    def test_is_unknown(self):
+        status = rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"]
+        assert rubin_nights_service.is_unknown(status)
+
+    def test_contains_fault_true(self):
+        status = rubin_nights_service.OBSERVATORY_STATES["FAULT"]
+        assert rubin_nights_service.contains_fault(status)
+
+    def test_contains_fault_false(self):
+        status = rubin_nights_service.OBSERVATORY_STATES["DAYTIME"]
+        assert not rubin_nights_service.contains_fault(status)
+
+    def test_counts_as_fault_loss_true(self):
+        status = (
+            rubin_nights_service.OBSERVATORY_STATES["FAULT"]
+            | rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
+        )
+        assert rubin_nights_service.counts_as_fault_loss(status)
+
+    def test_counts_as_fault_loss_false(self):
+        status = (
+            rubin_nights_service.OBSERVATORY_STATES["FAULT"]
+            | rubin_nights_service.OBSERVATORY_STATES["DOWNTIME"]
+        )
+        assert not rubin_nights_service.counts_as_fault_loss(status)
+
+    # TODO: WEATHER (8) == WEATHER | UNKNOWN (8) ?
+    def test_counts_as_unknown(self):
+        status = rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
+        assert rubin_nights_service.counts_as_unknown(status)
+
+
+class TestSumIntervalOverlap:
+    """Tests for interval overlap computation."""
+
+    def test_sum_interval_overlap_full(self):
+        event_intervals = [make_interval_event()]
+
+        night_intervals = [make_night()]
+
+        result = rubin_nights_service.sum_interval_overlap(
+            event_intervals,
+            night_intervals,
+            lambda _: True,
+        )
+
+        assert result == 1.0
+
+    def test_sum_interval_overlap_partial_start(self):
+        event_intervals = [make_interval_event()]
+
+        night_intervals = [make_night(start=1800000, end=5400000)]
+
+        result = rubin_nights_service.sum_interval_overlap(
+            event_intervals,
+            night_intervals,
+            lambda _: True,
+        )
+
+        assert result == 0.5
+
+    def test_sum_interval_overlap_partial_end(self):
+        event_intervals = [make_interval_event(start_state=1, start_time_ms=1800000, end_time_ms=5000000)]
+
+        night_intervals = [make_night()]
+
+        result = rubin_nights_service.sum_interval_overlap(
+            event_intervals,
+            night_intervals,
+            lambda _: True,
+        )
+
+        assert result == 0.5
+
+    def test_sum_interval_no_overlap(self):
+        event_intervals = [make_interval_event(start_state=1, start_time_ms=3700000, end_time_ms=5000000)]
+
+        night_intervals = [make_night()]
+
+        result = rubin_nights_service.sum_interval_overlap(
+            event_intervals,
+            night_intervals,
+            lambda _: True,
+        )
+
+        assert result == 0.0
+
+    def test_sum_interval_overlap_filtered_out(self):
+        event_intervals = [make_interval_event()]
+
+        night_intervals = [make_night()]
+
+        result = rubin_nights_service.sum_interval_overlap(
+            event_intervals,
+            night_intervals,
+            lambda _: False,
+        )
+
+        assert result == 0.0
+
+    def test_sum_interval_overlap_multiple_nights(self):
+        event_intervals = [
+            # 0.5 hrs overlap on first night
+            make_interval_event(start_state=1, start_time_ms=1800000, end_time_ms=4000000),
+            # interval between nights
+            make_interval_event(start_state=1, start_time_ms=4000000, end_time_ms=4500000),
+            # 0.5 hrs overlap on second night
+            make_interval_event(start_state=1, start_time_ms=6000000, end_time_ms=7800000),
+        ]
+
+        night_intervals = [
+            make_night(start=0, end=3600000),
+            make_night(start=5000000, end=8600000),
+        ]
+
+        result = rubin_nights_service.sum_interval_overlap(
+            event_intervals,
+            night_intervals,
+            lambda _: True,
+        )
+
+        assert result == 1.0
+
+    def test_sum_interval_overlap_multinight_interval(self):
+        # Testing extreme edge case
+
+        event_intervals = [
+            # 1.0 hr overlap on first night +
+            # 0.5 hrs overlap on second night.
+            make_interval_event(start_state=1, start_time_ms=0, end_time_ms=6800000),
+        ]
+
+        night_intervals = [
+            make_night(start=0, end=3600000),
+            make_night(start=5000000, end=8600000),
+        ]
+
+        result = rubin_nights_service.sum_interval_overlap(
+            event_intervals,
+            night_intervals,
+            lambda _: True,
+        )
+
+        assert result == 1.5
+
+
+class TestGetObsStatus:
+    """Integration tests for get_obs_status."""
+
+    def test_get_obs_status_defaults(self, monkeypatch):
+        patch_events(
+            monkeypatch,
+            [make_event()],
+        )
+
+        result = rubin_nights_service.get_obs_status(
+            19700101,
+            19700102,
+        )
+
+        assert "entries" in result
+        assert "intervals" not in result
+        assert "metrics" not in result
+
+    def test_get_obs_status_entries_only(self, monkeypatch):
+        patch_events(
+            monkeypatch,
+            [make_event()],
+        )
+
+        result = rubin_nights_service.get_obs_status(
+            19700101,
+            19700102,
+            include_entries=True,
+            include_intervals=False,
+            requested_metrics=None,
+        )
+
+        assert "entries" in result
+        assert "intervals" not in result
+        assert "metrics" not in result
+
+    def test_get_obs_status_intervals_only(self, monkeypatch):
+        patch_events(
+            monkeypatch,
+            [make_event(), make_event(time_ms=1000)],
+        )
+
+        result = rubin_nights_service.get_obs_status(
+            19700101,
+            19700102,
+            include_entries=False,
+            include_intervals=True,
+            requested_metrics=None,
+        )
+
+        assert "entries" not in result
+        assert "metrics" not in result
+        assert "intervals" in result
+        assert len(result["intervals"]) == 1
+
+    def test_get_obs_status_metrics_only(self, monkeypatch):
+        patch_events(
+            monkeypatch,
+            [
+                make_event(status=rubin_nights_service.OBSERVATORY_STATES["FAULT"]),
+                make_event(
+                    status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
+                    time_ms=3600000,
+                ),
+            ],
+        )
+
+        patch_almanac(monkeypatch, make_almanac())
+
+        result = rubin_nights_service.get_obs_status(
+            19700101,
+            19700102,
+            include_entries=False,
+            include_intervals=False,
+            requested_metrics=["fault_loss"],
+        )
+
+        assert "entries" not in result
+        assert "intervals" not in result
+        assert "metrics" in result
+        assert "fault_loss" in result["metrics"]
+        assert result["metrics"]["fault_loss"] == 1.0
+
+    def test_get_obs_status_multiple_metrics(self, monkeypatch):
+        patch_events(
+            monkeypatch,
+            [
+                make_event(status=rubin_nights_service.OBSERVATORY_STATES["FAULT"]),
+                make_event(
+                    status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
+                    time_ms=3600000,
+                ),
+            ],
+        )
+
+        patch_almanac(monkeypatch, make_almanac())
+
+        result = rubin_nights_service.get_obs_status(
+            19700101,
+            19700102,
+            requested_metrics=["fault_loss", "operational"],
+        )
+
+        assert "intervals" not in result
+        assert "metrics" in result
+        assert "fault_loss" in result["metrics"]
+        assert "operational" in result["metrics"]
+
+    def test_get_obs_status_empty_metric(self, monkeypatch):
+        patch_events(monkeypatch, [])
+        patch_almanac(monkeypatch, make_almanac())
+
+        result = rubin_nights_service.get_obs_status(
+            20250101,
+            20250102,
+            requested_metrics=[],
+        )
+
+        assert "metrics" not in result
+
+    def test_get_obs_status_invalid_metric(self, monkeypatch, caplog):
+        patch_events(monkeypatch, [])
+        patch_almanac(monkeypatch, make_almanac())
+
+        result = rubin_nights_service.get_obs_status(
+            20250101,
+            20250102,
+            requested_metrics=["invalid_metric"],
+        )
+
+        warnings = [record.message for record in caplog.records if record.levelname == "WARNING"]
+
+        assert "Unknown metric requested: invalid_metric" in warnings
+        assert result["metrics"] == {}
+
+    def test_get_obs_status_failure_returns_empty_dict(self, monkeypatch):
+
+        def raise_error(*args, **kwargs):
+            raise Exception("fail")
+
+        monkeypatch.setattr(
+            rubin_nights_service,
+            "get_obs_status_events",
+            raise_error,
+        )
+
+        result = rubin_nights_service.get_obs_status(
+            19700101,
+            19700102,
+        )
+
+        assert result == {}
