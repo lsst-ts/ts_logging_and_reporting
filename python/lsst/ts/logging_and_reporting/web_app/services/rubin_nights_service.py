@@ -47,13 +47,15 @@ WAIT_BEFORE_SLEW = 1.45
 SETTLE = 2.0
 MAX_SCATTER = 120.0
 OBSERVATORY_STATES = {
-    "UNKNOWN": 0,
-    "DAYTIME": 1 << 0,
-    "OPERATIONAL": 1 << 1,
-    "FAULT": 1 << 2,
-    "WEATHER": 1 << 3,
-    "DOWNTIME": 1 << 4,
+    "UNKNOWN": 0,  # 0
+    "DAYTIME": 1 << 0,  # 1
+    "OPERATIONAL": 1 << 1,  # 2
+    "FAULT": 1 << 2,  # 4
+    "WEATHER": 1 << 3,  # 8
+    "DOWNTIME": 1 << 4,  # 16
+    "IDLE": 1 << 5,  # 32
 }
+OBS_STATUS_AVAILABLE_DAYOBS = 20260225
 
 
 def get_time_accounting(
@@ -379,9 +381,7 @@ def decode_states(mask: int) -> list[str]:
 
     states = [name for name, bit in OBSERVATORY_STATES.items() if bit != 0 and (mask & bit)]
 
-    # TODO: Confirm with management about the independence
-    # and treatment of WEATHER wrt UNKNOWN. Update docstring
-    # if this rule holds: WEATHER (8) == WEATHER | UNKNOWN (8)
+    # WEATHER (8) == WEATHER | UNKNOWN (8)
     if mask == OBSERVATORY_STATES["WEATHER"]:
         states.append("UNKNOWN")
 
@@ -426,16 +426,30 @@ def get_obs_status_intervals(
         first_status = first["status"]
         second_status = second["status"]
 
-        # Was there a state change?
-        changed_mask = first_status ^ second_status
-
-        # How did state change? What state was activated / deactivated?
-        activated = second_status & ~first_status
-        deactivated = first_status & ~second_status
-
         # How long was the interval between entries?
         interval_length_ms = second["time_ms"] - first["time_ms"]
         interval_length_hrs = interval_length_ms / 3600000
+
+        # Was there a status change? What was it?
+        changed_mask = first_status ^ second_status
+        has_changed = changed_mask != 0
+
+        # How did status change? What states were activated / deactivated?
+        activated = second_status & ~first_status if has_changed else None
+        deactivated = first_status & ~second_status if has_changed else None
+
+        # Create user-friendly labels for status changes.
+        activated_labels = decode_states(activated) if activated else []
+        deactivated_labels = decode_states(deactivated) if deactivated else []
+
+        start_unknown = counts_as_unknown(first_status)
+        end_unknown = counts_as_unknown(second_status)
+
+        if end_unknown and not start_unknown:
+            activated_labels.append("UNKNOWN")
+
+        if start_unknown and not end_unknown:
+            deactivated_labels.append("UNKNOWN")
 
         intervals.append(
             {
@@ -452,11 +466,11 @@ def get_obs_status_intervals(
                 "start_labels": first["statusLabels"],
                 "end_labels": second["statusLabels"],
                 "changed_mask": changed_mask,
-                "has_changed": changed_mask != 0,
+                "has_changed": has_changed,
                 "activated": activated,
                 "deactivated": deactivated,
-                "activated_labels": decode_states(activated),
-                "deactivated_labels": decode_states(deactivated),
+                "activated_labels": activated_labels,
+                "deactivated_labels": deactivated_labels,
             }
         )
 
@@ -617,6 +631,22 @@ def contains_downtime(status: int) -> bool:
     return bool(status & OBSERVATORY_STATES["DOWNTIME"])
 
 
+def contains_idle(status: int) -> bool:
+    """Check whether the status includes the ``IDLE`` state.
+
+    Parameters
+    ----------
+    status : `int`
+        Bitmask status value.
+
+    Returns
+    -------
+    `bool`
+        ``True`` if ``IDLE`` bit is set.
+    """
+    return bool(status & OBSERVATORY_STATES["DOWNTIME"])
+
+
 def counts_as_fault_loss(status: int) -> bool:
     """Determine whether a status should be counted as fault time loss.
 
@@ -640,7 +670,6 @@ def counts_as_fault_loss(status: int) -> bool:
     return has_fault and not has_downtime
 
 
-# TODO: WEATHER (8) == WEATHER | UNKNOWN (8) ?
 def counts_as_unknown(status: int) -> bool:
     """Determine whether a status should count as ``UNKNOWN`` time.
 
@@ -674,8 +703,8 @@ COUNT_STATE_METRIC_MAP = {
     "fault": contains_fault,
     "weather": contains_weather,
     "downtime": contains_downtime,
+    "idle": contains_idle,
     "fault_loss": counts_as_fault_loss,
-    # TODO: WEATHER (8) == WEATHER | UNKNOWN (8) ?
     "unknown_loss": counts_as_unknown,
 }
 
@@ -771,6 +800,43 @@ def sum_interval_overlap(
     return total_hrs
 
 
+def get_availability(
+    dayobs_start: int,
+    dayobs_end: int,
+) -> dict[str, Any]:
+    """Determine availability of obs_status data over a requested dayobs range.
+
+    Availability is classified relative to ``OBS_STATUS_AVAILABLE_DAYOBS``:
+    - "none": range is entirely before availability
+    - "full": range is entirely on/after availability
+    - "partial": range straddles the availability boundary
+
+    Parameters
+    ----------
+    dayobs_start : `int`
+        Start of requested dayobs range (inclusive).
+    dayobs_end : `int`
+        End of requested dayobs range (inclusive).
+
+    Returns
+    -------
+    `dict` [`str`, `Any`]
+        Availability metadata including status and availability boundary.
+    """
+
+    if dayobs_start >= OBS_STATUS_AVAILABLE_DAYOBS:
+        availability_status = "full"
+    elif dayobs_end < OBS_STATUS_AVAILABLE_DAYOBS:
+        availability_status = "none"
+    else:
+        availability_status = "partial"
+
+    return {
+        "status": availability_status,
+        "available_from": OBS_STATUS_AVAILABLE_DAYOBS,
+    }
+
+
 def get_obs_status(
     dayobs_start: int,
     dayobs_end: int,
@@ -783,7 +849,9 @@ def get_obs_status(
 
     This function fetches raw observatory status events, optionally
     converts them into intervals, and computes requested metrics by
-    intersecting state intervals with night-time boundaries.
+    intersecting state intervals with night-time boundaries. Metadata
+    about the availability of data across the requested range is also
+    provided.
 
     Parameters
     ----------
@@ -807,6 +875,7 @@ def get_obs_status(
         - entries: raw status events
         - intervals: derived status intervals
         - metrics: computed time-based metrics (hours)
+        - availability: data availability
 
         Returns an empty `dict` on error.
     """
@@ -859,6 +928,8 @@ def get_obs_status(
                 )
 
             response["metrics"] = obs_status_metrics
+
+        response["availability"] = get_availability(dayobs_start, dayobs_end)
 
         return response
 
