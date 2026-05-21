@@ -648,6 +648,145 @@ class TestIntervals:
     def test_get_obs_status_intervals_no_events(self):
         assert rubin_nights_service.get_obs_status_intervals([]) == []
 
+    def test_get_obs_status_intervals_activate_unknown(self):
+        """UNKNOWN should appear as activated when transitioning
+        from a known state into UNKNOWN.
+        """
+        events = [
+            make_event(status=2, time_ms=0),
+            make_event(status=0, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        interval = result[0]
+
+        assert interval["activated"] == 0
+        assert interval["deactivated"] == 2
+
+        assert interval["activated_labels"] == ["UNKNOWN"]
+        assert interval["deactivated_labels"] == ["OPERATIONAL"]
+
+    def test_get_obs_status_intervals_deactivate_unknown(self):
+        """UNKNOWN should appear as deactivated when transitioning
+        from UNKNOWN into a known state.
+        """
+        events = [
+            make_event(status=0, time_ms=0),
+            make_event(status=2, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        interval = result[0]
+
+        assert interval["activated"] == 2
+        assert interval["deactivated"] == 0
+
+        assert interval["activated_labels"] == ["OPERATIONAL"]
+        assert interval["deactivated_labels"] == ["UNKNOWN"]
+
+    def test_get_obs_status_intervals_change_states_no_unknown(self):
+        """Adding/removing a bit to/from an existing known state
+        should not incorrectly activate/deactivate UNKNOWN.
+        """
+        events = [
+            make_event(status=10, time_ms=0),
+            make_event(status=12, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        interval = result[0]
+
+        assert interval["activated"] == 4
+        assert interval["deactivated"] == 2
+
+        assert interval["activated_labels"] == ["FAULT"]
+        assert interval["deactivated_labels"] == ["OPERATIONAL"]
+
+    def test_get_obs_status_intervals_unknown_to_weather(self):
+        """WEATHER counts as containing UNKNOWN, so UNKNOWN should
+        not activate/deactivate during UNKNOWN <-> WEATHER transitions.
+        """
+        events = [
+            make_event(status=0, time_ms=0),
+            make_event(status=8, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        interval = result[0]
+
+        assert interval["activated"] == 8
+        assert interval["deactivated"] == 0
+
+        assert interval["activated_labels"] == ["WEATHER", "UNKNOWN"]
+        assert interval["deactivated_labels"] == []
+
+    def test_get_obs_status_intervals_weather_to_unknown(self):
+        """WEATHER counts as UNKNOWN, so UNKNOWN should not
+        activate/deactivate during WEATHER <-> UNKNOWN transitions.
+        """
+        events = [
+            make_event(status=8, time_ms=0),
+            make_event(status=0, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        interval = result[0]
+
+        assert interval["activated"] == 0
+        assert interval["deactivated"] == 8
+
+        assert interval["activated_labels"] == []
+        assert interval["deactivated_labels"] == ["WEATHER", "UNKNOWN"]
+
+    def test_get_obs_status_unknown_to_unknown(self):
+        """No-change UNKNOWN intervals should not report any
+        activated or deactivated labels.
+        """
+        events = [
+            make_event(status=0, time_ms=0),
+            make_event(status=0, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        interval = result[0]
+
+        assert interval["has_changed"] is False
+        assert interval["changed_mask"] == 0
+
+        assert interval["activated"] is None
+        assert interval["deactivated"] is None
+
+        assert interval["activated_labels"] == []
+        assert interval["deactivated_labels"] == []
+
+    def test_get_obs_status_intervals_no_change(self):
+        """No-change intervals should not report any activated
+        or deactivated labels.
+        """
+        events = [
+            make_event(status=4, time_ms=0),
+            make_event(status=4, time_ms=1000),
+        ]
+
+        result = rubin_nights_service.get_obs_status_intervals(events)
+
+        interval = result[0]
+
+        assert interval["has_changed"] is False
+        assert interval["changed_mask"] == 0
+
+        assert interval["activated"] is None
+        assert interval["deactivated"] is None
+
+        assert interval["activated_labels"] == []
+        assert interval["deactivated_labels"] == []
+
     def test_decode_states_single_bitmask(self):
         mask = rubin_nights_service.OBSERVATORY_STATES["FAULT"]
 
@@ -675,7 +814,6 @@ class TestIntervals:
         assert "UNKNOWN" in decoded
         assert isinstance(decoded, list)
 
-    # TODO: WEATHER (8) == WEATHER | UNKNOWN (8) ?
     def test_decode_states_weather_implies_unknown(self):
         mask = rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
 
@@ -730,7 +868,6 @@ class TestPredicates:
         )
         assert not rubin_nights_service.counts_as_fault_loss(status)
 
-    # TODO: WEATHER (8) == WEATHER | UNKNOWN (8) ?
     def test_counts_as_unknown(self):
         status = rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
         assert rubin_nights_service.counts_as_unknown(status)
@@ -850,6 +987,57 @@ class TestSumIntervalOverlap:
         assert result == 1.5
 
 
+class TestGetAvailability:
+    """Tests for determining data availability."""
+
+    def test_get_availability_full(self):
+        dayobs_start = 20260301
+        dayobs_end = 20260302
+
+        availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
+
+        assert "status" in availability
+        assert "available_from" in availability
+        assert availability["status"] == "full"
+        assert availability["available_from"] == rubin_nights_service.OBS_STATUS_AVAILABLE_DAYOBS
+
+    def test_get_availability_none(self):
+        dayobs_start = 20260201
+        dayobs_end = 20260202
+
+        availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
+
+        assert "status" in availability
+        assert "available_from" in availability
+        assert availability["status"] == "none"
+
+    def test_get_availability_partial(self):
+        dayobs_start = 20260220
+        dayobs_end = 20260301
+
+        availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
+
+        assert "status" in availability
+        assert "available_from" in availability
+        assert availability["status"] == "partial"
+
+    def test_get_availability_starts_on_boundary(self):
+        dayobs_start = 20260225
+        dayobs_end = 20260228
+
+        availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
+
+        assert availability["status"] == "full"
+
+    def test_get_availability_ends_before_boundary(self):
+        dayobs_start = 20260220
+        dayobs_end = 20260224
+
+        availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
+
+        assert availability["status"] == "none"
+
+
 class TestGetObsStatus:
     """Integration tests for get_obs_status."""
 
@@ -867,6 +1055,7 @@ class TestGetObsStatus:
         assert "entries" in result
         assert "intervals" not in result
         assert "metrics" not in result
+        assert "availability" in result
 
     def test_get_obs_status_entries_only(self, monkeypatch):
         patch_events(
@@ -885,6 +1074,7 @@ class TestGetObsStatus:
         assert "entries" in result
         assert "intervals" not in result
         assert "metrics" not in result
+        assert "availability" in result
 
     def test_get_obs_status_intervals_only(self, monkeypatch):
         patch_events(
@@ -903,6 +1093,7 @@ class TestGetObsStatus:
         assert "entries" not in result
         assert "metrics" not in result
         assert "intervals" in result
+        assert "availability" in result
         assert len(result["intervals"]) == 1
 
     def test_get_obs_status_metrics_only(self, monkeypatch):
@@ -930,6 +1121,7 @@ class TestGetObsStatus:
         assert "entries" not in result
         assert "intervals" not in result
         assert "metrics" in result
+        assert "availability" in result
         assert "fault_loss" in result["metrics"]
         assert result["metrics"]["fault_loss"] == 1.0
 
