@@ -399,22 +399,6 @@ def _get_visit_map_config(
 
 
 def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, theme="DARK") -> UIElement | None:
-    ## TODO: check related visitmap tickets to address them
-    # in this PR, such as:
-    # - DONE https://rubinobs.atlassian.net/browse/OSW-1468 Visit Maps applet:
-    # Scale down depth and horizon line thickness as well as
-    # sun and moon markers to match plot size
-    # - DONE https://rubinobs.atlassian.net/browse/OSW-1465 Visit Maps:
-    # Change tooltip format
-    # - NOT_YET https://rubinobs.atlassian.net/browse/OSW-1976 Visit Maps:
-    # provide a way to click on the the app on the front page
-    # to go to the vist maps page
-    # - DONE https://rubinobs.atlassian.net/browse/OSW-1464 Visit Maps: show
-    # the exposures at the current time (not end of the night)
-    # if the night is in progress
-    # - DONE https://rubinobs.atlassian.net/browse/OSW-1463 Visit Maps: Format
-    # the dayobs label as 2025-11-13
-
     map_visits = _prepare_visit_maps_data(visits)
     if map_visits.empty:
         logger.warning("No valid visits to plot on visit maps.")
