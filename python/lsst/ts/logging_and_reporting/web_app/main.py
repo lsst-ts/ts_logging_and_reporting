@@ -1,3 +1,4 @@
+import base64
 import logging
 import re
 from datetime import datetime, timedelta
@@ -612,6 +613,395 @@ async def read_block_details(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _prepare_static_visit_map_data(visits):
+    """Prepare visit records for static map plotting."""
+    return visits.dropna(subset=["s_ra", "s_dec", "sky_rotation", "obs_start_mjd"], axis=0).to_records()
+
+
+def _encode_png_payload(image_bytes):
+    """Serialize PNG bytes into a JSON-safe payload."""
+    if image_bytes is None:
+        return None
+
+    return {
+        "mime_type": "image/png",
+        "data": base64.b64encode(image_bytes).decode("ascii"),
+    }
+
+
+def _build_visit_map_png(map_data, dayObsStart, dayObsEnd) -> bytes:
+    """Build the primary static visit map and return PNG bytes."""
+    from io import BytesIO
+
+    import matplotlib.pyplot as plt
+    from rubin_sim import maf
+
+    m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
+    slicer = maf.HealpixSlicer(nside=32, lon_col="s_ra", lat_col="s_dec", rot_sky_pos_col_name="sky_rotation")
+    constraint = ""
+    nvisits = maf.MetricBundle(
+        m_nvis,
+        slicer,
+        constraint,
+        plot_funcs=[maf.HealpixSkyMap()],
+        plot_dict={
+            "title": f"Visits {dayObsStart} to {dayObsEnd}",
+            "percentile_clip": 98,
+            "n_ticks": 7,
+            "extend": "max",
+            "cmap": "viridis",
+            "bgcolor": "black",
+            "badcolor": "#9A9A9A",
+            "fontsize": 13,
+            "labelsize": 11,
+        },
+    )
+    bundle_group = maf.MetricBundleGroup({"nvisits": nvisits}, None, save_early=False)
+    if len(map_data) > 0:
+        logger.debug("Running metric bundle group for primary static visit map generation")
+        bundle_group.run_current(constraint, map_data)
+
+    plot = nvisits.plot()
+    fignum = plot["SkyMap"]
+    fig = plt.figure(fignum)
+
+    fg = "#E5E5E5"
+    bg = "black"
+
+    fig.patch.set_facecolor(bg)
+
+    for text in fig.findobj(match=plt.Text):
+        if text.get_text() == f"Visits {dayObsStart} to {dayObsEnd}":
+            text.set_fontsize(16)
+        text.set_color(fg)
+
+    for ax in fig.axes:
+        ax.title.set_color(fg)
+        ax.xaxis.label.set_color(fg)
+        ax.yaxis.label.set_color(fg)
+        ax.tick_params(colors=fg)
+
+        for spine in ax.spines.values():
+            spine.set_color(fg)
+
+        for line in ax.lines:
+            line.set_linewidth(1.2)
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor=bg)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def _build_secondary_visit_map_png(map_data, dayObsStart, dayObsEnd) -> bytes:
+    """Build the secondary static visit map
+    (using healpy) and return PNG bytes.
+    """
+    import copy
+    from io import BytesIO
+
+    import healpy as hp
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import numpy.typing as npt
+    import rubin_sim.maf as maf
+    from matplotlib import cm
+    from matplotlib.figure import Figure
+    from matplotlib.ticker import MaxNLocator
+    from rubin_scheduler.scheduler.utils import get_current_footprint
+
+    def hp_laea(
+        hp_array: np.ndarray,
+        alpha: np.ndarray | None = None,
+        label: str | None = None,
+        vmin: float | None = None,
+        vmax: float | None = None,
+    ) -> Figure:
+        cmap = copy.copy(cm.viridis)
+        # cmap.set_under("black")
+        # cmap.set_bad("black")
+
+        fig = plt.figure(
+            figsize=(8, 6),
+        )  # facecolor="black")
+
+        hp.azeqview(
+            hp_array,
+            alpha=alpha,
+            rot=(0, -90, 0),
+            lamb=True,
+            reso=17.5,
+            min=vmin,
+            max=vmax,
+            title=label,
+            cbar=False,
+            cmap=cmap,
+            fig=fig.number,
+        )
+
+        hp.graticule(color="black")
+
+        ax = plt.gca()
+        fig.patch.set_facecolor("#9A9A9A")
+
+        im = ax.get_images()[0]
+        extend = "max" if vmin is None else "both"
+
+        cbar = plt.colorbar(
+            im,
+            shrink=0.45,
+            aspect=30,
+            pad=0.05,
+            orientation="horizontal",
+            extendrect=False,
+            extend=extend,
+        )
+        cbar.locator = MaxNLocator(nbins=3)
+        cbar.update_ticks()
+        cbar.outline.set_edgecolor("black")
+        cbar.ax.xaxis.set_tick_params(color="black")
+        plt.setp(cbar.ax.get_xticklabels(), color="black")
+
+        return fig
+
+    def get_background(nside: int = 32) -> npt.NDArray:
+        fp, labels = get_current_footprint(nside=nside)
+        bg_fp = np.where(fp["r"] == 0, np.nan, fp["r"])
+        bg_fp = np.where(bg_fp > 1, 1, bg_fp)
+        return bg_fp
+        # return np.where(fp["r"] > 0, 1.0, np.nan)
+
+    def hp_laea2(
+        hp_array: np.ndarray,
+        alpha: np.ndarray | None = None,
+        label: str | None = None,
+        vmin: float | None = None,
+        vmax: float | None = None,
+    ) -> Figure:
+        cmap = copy.copy(cm.viridis)
+
+        fig = plt.figure(figsize=(8, 6))
+        hp.azeqview(
+            hp_array,
+            alpha=alpha,
+            rot=(0, -90, 0),
+            lamb=True,
+            reso=17.5,
+            min=vmin,
+            max=vmax,
+            # title=label,
+            title="",
+            cbar=False,
+            cmap=cmap,
+            fig=fig.number,
+        )
+
+        # hp.graticule(dpar=30, dmer=30, color="black") # light grey background
+        hp.graticule(dpar=30, dmer=30, color="white", lw=2)  # dark grey background
+
+        # _draw_ra_180_line()
+        _add_dec_labels()
+
+        ax = plt.gca()
+        ax.set_title(label or "", color="white", fontsize=16)
+        for text in ax.texts:
+            text.set_color("white")
+            text.set_fontsize(12)
+        ax.xaxis.label.set_color("white")
+        ax.yaxis.label.set_color("white")
+
+        ax.text(
+            0.5,
+            -0.03,
+            "180°",
+            transform=ax.transAxes,
+            ha="center",
+            va="top",
+            # color="black", # light grey background
+            color="white",  # dark grey background
+            fontsize=10,
+            clip_on=False,
+        )
+
+        # fig.patch.set_facecolor("#9A9A9A") # light grey background
+        fig.patch.set_facecolor("black")  # dark grey background
+
+        im = ax.get_images()[0]
+        extend = "max" if vmin is None else "both"
+
+        cbar = plt.colorbar(
+            im,
+            shrink=0.45,
+            aspect=30,
+            pad=0.05,
+            orientation="horizontal",
+            extendrect=False,
+            extend=extend,
+        )
+        cbar.locator = MaxNLocator(nbins=3)
+        cbar.update_ticks()
+        cbar.set_label("Number of visits", color="white", fontsize=12)
+
+        # light grey background
+        # cbar.outline.set_edgecolor("black")
+        # cbar.ax.xaxis.set_tick_params(color="black")
+        # cbar.set_label("Number of visits", color="black", fontsize=12)
+        # plt.setp(cbar.ax.get_xticklabels(), color="black")
+
+        # dark grey background
+        cbar.outline.set_edgecolor("white")
+        cbar.ax.xaxis.set_tick_params(labelsize=12, color="white")
+        cbar.set_label("Number of visits", color="white", fontsize=12)
+        plt.setp(cbar.ax.get_xticklabels(), color="white", fontsize=12)
+
+        return fig
+
+    # def _add_radec_labels() -> None:
+    #     # RA labels around the outer edge. Healpy expects degrees here.
+    #     for ra_deg in range(0, 360, 30):
+    #         ra_hours = (ra_deg / 15.0) % 24
+    #         hp.projtext(
+    #             ra_deg,
+    #             -2,
+    #             f"{ra_hours:.0f}h",
+    #             lonlat=True,
+    #             color="black",
+    #             fontsize=8,
+    #             ha="center",
+    #             va="center",
+    #         )
+
+    #     # Dec labels on one meridian so they do not clutter the map.
+    #     for dec_deg in (-75, -60, -45, -30, -15):
+    #         hp.projtext(
+    #             8,
+    #             dec_deg,
+    #             f"{dec_deg}°",
+    #             lonlat=True,
+    #             color="black",
+    #             fontsize=8,
+    #             ha="left",
+    #             va="center",
+    #         )
+    def _add_dec_labels() -> None:
+        # Put labels on a single meridian, away from the rim, so the
+        # projection does not expand its bounds.
+        label_ra_deg = 30
+
+        for dec_deg in (-60, -30, 0, 30, 60):
+            hp.projtext(
+                label_ra_deg,
+                dec_deg,
+                f"{dec_deg}°",
+                lonlat=True,
+                color="black",
+                fontsize=12,
+                ha="left",
+                va="center",
+            )
+
+    def _draw_ra_180_line() -> None:
+        dec_vals = np.linspace(-90, 90, 721)
+        ra_vals = np.full_like(dec_vals, 180.0, dtype=float)
+        hp.projplot(
+            ra_vals,
+            dec_vals,
+            lonlat=True,
+            color="black",
+            linewidth=0.8,
+            alpha=0.8,
+        )
+
+    nside = 32
+    nvisits = {}
+    m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
+    s = maf.HealpixSlicer(
+        nside=nside, lon_col="s_ra", lat_col="s_dec", rot_sky_pos_col_name="sky_rotation", verbose=False
+    )
+    constraint = ""
+    nvisits = maf.MetricBundle(
+        m_nvis,
+        s,
+        constraint,
+        plot_funcs=[maf.HealpixSkyMap()],
+        plot_dict={
+            "title": f"Visits {dayObsStart} to {dayObsEnd}",
+            "percentile_clip": 98,
+            "n_ticks": 7,
+            "extend": "max",
+        },
+    )
+    g = maf.MetricBundleGroup({"nvisits": nvisits}, None, save_early=False)
+    g.run_current(constraint, map_data)
+    background = get_background(nside)
+    mval = nvisits.metric_values.filled(np.nan)
+    alpha = np.where(np.isnan(background), 0, background)
+    # alpha = np.where(alpha > 0.2, 0.2, alpha)
+    # alpha = np.where(mval > 0, 1, alpha)
+    alpha = np.where(np.isnan(background), 0.0, 1)
+    alpha = np.where(mval > 0, 1.0, alpha)
+    vmax = np.nanpercentile(mval, 95)
+    fig = hp_laea2(mval, alpha=alpha, label=f"Visits {dayObsStart} to {dayObsEnd}", vmin=None, vmax=vmax)
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def _build_third_visit_map_png(map_data) -> bytes:
+    """Build a third version of the static visit map and return PNG bytes."""
+    # Placeholder for additional map generation logic if needed
+    from io import BytesIO
+
+    import matplotlib.pyplot as plt
+    import rubin_sim.maf as maf
+    import schedview
+    from rubin_scheduler.scheduler.model_observatory import ModelObservatory
+    from schedview.plot.survey_skyproj import map_metric_in_laea_and_mcbryde
+
+    observatory = ModelObservatory(init_load_length=1)
+
+    fig = map_metric_in_laea_and_mcbryde(
+        map_data,
+        maf.CountMetric(col="band"),
+        schedview.plot.survey_skyproj.map_count_healpix,
+        observatory,
+        save_early=False,
+        sqlite=False,
+        cmap="cividis_r",
+        horizons=None,
+        num_colors=8,
+    )
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def prep_data(visits):
+    import pandas as pd
+    from rubin_nights import rubin_sim_addons as rn_sim
+
+    # from schedview.compute.visits import add_coords_tuple
+    from schedview.collect.visits import NIGHT_STACKERS
+
+    if visits.empty:
+        logger.warning("No visits data provided.")
+        return pd.DataFrame()
+
+    # drop visits with no RA/Dec, since we can't plot them on the sky
+    visits.dropna(subset=["s_ra"], inplace=True)
+    opsdb = rn_sim.consdb_to_opsim(visits)
+    opsdb_rec = opsdb.to_records()
+    for stacker in NIGHT_STACKERS:
+        opsdb_rec = stacker.run(opsdb_rec)
+    visits = pd.DataFrame(opsdb_rec)
+    # visits = add_coords_tuple(visits)
+    return visits
+
+
 @app.get("/static-visit-map")
 async def static_visit_map(
     request: Request,
@@ -625,54 +1015,54 @@ async def static_visit_map(
         f"{dayObsStart}, end: {dayObsEnd} "
         f"and instrument: {instrument}"
     )
+
     try:
         import time
-
-        from rubin_sim import maf
 
         logger.debug("Getting visits for static map generation")
         start_time = time.perf_counter()
 
         v = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        map_data = v.dropna(subset=["s_ra", "s_dec", "sky_rotation", "obs_start_mjd"], axis=0).to_records()
+
+        # We log the time taken to retrieve and process the visits separately
+        # from the time taken to generate the plot, since data retrieval
+        # and processing can be a significant portion of the total time
+        # and we want to track it independently of the plotting time.
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
         logger.debug(f"get_visits() executed in {elapsed_time:.6f} seconds")
+
+        map_data = prep_data(v)
         logger.debug(
             f"Number of visits retrieved: {len(v)}, number of visits with valid coordinates: {len(map_data)}"
         )
-        logger.debug("Starting static map generation using maf.MetricBundleGroup")
+
+        map_data2 = _prepare_static_visit_map_data(v)
+        logger.debug(f"Map data prepared for plotting with {len(map_data2)} valid records")
+
+        if len(v) == 0 or len(map_data) == 0 or len(map_data2) == 0:
+            logger.warning("No valid visit data available for static map generation")
+            return {
+                "visit_map": None,
+                "coverage_map": None,
+            }
+
+        logger.debug("Starting static map generation")
 
         plotting_start_time = time.perf_counter()
-        nvisits = {}
-        m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
-        s = maf.HealpixSlicer(nside=32, lon_col="s_ra", lat_col="s_dec", rot_sky_pos_col_name="sky_rotation")
-        constraint = ""
-        nvisits = maf.MetricBundle(
-            m_nvis,
-            s,
-            constraint,
-            plot_funcs=[maf.HealpixSkyMap()],
-            plot_dict={
-                "title": f"Visits {dayObsStart} to {dayObsEnd}",
-                "percentile_clip": 98,
-                "n_ticks": 7,
-                "extend": "max",
-            },
-        )
-        g = maf.MetricBundleGroup({"nvisits": nvisits}, None, save_early=False)
-        if len(map_data) > 0:
-            logger.debug("Running metric bundle group for static map generation")
-            g.run_current(constraint, map_data)
-        plot = nvisits.plot()
+        visit_map_png = _build_visit_map_png(map_data2, dayObsStart, dayObsEnd)
+        secondary_map_png = _build_secondary_visit_map_png(map_data2, dayObsStart, dayObsEnd)
+        # third_map_png = _build_third_visit_map_png(map_data)
+
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
         plotting_elapsed_time = end_time - plotting_start_time
         logger.debug(f"Plotting elapsed time: {plotting_elapsed_time:.6f} seconds")
         logger.debug(f"Static map generation executed in {elapsed_time:.6f} seconds")
-        print(plot)
+
         return {
-            "static1": f"static map placeholder generated in {elapsed_time:.6f} seconds",
+            "visit_map": _encode_png_payload(visit_map_png),
+            "coverage_map": _encode_png_payload(secondary_map_png),
         }
 
     except Exception as e:
