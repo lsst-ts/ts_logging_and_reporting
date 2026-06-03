@@ -32,7 +32,7 @@ from lsst.ts.logging_and_reporting.utils import (
     AUTH_SOURCES,
     JIRA_BLOCK_BASE_URL,
     ZEPHYR_BLOCK_BASE_URL,
-    add_dayobs_day,
+    add_or_subtract_dayobs_days,
     build_block_response,
     get_access_token,
     get_auth_header,
@@ -446,21 +446,44 @@ def test_build_block_response_jira_only():
     assert result["BLOCK-456"]["source"] == "jira"
 
 
-def test_add_dayobs_day_regular():
-    assert add_dayobs_day(20260519) == 20260520
+class TestAddOrSubtractDayobsDays:
+    """Tests for add_or_subtract_dayobs_days."""
 
+    def test_add_day(self):
+        assert add_or_subtract_dayobs_days(20260519, 1) == 20260520
 
-def test_add_dayobs_day_month_rollover():
-    assert add_dayobs_day(20260531) == 20260601
+    def test_subtract_day(self):
+        assert add_or_subtract_dayobs_days(20260520, -1) == 20260519
 
+    def test_month_rollover_forward(self):
+        assert add_or_subtract_dayobs_days(20260531, 1) == 20260601
 
-def test_add_dayobs_day_year_rollover():
-    assert add_dayobs_day(20251231) == 20260101
+    def test_month_rollover_backward(self):
+        assert add_or_subtract_dayobs_days(20260601, -1) == 20260531
 
+    def test_year_rollover_forward(self):
+        assert add_or_subtract_dayobs_days(20251231, 1) == 20260101
 
-def test_add_dayobs_day_leap_year():
-    assert add_dayobs_day(20240228) == 20240229
+    def test_year_rollover_backward(self):
+        assert add_or_subtract_dayobs_days(20260101, -1) == 20251231
 
+    def test_leap_year_forward(self):
+        assert add_or_subtract_dayobs_days(20240228, 1) == 20240229
 
-def test_add_dayobs_day_non_leap_year():
-    assert add_dayobs_day(20230228) == 20230301
+    def test_leap_year_backward(self):
+        assert add_or_subtract_dayobs_days(20240301, -1) == 20240229
+
+    def test_non_leap_year_forward(self):
+        assert add_or_subtract_dayobs_days(20230228, 1) == 20230301
+
+    def test_non_leap_year_backward(self):
+        assert add_or_subtract_dayobs_days(20230301, -1) == 20230228
+
+    def test_zero_days(self):
+        assert add_or_subtract_dayobs_days(20260519, 0) == 20260519
+
+    def test_multiple_days_forward(self):
+        assert add_or_subtract_dayobs_days(20260519, 10) == 20260529
+
+    def test_multiple_days_backward(self):
+        assert add_or_subtract_dayobs_days(20260519, -10) == 20260509
