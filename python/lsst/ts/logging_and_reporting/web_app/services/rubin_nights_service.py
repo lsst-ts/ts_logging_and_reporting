@@ -37,7 +37,7 @@ from rubin_nights.scriptqueue import get_consolidated_messages
 
 
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
-from lsst.ts.logging_and_reporting.utils import add_dayobs_day, stringify_special_floats
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, stringify_special_floats
 
 from .almanac_service import get_almanac
 
@@ -56,6 +56,7 @@ OBSERVATORY_STATES = {
     "IDLE": 1 << 5,  # 32
 }
 OBS_STATUS_AVAILABLE_DAYOBS = 20260225
+MILLISECONDS_IN_AN_HOUR = 3600000
 
 
 def get_time_accounting(
@@ -381,10 +382,6 @@ def decode_states(mask: int) -> list[str]:
 
     states = [name for name, bit in OBSERVATORY_STATES.items() if bit != 0 and (mask & bit)]
 
-    # WEATHER (8) == WEATHER | UNKNOWN (8)
-    if mask == OBSERVATORY_STATES["WEATHER"]:
-        states.append("UNKNOWN")
-
     return states
 
 
@@ -428,7 +425,7 @@ def get_obs_status_intervals(
 
         # How long was the interval between entries?
         interval_length_ms = second["time_ms"] - first["time_ms"]
-        interval_length_hrs = interval_length_ms / 3600000
+        interval_length_hrs = interval_length_ms / MILLISECONDS_IN_AN_HOUR
 
         # Was there a status change? What was it?
         changed_mask = first_status ^ second_status
@@ -438,12 +435,14 @@ def get_obs_status_intervals(
         activated = second_status & ~first_status if has_changed else None
         deactivated = first_status & ~second_status if has_changed else None
 
-        # Create user-friendly labels for status changes.
+        # Create user-friendly labels for state changes.
         activated_labels = decode_states(activated) if activated else []
         deactivated_labels = decode_states(deactivated) if deactivated else []
 
-        start_unknown = counts_as_unknown(first_status)
-        end_unknown = counts_as_unknown(second_status)
+        # Check for the UNKNOWN state (bitmask 0) and add labels,
+        # if present.
+        start_unknown = is_unknown(first_status)
+        end_unknown = is_unknown(second_status)
 
         if end_unknown and not start_unknown:
             activated_labels.append("UNKNOWN")
@@ -670,32 +669,6 @@ def counts_as_fault_loss(status: int) -> bool:
     return has_fault and not has_downtime
 
 
-def counts_as_unknown(status: int) -> bool:
-    """Determine whether a status should count as ``UNKNOWN`` time.
-
-    ``UNKNOWN`` time includes:
-    - ``UNKNOWN``
-    - ``WEATHER | UNKNOWN``
-
-    Due to encoding ambiguity, ``WEATHER``-only masks are interpreted
-    semantically as ``WEATHER | UNKNOWN``.
-
-    Parameters
-    ----------
-    status : `int`
-        Bitmask status value.
-
-    Returns
-    -------
-    `bool`
-        True if the status contributes to ``UNKNOWN`` time.
-    """
-    return status in (
-        OBSERVATORY_STATES["UNKNOWN"],
-        OBSERVATORY_STATES["WEATHER"],
-    )
-
-
 COUNT_STATE_METRIC_MAP = {
     "unknown": is_unknown,
     "daytime": contains_daytime,
@@ -705,7 +678,6 @@ COUNT_STATE_METRIC_MAP = {
     "downtime": contains_downtime,
     "idle": contains_idle,
     "fault_loss": counts_as_fault_loss,
-    "unknown_loss": counts_as_unknown,
 }
 
 
@@ -795,7 +767,7 @@ def sum_interval_overlap(
             night_i += 1
 
     # Convert ms to hrs.
-    total_hrs = total_ms / 3600000
+    total_hrs = total_ms / MILLISECONDS_IN_AN_HOUR
 
     return total_hrs
 
@@ -902,7 +874,7 @@ def get_obs_status(
             # Get night boundaries from almanac adapter.
             # First, we need to add an extra day because the almanac
             # adapter has a non-inclusive end dayobs.
-            almanac_dayobs_end = add_dayobs_day(dayobs_end)
+            almanac_dayobs_end = add_or_subtract_dayobs_days(dayobs_end, 1)
             almanac_info = get_almanac(dayobs_start, almanac_dayobs_end)
             # Construct night intervals from almanac data.
             night_intervals = build_ms_night_intervals(almanac_info)

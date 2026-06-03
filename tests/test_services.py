@@ -20,12 +20,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from datetime import datetime, timezone
 from unittest.mock import Mock
 
 import pandas as pd
 import pytest
 from matplotlib import pyplot as plt
 
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
 from lsst.ts.logging_and_reporting.web_app.services import (
     almanac_service,
     consdb_service,
@@ -596,7 +598,59 @@ class TestGetBlockTicketSummaries:
         assert result == expected
 
 
-def make_event(status=1, time_ms=0, time="t", note="n", labels=None):
+# ----- Observatory Status tests, helpers and constants -----
+#
+# To simplify test creation, consistency and adaptability, we
+# first define a number of constants and helpers to be used
+# throughout the test suite.
+#
+# To simplify interval computation, we start our default
+# intervals at 0 unix ms, which represents 1970-01-01 00:00:00.
+
+# Get constants from service.
+AVAILABLE_DAYOBS = rubin_nights_service.OBS_STATUS_AVAILABLE_DAYOBS
+ONE_HOUR_UNIX_MS = rubin_nights_service.MILLISECONDS_IN_AN_HOUR
+
+# Set defaults for interval lengths and start/end times.
+DEFAULT_EVENT_INTERVAL_HR = 1
+DEFAULT_EVENT_INTERVAL_MS = ONE_HOUR_UNIX_MS * DEFAULT_EVENT_INTERVAL_HR
+
+DEFAULT_EVENT_INTERVAL_START_MS = 0
+DEFAULT_EVENT_INTERVAL_END_MS = DEFAULT_EVENT_INTERVAL_START_MS + DEFAULT_EVENT_INTERVAL_MS
+
+DEFAULT_NIGHT_INTERVAL_HR = 10
+DEFAULT_NIGHT_INTERVAL_MS = ONE_HOUR_UNIX_MS * DEFAULT_NIGHT_INTERVAL_HR
+
+DEFAULT_NIGHT_START_MS = 0
+DEFAULT_NIGHT_END_MS = DEFAULT_NIGHT_START_MS + DEFAULT_NIGHT_INTERVAL_MS
+
+# For multi-night tests, we use a second night interval.
+SECOND_NIGHT_START_MS = DEFAULT_NIGHT_END_MS + DEFAULT_NIGHT_INTERVAL_MS
+SECOND_NIGHT_END_MS = SECOND_NIGHT_START_MS + DEFAULT_NIGHT_INTERVAL_MS
+
+
+# Helpers to convert unix ms to other required datetime formats.
+def unix_ms_to_dt(unix_ms: int) -> str:
+    """Convert a unix ms timestamp to a UTC timestamp string
+    (YYYY-MM-DD HH:MM:SS).
+    """
+    return datetime.fromtimestamp(unix_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def unix_ms_to_dayobs_int(unix_ms: int) -> int:
+    """Convert a unix ms timestamp to a dayobs integer (YYYYMMDD)."""
+    return int(datetime.fromtimestamp(unix_ms / 1000, tz=timezone.utc).strftime("%Y%m%d"))
+
+
+DEFAULT_NIGHT_START_DT = unix_ms_to_dt(DEFAULT_NIGHT_START_MS)
+DEFAULT_NIGHT_END_DT = unix_ms_to_dt(DEFAULT_NIGHT_END_MS)
+
+DEFAULT_START_DAYOBS_INT = unix_ms_to_dayobs_int(DEFAULT_NIGHT_START_MS)
+DEFAULT_END_DAYOBS_INT = unix_ms_to_dayobs_int(DEFAULT_NIGHT_END_MS)
+
+
+# Helpers for creating inputs to pass in to various tested functions.
+def make_event(status=1, time_ms=0, time="foo", note="foo", labels=None):
     return {
         "status": status,
         "time_ms": time_ms,
@@ -606,7 +660,11 @@ def make_event(status=1, time_ms=0, time="t", note="n", labels=None):
     }
 
 
-def make_interval_event(start_state=1, start_time_ms=0, end_time_ms=3600000):
+def make_event_interval(
+    start_state=rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"],
+    start_time_ms=DEFAULT_EVENT_INTERVAL_START_MS,
+    end_time_ms=DEFAULT_EVENT_INTERVAL_END_MS,
+):
     return {
         "start_state": start_state,
         "start_time_ms": start_time_ms,
@@ -614,17 +672,18 @@ def make_interval_event(start_state=1, start_time_ms=0, end_time_ms=3600000):
     }
 
 
-# must be in sync with make_almanac
-def make_night(start=0, end=3600000):
-    return {"start_ms": start, "end_ms": end}
+def make_night_interval(
+    start_time_ms=DEFAULT_NIGHT_START_MS,
+    end_time_ms=DEFAULT_NIGHT_END_MS,
+):
+    return {"start_ms": start_time_ms, "end_ms": end_time_ms}
 
 
-# must be in sync with make_night
 def make_almanac():
     return [
         {
-            "twilight_evening": "1970-01-01 00:00:00",
-            "twilight_morning": "1970-01-01 01:00:00",
+            "twilight_evening": DEFAULT_NIGHT_START_DT,
+            "twilight_morning": DEFAULT_NIGHT_END_DT,
         }
     ]
 
@@ -654,12 +713,12 @@ class TestObsStatusEvents:
                 return pd.DataFrame(
                     [
                         {
-                            "status": 1,
-                            "note": "n",
+                            "status": rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"],
+                            "note": "note",
                             "statusLabels": [],
                         }
                     ],
-                    index=[pd.Timestamp("1970-01-01T00:00:00")],
+                    index=[pd.Timestamp("1970-01-01T00:00:00+00:00")],
                 )
 
         class DummyClients:
@@ -673,8 +732,8 @@ class TestObsStatusEvents:
         )
 
         result = rubin_nights_service.get_obs_status_events(
-            19700101,
-            19700101,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
             auth_token=None,
         )
 
@@ -690,8 +749,8 @@ class TestObsStatusEvents:
         )
 
         result = rubin_nights_service.get_obs_status_events(
-            19700101,
-            19700101,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
         )
 
         assert result == []
@@ -702,17 +761,26 @@ class TestIntervals:
 
     def test_get_obs_status_intervals_single(self):
         events = [
-            make_event(status=1, time_ms=0),
-            make_event(status=2, time_ms=1000),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["DAYTIME"],
+            ),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"],
+                time_ms=ONE_HOUR_UNIX_MS,
+            ),
         ]
 
         result = rubin_nights_service.get_obs_status_intervals(events)
 
         assert len(result) == 1
-        assert result[0]["interval_length_ms"] == 1000
-        assert result[0]["start_state"] == 1
-        assert result[0]["end_state"] == 2
-        assert result[0]["changed_mask"] == 3
+        assert result[0]["interval_length_ms"] == ONE_HOUR_UNIX_MS
+        assert result[0]["start_state"] == rubin_nights_service.OBSERVATORY_STATES["DAYTIME"]
+        assert result[0]["end_state"] == rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"]
+        assert (
+            result[0]["changed_mask"]
+            == rubin_nights_service.OBSERVATORY_STATES["DAYTIME"]
+            | rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"]
+        )
 
     def test_get_obs_status_intervals_no_events(self):
         assert rubin_nights_service.get_obs_status_intervals([]) == []
@@ -722,16 +790,21 @@ class TestIntervals:
         from a known state into UNKNOWN.
         """
         events = [
-            make_event(status=2, time_ms=0),
-            make_event(status=0, time_ms=1000),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"],
+            ),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"],
+                time_ms=ONE_HOUR_UNIX_MS,
+            ),
         ]
 
         result = rubin_nights_service.get_obs_status_intervals(events)
 
         interval = result[0]
 
-        assert interval["activated"] == 0
-        assert interval["deactivated"] == 2
+        assert interval["activated"] == rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"]
+        assert interval["deactivated"] == rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"]
 
         assert interval["activated_labels"] == ["UNKNOWN"]
         assert interval["deactivated_labels"] == ["OPERATIONAL"]
@@ -741,84 +814,67 @@ class TestIntervals:
         from UNKNOWN into a known state.
         """
         events = [
-            make_event(status=0, time_ms=0),
-            make_event(status=2, time_ms=1000),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"],
+            ),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"],
+                time_ms=ONE_HOUR_UNIX_MS,
+            ),
         ]
 
         result = rubin_nights_service.get_obs_status_intervals(events)
 
         interval = result[0]
 
-        assert interval["activated"] == 2
-        assert interval["deactivated"] == 0
+        assert interval["activated"] == rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"]
+        assert interval["deactivated"] == rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"]
 
         assert interval["activated_labels"] == ["OPERATIONAL"]
         assert interval["deactivated_labels"] == ["UNKNOWN"]
 
     def test_get_obs_status_intervals_change_states_no_unknown(self):
-        """Adding/removing a bit to/from an existing known state
+        """Adding/removing a bit to/from an existing known status
         should not incorrectly activate/deactivate UNKNOWN.
         """
         events = [
-            make_event(status=10, time_ms=0),
-            make_event(status=12, time_ms=1000),
+            make_event(
+                status=(
+                    rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"]
+                    | rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
+                ),
+            ),
+            make_event(
+                status=(
+                    rubin_nights_service.OBSERVATORY_STATES["FAULT"]
+                    | rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
+                ),
+                time_ms=ONE_HOUR_UNIX_MS,
+            ),
         ]
 
         result = rubin_nights_service.get_obs_status_intervals(events)
 
         interval = result[0]
 
-        assert interval["activated"] == 4
-        assert interval["deactivated"] == 2
+        assert interval["activated"] == rubin_nights_service.OBSERVATORY_STATES["FAULT"]
+        assert interval["deactivated"] == rubin_nights_service.OBSERVATORY_STATES["OPERATIONAL"]
 
         assert interval["activated_labels"] == ["FAULT"]
         assert interval["deactivated_labels"] == ["OPERATIONAL"]
-
-    def test_get_obs_status_intervals_unknown_to_weather(self):
-        """WEATHER counts as containing UNKNOWN, so UNKNOWN should
-        not activate/deactivate during UNKNOWN <-> WEATHER transitions.
-        """
-        events = [
-            make_event(status=0, time_ms=0),
-            make_event(status=8, time_ms=1000),
-        ]
-
-        result = rubin_nights_service.get_obs_status_intervals(events)
-
-        interval = result[0]
-
-        assert interval["activated"] == 8
-        assert interval["deactivated"] == 0
-
-        assert interval["activated_labels"] == ["WEATHER", "UNKNOWN"]
-        assert interval["deactivated_labels"] == []
-
-    def test_get_obs_status_intervals_weather_to_unknown(self):
-        """WEATHER counts as UNKNOWN, so UNKNOWN should not
-        activate/deactivate during WEATHER <-> UNKNOWN transitions.
-        """
-        events = [
-            make_event(status=8, time_ms=0),
-            make_event(status=0, time_ms=1000),
-        ]
-
-        result = rubin_nights_service.get_obs_status_intervals(events)
-
-        interval = result[0]
-
-        assert interval["activated"] == 0
-        assert interval["deactivated"] == 8
-
-        assert interval["activated_labels"] == []
-        assert interval["deactivated_labels"] == ["WEATHER", "UNKNOWN"]
 
     def test_get_obs_status_unknown_to_unknown(self):
         """No-change UNKNOWN intervals should not report any
         activated or deactivated labels.
         """
         events = [
-            make_event(status=0, time_ms=0),
-            make_event(status=0, time_ms=1000),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"],
+            ),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["UNKNOWN"],
+                time_ms=ONE_HOUR_UNIX_MS,
+            ),
         ]
 
         result = rubin_nights_service.get_obs_status_intervals(events)
@@ -839,8 +895,13 @@ class TestIntervals:
         or deactivated labels.
         """
         events = [
-            make_event(status=4, time_ms=0),
-            make_event(status=4, time_ms=1000),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
+            ),
+            make_event(
+                status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
+                time_ms=ONE_HOUR_UNIX_MS,
+            ),
         ]
 
         result = rubin_nights_service.get_obs_status_intervals(events)
@@ -883,14 +944,6 @@ class TestIntervals:
         assert "UNKNOWN" in decoded
         assert isinstance(decoded, list)
 
-    def test_decode_states_weather_implies_unknown(self):
-        mask = rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
-
-        decoded = rubin_nights_service.decode_states(mask)
-
-        assert "WEATHER" in decoded
-        assert "UNKNOWN" in decoded
-
 
 class TestAlmanacHandling:
     """Tests for almanac conversion to ms intervals."""
@@ -898,14 +951,14 @@ class TestAlmanacHandling:
     def test_build_ms_night_intervals(self):
         result = rubin_nights_service.build_ms_night_intervals(make_almanac())
 
-        assert result == [make_night()]
+        assert result == [make_night_interval()]
 
     def test_almanac_to_unix_ms(self):
-        ts = "1970-01-01 00:00:00"
+        ts = DEFAULT_NIGHT_END_DT
 
         result = rubin_nights_service.almanac_to_unix_ms(ts)
 
-        assert result == 0
+        assert result == DEFAULT_NIGHT_END_MS
 
 
 class TestPredicates:
@@ -937,18 +990,14 @@ class TestPredicates:
         )
         assert not rubin_nights_service.counts_as_fault_loss(status)
 
-    def test_counts_as_unknown(self):
-        status = rubin_nights_service.OBSERVATORY_STATES["WEATHER"]
-        assert rubin_nights_service.counts_as_unknown(status)
-
 
 class TestSumIntervalOverlap:
     """Tests for interval overlap computation."""
 
     def test_sum_interval_overlap_full(self):
-        event_intervals = [make_interval_event()]
+        event_intervals = [make_event_interval()]
 
-        night_intervals = [make_night()]
+        night_intervals = [make_night_interval()]
 
         result = rubin_nights_service.sum_interval_overlap(
             event_intervals,
@@ -956,12 +1005,21 @@ class TestSumIntervalOverlap:
             lambda _: True,
         )
 
-        assert result == 1.0
+        assert result == DEFAULT_EVENT_INTERVAL_HR
 
     def test_sum_interval_overlap_partial_start(self):
-        event_intervals = [make_interval_event()]
+        # The event interval symmetrically straddles the start
+        # of the night interval.
+        foo = DEFAULT_EVENT_INTERVAL_MS / 2
 
-        night_intervals = [make_night(start=1800000, end=5400000)]
+        event_intervals = [make_event_interval()]
+
+        night_intervals = [
+            make_night_interval(
+                start_time_ms=DEFAULT_NIGHT_START_MS + foo,
+                end_time_ms=DEFAULT_NIGHT_END_MS + foo,
+            )
+        ]
 
         result = rubin_nights_service.sum_interval_overlap(
             event_intervals,
@@ -969,12 +1027,21 @@ class TestSumIntervalOverlap:
             lambda _: True,
         )
 
-        assert result == 0.5
+        assert result == (DEFAULT_EVENT_INTERVAL_HR / 2)
 
     def test_sum_interval_overlap_partial_end(self):
-        event_intervals = [make_interval_event(start_state=1, start_time_ms=1800000, end_time_ms=5000000)]
+        # The event interval symmetrically straddles the end
+        # of the night interval.
+        foo = DEFAULT_EVENT_INTERVAL_MS / 2
 
-        night_intervals = [make_night()]
+        event_intervals = [
+            make_event_interval(
+                start_time_ms=DEFAULT_NIGHT_END_MS - foo,
+                end_time_ms=DEFAULT_NIGHT_END_MS + foo,
+            )
+        ]
+
+        night_intervals = [make_night_interval()]
 
         result = rubin_nights_service.sum_interval_overlap(
             event_intervals,
@@ -985,9 +1052,14 @@ class TestSumIntervalOverlap:
         assert result == 0.5
 
     def test_sum_interval_no_overlap(self):
-        event_intervals = [make_interval_event(start_state=1, start_time_ms=3700000, end_time_ms=5000000)]
+        event_intervals = [
+            make_event_interval(
+                start_time_ms=DEFAULT_NIGHT_END_MS,
+                end_time_ms=DEFAULT_NIGHT_END_MS + DEFAULT_EVENT_INTERVAL_MS,
+            )
+        ]
 
-        night_intervals = [make_night()]
+        night_intervals = [make_night_interval()]
 
         result = rubin_nights_service.sum_interval_overlap(
             event_intervals,
@@ -995,12 +1067,13 @@ class TestSumIntervalOverlap:
             lambda _: True,
         )
 
-        assert result == 0.0
+        assert result == 0
 
     def test_sum_interval_overlap_filtered_out(self):
-        event_intervals = [make_interval_event()]
+        # There is overlap, but predicate returns false.
+        event_intervals = [make_event_interval()]
 
-        night_intervals = [make_night()]
+        night_intervals = [make_night_interval()]
 
         result = rubin_nights_service.sum_interval_overlap(
             event_intervals,
@@ -1008,21 +1081,29 @@ class TestSumIntervalOverlap:
             lambda _: False,
         )
 
-        assert result == 0.0
+        assert result == 0
 
     def test_sum_interval_overlap_multiple_nights(self):
+        # Multiple nights overlap with events. Tests the
+        # loop over night intervals.
         event_intervals = [
-            # 0.5 hrs overlap on first night
-            make_interval_event(start_state=1, start_time_ms=1800000, end_time_ms=4000000),
-            # interval between nights
-            make_interval_event(start_state=1, start_time_ms=4000000, end_time_ms=4500000),
-            # 0.5 hrs overlap on second night
-            make_interval_event(start_state=1, start_time_ms=6000000, end_time_ms=7800000),
+            make_event_interval(),
+            make_event_interval(
+                start_time_ms=DEFAULT_NIGHT_END_MS,
+                end_time_ms=DEFAULT_NIGHT_END_MS + DEFAULT_EVENT_INTERVAL_MS,
+            ),
+            make_event_interval(
+                start_time_ms=SECOND_NIGHT_START_MS,
+                end_time_ms=SECOND_NIGHT_START_MS + DEFAULT_EVENT_INTERVAL_MS,
+            ),
         ]
 
         night_intervals = [
-            make_night(start=0, end=3600000),
-            make_night(start=5000000, end=8600000),
+            make_night_interval(),
+            make_night_interval(
+                start_time_ms=SECOND_NIGHT_START_MS,
+                end_time_ms=SECOND_NIGHT_END_MS,
+            ),
         ]
 
         result = rubin_nights_service.sum_interval_overlap(
@@ -1031,20 +1112,26 @@ class TestSumIntervalOverlap:
             lambda _: True,
         )
 
-        assert result == 1.0
+        assert result == 2
 
     def test_sum_interval_overlap_multinight_interval(self):
-        # Testing extreme edge case
+        # Testing edge case, where one event interval
+        # overlaps multiple nights.
 
         event_intervals = [
-            # 1.0 hr overlap on first night +
-            # 0.5 hrs overlap on second night.
-            make_interval_event(start_state=1, start_time_ms=0, end_time_ms=6800000),
+            # Full overlap on first night +
+            # 1 default interval overlap on second night.
+            make_event_interval(
+                end_time_ms=SECOND_NIGHT_START_MS + DEFAULT_EVENT_INTERVAL_MS,
+            ),
         ]
 
         night_intervals = [
-            make_night(start=0, end=3600000),
-            make_night(start=5000000, end=8600000),
+            make_night_interval(),
+            make_night_interval(
+                start_time_ms=SECOND_NIGHT_START_MS,
+                end_time_ms=SECOND_NIGHT_END_MS,
+            ),
         ]
 
         result = rubin_nights_service.sum_interval_overlap(
@@ -1053,26 +1140,29 @@ class TestSumIntervalOverlap:
             lambda _: True,
         )
 
-        assert result == 1.5
+        assert result == DEFAULT_NIGHT_INTERVAL_HR + DEFAULT_EVENT_INTERVAL_HR
 
 
 class TestGetAvailability:
-    """Tests for determining data availability."""
+    """Tests for determining data availability.
+
+    Observatory Status data became available on 2026-02-25.
+    """
 
     def test_get_availability_full(self):
-        dayobs_start = 20260301
-        dayobs_end = 20260302
+        dayobs_start = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, 7)
+        dayobs_end = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, 14)
 
         availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
 
         assert "status" in availability
         assert "available_from" in availability
         assert availability["status"] == "full"
-        assert availability["available_from"] == rubin_nights_service.OBS_STATUS_AVAILABLE_DAYOBS
+        assert availability["available_from"] == AVAILABLE_DAYOBS
 
     def test_get_availability_none(self):
-        dayobs_start = 20260201
-        dayobs_end = 20260202
+        dayobs_start = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, -14)
+        dayobs_end = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, -7)
 
         availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
 
@@ -1081,8 +1171,8 @@ class TestGetAvailability:
         assert availability["status"] == "none"
 
     def test_get_availability_partial(self):
-        dayobs_start = 20260220
-        dayobs_end = 20260301
+        dayobs_start = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, -7)
+        dayobs_end = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, 7)
 
         availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
 
@@ -1091,16 +1181,16 @@ class TestGetAvailability:
         assert availability["status"] == "partial"
 
     def test_get_availability_starts_on_boundary(self):
-        dayobs_start = 20260225
-        dayobs_end = 20260228
+        dayobs_start = AVAILABLE_DAYOBS
+        dayobs_end = add_or_subtract_dayobs_days(dayobs_start, 7)
 
         availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
 
         assert availability["status"] == "full"
 
     def test_get_availability_ends_before_boundary(self):
-        dayobs_start = 20260220
-        dayobs_end = 20260224
+        dayobs_start = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, -7)
+        dayobs_end = add_or_subtract_dayobs_days(AVAILABLE_DAYOBS, -1)
 
         availability = rubin_nights_service.get_availability(dayobs_start, dayobs_end)
 
@@ -1117,8 +1207,8 @@ class TestGetObsStatus:
         )
 
         result = rubin_nights_service.get_obs_status(
-            19700101,
-            19700102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
         )
 
         assert "entries" in result
@@ -1133,14 +1223,15 @@ class TestGetObsStatus:
         )
 
         result = rubin_nights_service.get_obs_status(
-            19700101,
-            19700102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
             include_entries=True,
             include_intervals=False,
             requested_metrics=None,
         )
 
         assert "entries" in result
+        assert len(result["entries"]) == 1
         assert "intervals" not in result
         assert "metrics" not in result
         assert "availability" in result
@@ -1148,12 +1239,12 @@ class TestGetObsStatus:
     def test_get_obs_status_intervals_only(self, monkeypatch):
         patch_events(
             monkeypatch,
-            [make_event(), make_event(time_ms=1000)],
+            [make_event(), make_event(time_ms=ONE_HOUR_UNIX_MS)],
         )
 
         result = rubin_nights_service.get_obs_status(
-            19700101,
-            19700102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
             include_entries=False,
             include_intervals=True,
             requested_metrics=None,
@@ -1169,10 +1260,13 @@ class TestGetObsStatus:
         patch_events(
             monkeypatch,
             [
-                make_event(status=rubin_nights_service.OBSERVATORY_STATES["FAULT"]),
                 make_event(
                     status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
-                    time_ms=3600000,
+                    time_ms=DEFAULT_EVENT_INTERVAL_START_MS,
+                ),
+                make_event(
+                    status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
+                    time_ms=DEFAULT_EVENT_INTERVAL_END_MS,
                 ),
             ],
         )
@@ -1180,8 +1274,8 @@ class TestGetObsStatus:
         patch_almanac(monkeypatch, make_almanac())
 
         result = rubin_nights_service.get_obs_status(
-            19700101,
-            19700102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
             include_entries=False,
             include_intervals=False,
             requested_metrics=["fault_loss"],
@@ -1192,7 +1286,7 @@ class TestGetObsStatus:
         assert "metrics" in result
         assert "availability" in result
         assert "fault_loss" in result["metrics"]
-        assert result["metrics"]["fault_loss"] == 1.0
+        assert result["metrics"]["fault_loss"] == DEFAULT_EVENT_INTERVAL_HR
 
     def test_get_obs_status_multiple_metrics(self, monkeypatch):
         patch_events(
@@ -1201,7 +1295,7 @@ class TestGetObsStatus:
                 make_event(status=rubin_nights_service.OBSERVATORY_STATES["FAULT"]),
                 make_event(
                     status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
-                    time_ms=3600000,
+                    time_ms=ONE_HOUR_UNIX_MS,
                 ),
             ],
         )
@@ -1209,8 +1303,8 @@ class TestGetObsStatus:
         patch_almanac(monkeypatch, make_almanac())
 
         result = rubin_nights_service.get_obs_status(
-            19700101,
-            19700102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
             requested_metrics=["fault_loss", "operational"],
         )
 
@@ -1224,8 +1318,8 @@ class TestGetObsStatus:
         patch_almanac(monkeypatch, make_almanac())
 
         result = rubin_nights_service.get_obs_status(
-            20250101,
-            20250102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
             requested_metrics=[],
         )
 
@@ -1236,8 +1330,8 @@ class TestGetObsStatus:
         patch_almanac(monkeypatch, make_almanac())
 
         result = rubin_nights_service.get_obs_status(
-            20250101,
-            20250102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
             requested_metrics=["invalid_metric"],
         )
 
@@ -1257,8 +1351,8 @@ class TestGetObsStatus:
         )
 
         result = rubin_nights_service.get_obs_status(
-            19700101,
-            19700102,
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
         )
 
         assert result == {}
