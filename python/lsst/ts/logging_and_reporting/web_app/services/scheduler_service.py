@@ -1,31 +1,32 @@
+import copy
 import logging
-from copy import deepcopy
 from datetime import datetime, timedelta
-from functools import partial
+from io import BytesIO
 
-import bokeh
-import colorcet
 import healpy as hp
+import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
+import rubin_sim.maf as maf
 import uranography
 from bokeh.models.ui.ui_element import UIElement
+from matplotlib import cm
+from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator
 from rubin_nights import rubin_sim_addons as rn_sim
 from rubin_scheduler.scheduler.utils import get_current_footprint
 from rubin_sim.sim_archive import fetch_sim_stats_for_night
-from schedview import band_column
 from schedview.collect.visits import NIGHT_STACKERS
-from schedview.compute.camera import LsstCameraFootprintPerimeter
-from schedview.compute.maf import compute_hpix_metric_in_bands
 from schedview.compute.visits import add_coords_tuple
 from schedview.plot.visit_skymaps import VisitMapBuilder
-from uranography.api import ArmillarySphere, Planisphere, make_zscale_linear_cmap
+from uranography.api import ArmillarySphere, Planisphere
 
 from lsst.utils.plotting import get_multiband_plot_colors
 
 logger = logging.getLogger(__name__)
 
-
+# Constants for interactive visit map rendering
 THEMES = {
     "LIGHT": {
         "PLOT_BAND_COLORS": get_multiband_plot_colors(dark_background=False),
@@ -64,222 +65,14 @@ VISIT_MAP_PROFILES = {
     },
 }
 
-
-def my_map_visits_over_hpix(
-    visits,
-    conditions,
-    map_hpix,
-    plot=None,
-    scale_limits=None,
-    palette=colorcet.blues,
-    map_class=Planisphere,
-    prerender_hpix=True,
-):
-    """Plot visit locations over a healpix map.
-
-    Parameters
-    ----------
-    visits : `pd.DataFrame`
-        The table of visits to plot, with columns matching the opsim database
-        definitions.
-    conditions : `rubin_scheduler.scheduler.features.Conditions`
-        An instance of a rubin_scheduler conditions object.
-    map_hpix : `numpy.array`
-        An array of healpix values
-    plot : `bokeh.models.plots.Plot` or `None`
-        The bokeh plot on which to make the plot. None creates a new plot.
-        None by default.
-    scale_limits : `list` of `float` or `None`
-        The scale limits for the healpix values. If None, use zscale to set
-        the scale.
-    palette : `str`
-        The bokeh palette to use for the healpix map.
-    map_class : `Planisphere` or `Armillary`, optional
-        The class of map to use.  Defaults to uranography.Planisphere.
-    prerender_hpix : `bool`, optional
-        Pre-render the healpix map? Defaults to `True`.
-
-    Returns
-    -------
-    plot : `bokeh.models.plots.Plot`
-        The plot with the map.
-    """
-    camera_perimeter = LsstCameraFootprintPerimeter()
-
-    if plot is None:
-        plot = bokeh.plotting.figure(
-            width=256,
-            height=256,
-            match_aspect=True,
-        )
-
-    sphere_map = map_class(mjd=conditions.mjd, plot=plot)
-
-    if scale_limits is None:
-        try:
-            good_values = map_hpix[~map_hpix.mask]
-        except AttributeError:
-            good_values = map_hpix
-
-        cmap = make_zscale_linear_cmap(good_values, palette=palette)
-    else:
-        cmap = bokeh.transform.linear_cmap("value", palette, scale_limits[0], scale_limits[1])
-
-    if prerender_hpix:
-        # Convert the healpix map into an image raster, and send that instead
-        # the full healpix map (sent as one polygon for each healpixel).
-        # An high nside, this should reduce the data sent to the browser.
-        # However, it will not be responsive to controls.
-        if not map_class == Planisphere:
-            raise NotImplementedError()
-        if not plot.width == plot.height:
-            raise NotImplementedError()
-
-        xsize = plot.width
-        ysize = plot.height
-        # For Lambert Azimuthal Equal Area, projection space is 4 radians wide
-        # and high, so projection units per pixel is 4 radians/xsize.
-        # reso is in units of arcmin, though.
-        reso = 60 * np.degrees(4.0 / xsize)
-        projector = hp.projector.AzimuthalProj(
-            rot=sphere_map.laea_rot, xsize=xsize, ysize=ysize, reso=reso, lamb=True
-        )
-        map_raster = projector.projmap(map_hpix, partial(hp.vec2pix, hp.npix2nside(len(map_hpix))))
-
-        # Set area outside projection to nan, not -inf, so bokeh does not
-        # try coloring it.
-        map_raster[np.isneginf(map_raster)] = np.nan
-
-        reso_radians = np.radians(projector.arrayinfo["reso"] / 60)
-        width_hpxy = reso_radians * map_raster.shape[0]
-        height_hpxy = reso_radians * map_raster.shape[1]
-        sphere_map.plot.image(
-            [map_raster],
-            x=-width_hpxy / 2,
-            y=-height_hpxy / 2,
-            dw=width_hpxy,
-            dh=height_hpxy,
-            color_mapper=cmap.transform,
-            level="image",
-        )
-    else:
-        sphere_map.add_healpix(map_hpix, nside=hp.npix2nside(len(map_hpix)), cmap=cmap)
-
-    if len(visits) > 0:
-        ras, decls = camera_perimeter(visits.fieldRA, visits.fieldDec, visits.rotSkyPos)
-
-        perimeter_df = pd.DataFrame(
-            {
-                "ra": ras,
-                "decl": decls,
-            }
-        )
-        sphere_map.add_patches(
-            perimeter_df, patches_kwargs={"fill_color": None, "line_color": "black", "line_width": 1}
-        )
-
-    sphere_map.decorate()
-
-    sphere_map.add_marker(
-        ra=np.degrees(conditions.sun_ra),
-        decl=np.degrees(conditions.sun_dec),
-        name="Sun",
-        glyph_size=8,
-        circle_kwargs={"color": "yellow", "fill_alpha": 1},
-    )
-
-    sphere_map.add_marker(
-        ra=np.degrees(conditions.moon_ra),
-        decl=np.degrees(conditions.moon_dec),
-        name="Moon",
-        glyph_size=8,
-        circle_kwargs={"color": "orange", "fill_alpha": 0.8},
-    )
-
-    return plot
-
-
-def my_create_hpix_visit_map_grid(hpix_maps, visits, conditions, **kwargs):
-    """Create a grid of healpix maps with visits overplotted.
-
-    Parameters
-    ----------
-    map_hpix : `numpy.array`
-        An array of healpix values.
-    visits : `pd.DataFrame`
-        The table of visits to plot, with columns matching the opsim database
-        definitions.
-    conditions : `rubin_scheduler.scheduler.features.Conditions`
-        An instance of a rubin_scheduler conditions object.
-
-    Returns
-    -------
-    plot : `bokeh.models.plots.Plot`
-        The plot with the map.
-    """
-    visit_map = {}
-    for band in hpix_maps:
-        visit_map[band] = my_map_visits_over_hpix(
-            visits.query(f"filter == '{band}'"), conditions, hpix_maps[band], **kwargs
-        )
-        visit_map[band].title = band
-
-    # Convert the dictionary of maps into a list of lists,
-    # corresponding to the rows of the grid.
-    num_cols = 3
-    map_lists = []
-    for band_idx, band in enumerate(hpix_maps):
-        if band_idx % num_cols == 0:
-            map_lists.append([visit_map[band]])
-        else:
-            map_lists[-1].append(visit_map[band])
-
-    map_grid = bokeh.layouts.gridplot(map_lists, sizing_mode="scale_both")
-
-    return map_grid
-
-
-def my_create_metric_visit_map_grid(
-    metric, metric_visits, visits, observatory, nside=32, use_matplotlib=False, **kwargs
-) -> UIElement | None:
-    """Create a grid of maps of metric values with visits overplotted.
-
-    Parameters
-    ----------
-    metric : `numpy.array`
-        An array of healpix values.
-    metric_visits : `pd.DataFrame`
-        The visits to use to compute the metric.
-    visits : `pd.DataFrame`
-        The table of visits to plot, with columns matching the opsim database
-        definitions.
-    observatory : `ModelObservatory`
-        The model observotary to use.
-    nside : `int`
-        The nside with which to compute the metric.
-    use_matplotlib: `bool`
-        Use matplotlib instead of bokeh? Defaults to `False`.
-
-    Returns
-    -------
-    plot : `bokeh.models.plots.Plot`
-        The plot with the map or `None` if no visits are provided.
-    """
-
-    if len(metric_visits):
-        metric_hpix = compute_hpix_metric_in_bands(metric_visits, metric, nside=nside)
-    else:
-        metric_hpix = {b: np.zeros(hp.nside2npix(nside)) for b in visits[band_column(visits)].unique()}
-
-    if len(visits):
-        map_grid = my_create_hpix_visit_map_grid(
-            metric_hpix, visits, observatory.return_conditions(), **kwargs
-        )
-
-        bokeh.io.show(map_grid)
-        return map_grid
-
-    return None
+# Constants for static visit map generation
+NSIDE = 32
+ALPHA_BACKGROUND_CAP = 0.7
+VMAX_PERCENTILE = 95
+RENDER_DPI = 150
+COLOR_FG = "white"
+COLOR_BG = "black"
+COLOR_DEC_LABEL = "black"  # projected onto the map face, so inverted
 
 
 def get_expected_exposures(
@@ -340,6 +133,8 @@ def get_expected_exposures(
         raise
 
 
+# The following functions are used for preparing the visit
+# data and building the interactive visit map using uranography.
 def _prepare_visit_maps_data(
     visits: pd.DataFrame,
 ):
@@ -377,12 +172,45 @@ def _get_visit_map_config(
     theme: str = "DARK",
     applet_mode: bool = False,
 ) -> dict:
+    """Get configuration parameters for visit map rendering
+    based on theme and mode.
+    Parameters
+    ----------
+    theme : `str`, optional
+        Theme for the visit map, either "DARK" or "LIGHT".
+        Default is "DARK".
+    applet_mode : `bool`, optional
+        Whether the visit map is being rendered in applet mode
+        (with simplified controls and smaller size).
+        Default is False (full mode).
+    Returns
+    -------
+    config : `dict`
+        Dictionary containing configuration parameters for
+        visit map rendering, including:
+        - "map_classes": List of uranography map classes to
+        use (e.g., ArmillarySphere, Planisphere).
+        - "figure_kwargs": Dictionary of keyword arguments
+        for figure creation (e.g., size, background color).
+        - "visit_fill_colors": List of colors for filling
+        visit patches, based on the theme.
+        - "horizon_color": Color for the horizon line, based on the theme.
+        - "star_size": Size of the sun and moon markers,
+        based on the profile.
+        - "horizon_thickness": Line width for horizon lines,
+        based on the profile.
+        - "show_extra_controls": Whether to show extra controls
+        like zenith
+        button and coordinate system selector, based on the profile.
+        - "control_styles": Dictionary of styles for interactive controls
+        (e.g., sliders, buttons), with colors based on the theme.
+    """
     profile_name = "applet" if applet_mode else "full"
 
     theme_config = THEMES[theme]
-    profile_config = deepcopy(VISIT_MAP_PROFILES[profile_name])
+    profile_config = copy.deepcopy(VISIT_MAP_PROFILES[profile_name])
 
-    figure_kwargs = deepcopy(profile_config["figure_kwargs"])
+    figure_kwargs = copy.deepcopy(profile_config["figure_kwargs"])
     figure_kwargs["border_fill_color"] = theme_config["BACKGROUND_COLOR"]
     figure_kwargs["background_fill_color"] = theme_config["BACKGROUND_COLOR"]
 
@@ -399,6 +227,23 @@ def _get_visit_map_config(
 
 
 def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, theme="DARK") -> UIElement | None:
+    """Build interactive visit maps using the VisitMapBuilder
+    class and uranography.
+    Parameters
+    ----------
+    visits : `pd.DataFrame`
+        DataFrame containing visit data in opsim format.
+    applet_mode : `bool`, optional
+        Whether to build the visit map in applet mode (with simplified
+        controls and smaller size). Default is False (full mode).
+    theme : `str`, optional
+        Theme for the visit map, either "DARK" or "LIGHT". Default is "DARK".
+    Returns
+    -------
+    viewable : `UIElement` or `None`
+        A Bokeh UIElement containing the interactive visit map,
+        or None if there were no valid visits to plot.
+    """
     map_visits = _prepare_visit_maps_data(visits)
     if map_visits.empty:
         logger.warning("No valid visits to plot on visit maps.")
@@ -458,3 +303,184 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
 
     viewable = builder.build()
     return viewable
+
+
+# The following functions are used for generating the static visit map image.
+def _get_footprint_background(nside: int = NSIDE) -> npt.NDArray:
+    """Get the background alpha values for the footprint,
+    where 0 means no coverage and 1 means full coverage.
+    This is used to set the alpha values for the background of
+    the visit map, so that areas with no coverage are fully
+    transparent and areas with coverage are more opaque (up to a cap).
+    Parameters
+    ----------
+    nside : `int`, optional
+        The nside parameter for the healpix footprint. Default is NSIDE (32).
+    Returns
+    -------
+    background : `np.ndarray`
+        An array of alpha values for the footprint background.
+    """
+    fp, _ = get_current_footprint(nside=nside)
+    bg = np.where(fp["r"] == 0, np.nan, fp["r"])
+    return np.where(bg > 1, 1.0, bg)
+
+
+def _add_dec_labels(ax) -> None:
+    """Add declination labels to the visit map axes.
+    Parameters
+    ----------
+    ax : `matplotlib.axes.Axes`
+        The axes to add the declination labels to.
+    """
+    for dec_deg in (-60, -30, 0, 30, 60):
+        hp.projtext(
+            30,
+            dec_deg,
+            f"{dec_deg}°",
+            lonlat=True,
+            color=COLOR_DEC_LABEL,
+            fontsize=12,
+            ha="left",
+            va="center",
+        )
+
+
+def _render_healpy_laea(
+    hp_array: npt.NDArray,
+    alpha: npt.NDArray,
+    vmax: float,
+    vmin: float | None = None,
+) -> Figure:
+    """Render a healpy map in an Aitoff projection with a specified
+    colormap and alpha values.
+    Parameters
+    ----------
+    hp_array : `np.ndarray`
+        The healpy map values to render (e.g., number of visits per pixel).
+    alpha : `np.ndarray`
+        The alpha values for each pixel, where 0 means fully
+        transparent and 1 means fully opaque.
+    vmax : `float`
+        The maximum value for the colormap scaling (e.g., the
+        value that corresponds to the maximum color intensity).
+    vmin : `float` or `None`, optional
+        The minimum value for the colormap scaling.
+        If None, the colormap will be scaled from 0 to vmax. Default is None.
+    Returns
+    -------
+    fig : `matplotlib.figure.Figure`
+        The rendered healpy map figure.
+    """
+    cmap = copy.copy(cm.viridis)
+    extend = "both" if vmin is not None else "max"
+
+    fig = plt.figure(figsize=(8, 6))
+    hp.azeqview(
+        hp_array,
+        alpha=alpha,
+        rot=(0, -90, 0),
+        lamb=True,
+        reso=17.5,
+        min=vmin,
+        max=vmax,
+        title="",
+        cbar=False,
+        cmap=cmap,
+        fig=fig.number,
+    )
+    hp.graticule(dpar=30, dmer=30, color=COLOR_FG, lw=2)
+
+    ax = plt.gca()
+    _add_dec_labels(ax)
+
+    for text in ax.texts:
+        text.set_color(COLOR_FG)
+        text.set_fontsize(12)
+    ax.text(
+        0.5,
+        -0.03,
+        "180°",
+        transform=ax.transAxes,
+        ha="center",
+        va="top",
+        color=COLOR_FG,
+        fontsize=10,
+        clip_on=False,
+    )
+    fig.patch.set_facecolor(COLOR_BG)
+
+    im = ax.get_images()[0]
+    cbar = plt.colorbar(
+        im,
+        shrink=0.45,
+        aspect=30,
+        pad=0.05,
+        orientation="horizontal",
+        extendrect=False,
+        extend=extend,
+    )
+    cbar.locator = MaxNLocator(nbins=3)
+    cbar.update_ticks()
+    cbar.set_label("Number of visits", color=COLOR_FG, fontsize=16)
+    cbar.outline.set_edgecolor(COLOR_FG)
+    cbar.ax.xaxis.set_tick_params(labelsize=12, color=COLOR_FG)
+    plt.setp(cbar.ax.get_xticklabels(), color=COLOR_FG, fontsize=12)
+
+    return fig
+
+
+def _compute_nvisits_map(map_data, nside: int = NSIDE) -> npt.NDArray:
+    """Compute the number of visits per healpix pixel for the given map data.
+    Parameters
+    ----------
+    map_data : `pandas.DataFrame`
+        The map data containing the observations.
+    nside : `int`, optional
+        The healpix nside parameter. Default is NSIDE.
+    Returns
+    -------
+    nvisits : `np.ndarray`
+        An array of the number of visits per healpix pixel.
+    """
+    m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
+    slicer = maf.HealpixSlicer(
+        nside=nside,
+        lon_col="s_ra",
+        lat_col="s_dec",
+        rot_sky_pos_col_name="sky_rotation",
+        verbose=False,
+    )
+    bundle = maf.MetricBundle(m_nvis, slicer, "")
+    group = maf.MetricBundleGroup({"nvisits": bundle}, None, save_early=False)
+    group.run_current("", map_data)
+    return bundle.metric_values.filled(np.nan)
+
+
+def build_static_visit_map(map_data) -> bytes:
+    """Build a static visit map image as a PNG byte string
+    for the given map data and observation date range.
+    Parameters
+    ----------
+    map_data : `pandas.DataFrame`
+        The map data containing the observations.
+    Returns
+    -------
+    image_bytes : `bytes`
+        The PNG image data as a byte string.
+    """
+
+    mval = _compute_nvisits_map(map_data)
+    background = _get_footprint_background()
+
+    alpha = np.where(np.isnan(background), 0.0, background)
+    alpha = np.where(alpha > ALPHA_BACKGROUND_CAP, ALPHA_BACKGROUND_CAP, alpha)
+    alpha = np.where(mval > 0, 1.0, alpha)
+    vmax = np.nanpercentile(mval, VMAX_PERCENTILE)
+
+    fig = _render_healpy_laea(mval, alpha=alpha, vmax=vmax)
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
