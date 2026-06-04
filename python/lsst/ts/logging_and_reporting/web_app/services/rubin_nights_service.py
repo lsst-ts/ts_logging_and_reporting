@@ -10,6 +10,7 @@ from rubin_nights.connections import get_clients
 from rubin_nights.observatory_status import get_dome_open_close
 from rubin_nights.scriptqueue import get_consolidated_messages
 
+from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import stringify_special_floats
 
 logger = logging.getLogger(__name__)
@@ -226,7 +227,12 @@ def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: st
     -------
     pd.DataFrame
         A DataFrame containing the visits.
-        Returns an empty DataFrame if an error occurs.
+        Returns an empty DataFrame when the query succeeds but has no rows.
+
+    Raises
+    ------
+    ConsdbQueryError
+        Raised when the underlying ConsDB visit query fails.
     """
     logger.info(
         f"Getting visits using rubin-nights for dayObsStart: {dayObsStart}, "
@@ -246,4 +252,4 @@ def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: st
 
     except Exception as e:
         logger.error(f"Error getting visits using rubin-nights: {e}", exc_info=True)
-        return pd.DataFrame()
+        raise ConsdbQueryError("Failed to query visits from ConsDB") from e

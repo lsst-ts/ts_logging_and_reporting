@@ -5,15 +5,10 @@ from io import BytesIO
 
 import healpy as hp
 import matplotlib.pyplot as plt
-import numpy as np
-import numpy.typing as npt
 import pandas as pd
 import rubin_sim.maf as maf
 import uranography
 from bokeh.models.ui.ui_element import UIElement
-from matplotlib import cm
-from matplotlib.figure import Figure
-from matplotlib.ticker import MaxNLocator
 from rubin_nights import rubin_sim_addons as rn_sim
 from rubin_scheduler.scheduler.utils import get_current_footprint
 from rubin_sim.sim_archive import fetch_sim_stats_for_night
@@ -67,12 +62,16 @@ VISIT_MAP_PROFILES = {
 
 # Constants for static visit map generation
 NSIDE = 32
-ALPHA_BACKGROUND_CAP = 0.7
-VMAX_PERCENTILE = 95
 RENDER_DPI = 150
-COLOR_FG = "white"
+
+COLOR_FG = "#E5E5E5"
 COLOR_BG = "black"
-COLOR_DEC_LABEL = "black"  # projected onto the map face, so inverted
+
+FONT_SIZE_BODY = 13
+FONT_SIZE_LABELS = 12
+FONT_SIZE_TICKS = 11
+GRATICULE_SPACING_DEG = 30
+GRATICULE_LINEWIDTH = 1.2
 
 
 def get_expected_exposures(
@@ -305,29 +304,11 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
     return viewable
 
 
-# The following functions are used for generating the static visit map image.
-def _get_footprint_background(nside: int = NSIDE) -> npt.NDArray:
-    """Get the background alpha values for the footprint,
-    where 0 means no coverage and 1 means full coverage.
-    This is used to set the alpha values for the background of
-    the visit map, so that areas with no coverage are fully
-    transparent and areas with coverage are more opaque (up to a cap).
-    Parameters
-    ----------
-    nside : `int`, optional
-        The nside parameter for the healpix footprint. Default is NSIDE (32).
-    Returns
-    -------
-    background : `np.ndarray`
-        An array of alpha values for the footprint background.
-    """
-    fp, _ = get_current_footprint(nside=nside)
-    bg = np.where(fp["r"] == 0, np.nan, fp["r"])
-    return np.where(bg > 1, 1.0, bg)
-
-
+#######################################################
+## The following functions are used for generating the static visit map image.
 def _add_dec_labels(ax) -> None:
-    """Add declination labels to the visit map axes.
+    """Add declination labels to the healpy sky axes.
+
     Parameters
     ----------
     ax : `matplotlib.axes.Axes`
@@ -339,148 +320,184 @@ def _add_dec_labels(ax) -> None:
             dec_deg,
             f"{dec_deg}°",
             lonlat=True,
-            color=COLOR_DEC_LABEL,
-            fontsize=12,
+            color=COLOR_FG,
+            fontsize=FONT_SIZE_LABELS,
             ha="left",
             va="center",
         )
 
 
-def _render_healpy_laea(
-    hp_array: npt.NDArray,
-    alpha: npt.NDArray,
-    vmax: float,
-    vmin: float | None = None,
-) -> Figure:
-    """Render a healpy map in an Aitoff projection with a specified
-    colormap and alpha values.
+def _add_ra_labels(ax) -> None:
+    """Add right ascension labels to the healpy sky axes.
+    Labels are added every 60 degrees, startingat 0 and
+    ending at 300.
+    However, the graticules are drawn every 30 degrees,
+    so there will be graticules without labels in between.
+
     Parameters
     ----------
-    hp_array : `np.ndarray`
-        The healpy map values to render (e.g., number of visits per pixel).
-    alpha : `np.ndarray`
-        The alpha values for each pixel, where 0 means fully
-        transparent and 1 means fully opaque.
-    vmax : `float`
-        The maximum value for the colormap scaling (e.g., the
-        value that corresponds to the maximum color intensity).
-    vmin : `float` or `None`, optional
-        The minimum value for the colormap scaling.
-        If None, the colormap will be scaled from 0 to vmax. Default is None.
-    Returns
-    -------
-    fig : `matplotlib.figure.Figure`
-        The rendered healpy map figure.
+    ax : `matplotlib.axes.Axes`
+        The axes to add the right ascension labels to.
     """
-    cmap = copy.copy(cm.viridis)
-    extend = "both" if vmin is not None else "max"
-
-    fig = plt.figure(figsize=(8, 6))
-    hp.azeqview(
-        hp_array,
-        alpha=alpha,
-        rot=(0, -90, 0),
-        lamb=True,
-        reso=17.5,
-        min=vmin,
-        max=vmax,
-        title="",
-        cbar=False,
-        cmap=cmap,
-        fig=fig.number,
-    )
-    hp.graticule(dpar=30, dmer=30, color=COLOR_FG, lw=2)
-
-    ax = plt.gca()
-    _add_dec_labels(ax)
-
-    for text in ax.texts:
-        text.set_color(COLOR_FG)
-        text.set_fontsize(12)
-    ax.text(
-        0.5,
-        -0.03,
-        "180°",
-        transform=ax.transAxes,
-        ha="center",
-        va="top",
-        color=COLOR_FG,
-        fontsize=10,
-        clip_on=False,
-    )
-    fig.patch.set_facecolor(COLOR_BG)
-
-    im = ax.get_images()[0]
-    cbar = plt.colorbar(
-        im,
-        shrink=0.45,
-        aspect=30,
-        pad=0.05,
-        orientation="horizontal",
-        extendrect=False,
-        extend=extend,
-    )
-    cbar.locator = MaxNLocator(nbins=3)
-    cbar.update_ticks()
-    cbar.set_label("Number of visits", color=COLOR_FG, fontsize=16)
-    cbar.outline.set_edgecolor(COLOR_FG)
-    cbar.ax.xaxis.set_tick_params(labelsize=12, color=COLOR_FG)
-    plt.setp(cbar.ax.get_xticklabels(), color=COLOR_FG, fontsize=12)
-
-    return fig
+    for ra_deg in (0, 60, 120, 180, 240, 300):
+        hp.projtext(
+            ra_deg,
+            -8,
+            f"{ra_deg}°",
+            lonlat=True,
+            color=COLOR_FG,
+            fontsize=FONT_SIZE_LABELS,
+            ha="center",
+            va="top",
+        )
 
 
-def _compute_nvisits_map(map_data, nside: int = NSIDE) -> npt.NDArray:
-    """Compute the number of visits per healpix pixel for the given map data.
+def _add_graticules(ax) -> None:
+    """Draw graticule grid lines and RA/Dec labels on the
+    main healpy sky axis.
     Parameters
     ----------
-    map_data : `pandas.DataFrame`
-        The map data containing the observations.
-    nside : `int`, optional
-        The healpix nside parameter. Default is NSIDE.
+    ax : `matplotlib.axes.Axes`
+        The axes to add the graticules and labels to.
+    """
+    plt.sca(ax)
+    hp.graticule(
+        dpar=GRATICULE_SPACING_DEG,
+        dmer=GRATICULE_SPACING_DEG,
+        color=COLOR_FG,
+        lw=GRATICULE_LINEWIDTH,
+    )
+    _add_dec_labels(ax)
+    _add_ra_labels(ax)
+
+
+def _style_text(fig) -> None:
+    """Apply foreground colour to all text in the figure.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        The figure containing the text objects to style.
+    """
+    for text in fig.findobj(match=plt.Text):
+        text.set_color(COLOR_FG)
+
+
+def _style_axes(fig, main_ax) -> None:
+    """Apply dark theme styling to axes chrome and sky-axis outlines.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        The figure containing the axes to style.
+    main_ax : `matplotlib.axes.Axes`
+        The primary sky map axes (the one containing the image).
+    """
+    for ax in fig.axes:
+        ax.set_facecolor(COLOR_BG)
+        ax.tick_params(colors=COLOR_FG)
+
+        for spine in ax.spines.values():
+            spine.set_color(COLOR_FG)
+
+        if ax is main_ax:
+            for line in ax.lines:
+                line.set_color(COLOR_FG)
+                line.set_linewidth(GRATICULE_LINEWIDTH)
+
+
+def _style_figure(fig, main_ax) -> None:
+    """Apply full dark theme to the figure.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        The figure to style.
+    main_ax : `matplotlib.axes.Axes`
+        The primary sky map axes (the one containing the image).
+    """
+    fig.patch.set_facecolor(COLOR_BG)
+    _style_text(fig)
+    _style_axes(fig, main_ax)
+
+
+# --- Metric computation ---
+
+
+def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
+    """Run the Nvisits count metric over the provided visit data.
+
+    Parameters
+    ----------
+    map_data : array-like
+        Structured visit records with ra, dec, sky_rotation, and mjd columns.
+
     Returns
     -------
-    nvisits : `np.ndarray`
-        An array of the number of visits per healpix pixel.
+    `maf.MetricBundle`
+        The executed bundle with populated metric values.
     """
     m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
     slicer = maf.HealpixSlicer(
-        nside=nside,
+        nside=NSIDE,
         lon_col="s_ra",
         lat_col="s_dec",
         rot_sky_pos_col_name="sky_rotation",
-        verbose=False,
     )
-    bundle = maf.MetricBundle(m_nvis, slicer, "")
+    bundle = maf.MetricBundle(
+        m_nvis,
+        slicer,
+        "",
+        plot_funcs=[maf.HealpixSkyMap()],
+        plot_dict={
+            "title": "",
+            "percentile_clip": 98,
+            "n_ticks": 7,
+            "extend": "max",
+            "cmap": "viridis",
+            "bgcolor": COLOR_BG,
+            "badcolor": COLOR_BG,
+            "fontsize": FONT_SIZE_BODY,
+            "labelsize": FONT_SIZE_TICKS,
+        },
+    )
     group = maf.MetricBundleGroup({"nvisits": bundle}, None, save_early=False)
     group.run_current("", map_data)
-    return bundle.metric_values.filled(np.nan)
+    return bundle
+
+
+# --- Public API ---
 
 
 def build_static_visit_map(map_data) -> bytes:
-    """Build a static visit map image as a PNG byte string
-    for the given map data and observation date range.
+    """Build the primary static visit map and return PNG bytes.
+
     Parameters
     ----------
-    map_data : `pandas.DataFrame`
-        The map data containing the observations.
+    map_data : array-like
+        Structured visit records. Must be non-empty.
+    day_obs_start : `int`
+        Start of the observation date range (dayObs integer).
+    day_obs_end : `int`
+        End of the observation date range (dayObs integer).
+
     Returns
     -------
-    image_bytes : `bytes`
-        The PNG image data as a byte string.
+    `bytes`
+        PNG image bytes.
     """
+    bundle = _compute_nvisits_bundle(map_data)
 
-    mval = _compute_nvisits_map(map_data)
-    background = _get_footprint_background()
+    plot = bundle.plot()
+    fig = plt.figure(plot["SkyMap"])
+    main_ax = next((ax for ax in fig.axes if ax.images), None)
 
-    alpha = np.where(np.isnan(background), 0.0, background)
-    alpha = np.where(alpha > ALPHA_BACKGROUND_CAP, ALPHA_BACKGROUND_CAP, alpha)
-    alpha = np.where(mval > 0, 1.0, alpha)
-    vmax = np.nanpercentile(mval, VMAX_PERCENTILE)
+    _style_figure(fig, main_ax)
 
-    fig = _render_healpy_laea(mval, alpha=alpha, vmax=vmax)
+    if main_ax is not None:
+        _add_graticules(main_ax)
 
     buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight", facecolor=COLOR_BG)
     plt.close(fig)
     return buf.getvalue()
