@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
+from matplotlib import pyplot as plt
 
 from lsst.ts.logging_and_reporting.web_app.services import (
     almanac_service,
@@ -196,6 +197,65 @@ def test_get_expected_exposures_invalid_date_format(monkeypatch):
         scheduler_service.get_expected_exposures(20241301, 20240102)
 
     assert not called
+
+
+def test_compute_nvisits_bundle_uses_static_map_plot_config(monkeypatch):
+    captured = {}
+
+    class DummyMetricBundle:
+        def __init__(self, metric, slicer, constraint, plot_funcs=None, plot_dict=None):
+            captured["plot_dict"] = plot_dict
+
+    class DummyMetricBundleGroup:
+        def __init__(self, bundles, db_obj, save_early=False):
+            self.bundles = bundles
+
+        def run_current(self, constraint, map_data):
+            captured["run_current_args"] = (constraint, map_data)
+
+    monkeypatch.setattr(scheduler_service.maf, "MetricBundle", DummyMetricBundle)
+    monkeypatch.setattr(scheduler_service.maf, "MetricBundleGroup", DummyMetricBundleGroup)
+
+    map_data = [{"s_ra": 10.0, "s_dec": -20.0, "sky_rotation": 45.0, "obs_start_mjd": 60000.0}]
+    scheduler_service._compute_nvisits_bundle(map_data)
+
+    assert captured["plot_dict"]["title"] == ""
+    assert captured["plot_dict"]["bgcolor"] == scheduler_service.COLOR_BG
+    assert captured["plot_dict"]["badcolor"] == scheduler_service.COLOR_BG
+    assert captured["run_current_args"] == ("", map_data)
+
+
+def test_build_static_visit_map_styles_and_adds_graticules(monkeypatch):
+    fig, ax = plt.subplots()
+    ax.imshow([[1, 2], [3, 4]])
+
+    style_calls = []
+    graticule_calls = []
+
+    class DummyBundle:
+        def plot(self):
+            return {"SkyMap": fig.number}
+
+    def fake_style_figure(styled_fig, main_ax):
+        style_calls.append((styled_fig, main_ax))
+
+    def fake_add_graticules(main_ax):
+        graticule_calls.append(main_ax)
+
+    monkeypatch.setattr(scheduler_service, "_compute_nvisits_bundle", lambda map_data: DummyBundle())
+    monkeypatch.setattr(scheduler_service, "_style_figure", fake_style_figure)
+    monkeypatch.setattr(scheduler_service, "_add_graticules", fake_add_graticules)
+
+    try:
+        png_bytes = scheduler_service.build_static_visit_map(
+            [{"s_ra": 10.0, "s_dec": -20.0, "sky_rotation": 45.0, "obs_start_mjd": 60000.0}]
+        )
+    finally:
+        plt.close(fig)
+
+    assert png_bytes
+    assert style_calls == [(fig, ax)]
+    assert graticule_calls == [ax]
 
 
 @pytest.fixture

@@ -10,7 +10,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# from rubin_scheduler.scheduler.model_observatory import ModelObservatory
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
@@ -38,7 +37,6 @@ from .services.rubin_nights_service import (
 )
 from .services.scheduler_service import (
     build_static_visit_map,
-    # build_visit_map_png,
     build_visit_maps_using_builder,
     get_expected_exposures,
 )

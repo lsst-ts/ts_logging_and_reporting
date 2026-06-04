@@ -421,9 +421,6 @@ def _style_figure(fig, main_ax) -> None:
     _style_axes(fig, main_ax)
 
 
-# --- Metric computation ---
-
-
 def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
     """Run the Nvisits count metric over the provided visit data.
 
@@ -464,9 +461,6 @@ def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
     group = maf.MetricBundleGroup({"nvisits": bundle}, None, save_early=False)
     group.run_current("", map_data)
     return bundle
-
-
-# --- Public API ---
 
 
 def build_static_visit_map(map_data) -> bytes:
