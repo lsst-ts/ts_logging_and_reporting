@@ -1,7 +1,6 @@
 import base64
 import logging
 import re
-from datetime import datetime, timedelta
 from typing import List
 
 from bokeh.embed import json_item
@@ -10,8 +9,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from rubin_scheduler.scheduler.model_observatory import ModelObservatory
 
+# from rubin_scheduler.scheduler.model_observatory import ModelObservatory
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
@@ -39,6 +38,7 @@ from .services.rubin_nights_service import (
 )
 from .services.scheduler_service import (
     build_static_visit_map,
+    # build_visit_map_png,
     build_visit_maps_using_builder,
     get_expected_exposures,
 )
@@ -423,93 +423,6 @@ async def multi_night_visit_maps(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/survey-progress-map")
-async def survey_progress_map(
-    request: Request,
-    dayObs: int,
-    instrument: str,
-):
-    """Generate a survey progress map for a given night using Bokeh.
-
-    Parameters
-    ----------
-    request : `Request`
-        FastAPI request object.
-    dayObs : `int`
-        Date in YYYYMMDD format.
-    instrument : `str`
-        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
-
-    Returns
-    -------
-    `dict`
-        A dictionary containing the Bokeh JSON item for
-        the static survey progress map.
-    """
-    logger.info(f"Getting survey progress map for night: {dayObs} and instrument: {instrument}")
-    try:
-        import time
-
-        import numpy as np
-        from rubin_sim import maf
-        from schedview.collect.visits import NIGHT_STACKERS, read_visits
-        from schedview.plot.survey import create_metric_visit_map_grid
-
-        observatory = ModelObservatory(init_load_length=1)
-
-        dayobs_dt = datetime.strptime(str(dayObs), "%Y%m%d")
-
-        start_time = time.perf_counter()
-
-        visits = read_visits(dayobs_dt.date(), instrument.lower(), stackers=NIGHT_STACKERS, num_nights=50)
-
-        visits["filter"] = visits["band"]
-
-        end_time = time.perf_counter()
-        elapsed_time = end_time - start_time
-        logger.debug(f"read_visits() executed in {elapsed_time:.6f} seconds")
-
-        s_map = None
-
-        if len(visits):
-            start_time = time.perf_counter()
-
-            dayobs_visits = visits[visits["day_obs"] == dayObs]
-
-            previous_day_obs_dt = dayobs_dt - timedelta(days=1)
-            previous_day_obs = previous_day_obs_dt.strftime("%Y%m%d")
-
-            previous_visits = visits[visits["day_obs"] == int(previous_day_obs)]
-
-            end_time = time.perf_counter()
-            elapsed_time = end_time - start_time
-            logger.debug(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
-
-            if (
-                len(dayobs_visits)
-                and len(previous_visits)
-                and not np.all(np.isnan(dayobs_visits["fiveSigmaDepth"]))
-                and not np.all(np.isnan(previous_visits["fiveSigmaDepth"]))
-            ):
-                start_time = time.perf_counter()
-                s_map = create_metric_visit_map_grid(
-                    maf.CountMetric(col="fiveSigmaDepth", metric_name="Numbers of visits"),
-                    previous_visits.loc[np.isfinite(previous_visits["fiveSigmaDepth"]), :],
-                    visits.loc[np.isfinite(visits["fiveSigmaDepth"]), :],
-                    observatory,
-                    nside=32,
-                    use_matplotlib=False,
-                )
-                end_time = time.perf_counter()
-                elapsed_time = end_time - start_time
-                logger.debug(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
-
-        return {"static": json_item(s_map) if s_map is not None else {}}
-    except Exception as e:
-        logger.error(f"Error in /survey-progress-map: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/block-details")
 async def read_block_details(
     request: Request,
@@ -661,21 +574,20 @@ async def static_visit_map(
         dayObsEnd,
         instrument,
     )
-    # TODO: handle case where there are no visits or all
-    # visits have invalid coordinates
-    # currently this will raise an error in the map building function.
-    # TODO: add test cases for this endpoint
-    visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-    map_data = visits.dropna(subset=["s_ra", "s_dec", "sky_rotation", "obs_start_mjd"]).to_records()
-
-    if map_data is None or len(map_data) == 0:
-        logger.warning("No valid visit data for static map generation")
-        return {"static_map": None}
-
     try:
+        visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        map_data = visits.dropna(subset=["s_ra", "s_dec", "sky_rotation", "obs_start_mjd"]).to_records()
+
+        if len(map_data) == 0:
+            logger.warning("No valid visit data for static map generation")
+            return {"static_map": None}
+
         png_bytes = build_static_visit_map(map_data)
+    except ConsdbQueryError as ce:
+        logger.error("ConsdbQueryError in /static-map: %s", ce, exc_info=True)
+        raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
         logger.error("Failed to build visit map: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to generate visit map")
 
     return {"static_map": _encode_png_payload(png_bytes)}
