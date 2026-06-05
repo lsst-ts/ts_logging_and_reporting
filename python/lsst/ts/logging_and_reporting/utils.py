@@ -204,13 +204,6 @@ def get_utc_datetime_from_dayobs_str(dayobs):
 dayobs2dt = get_utc_datetime_from_dayobs_str
 
 
-def add_dayobs_day(dayobs: int) -> int:
-    """Add one day to a YYYYMMDD dayobs integer."""
-    date = dt.datetime.strptime(str(dayobs), "%Y%m%d")
-    next_date = date + dt.timedelta(days=1)
-    return int(next_date.strftime("%Y%m%d"))
-
-
 def add_or_subtract_dayobs_days(dayobs: int, days: int) -> int:
     """Add or subtract a specified number of days to a
     YYYYMMDD dayobs integer.
