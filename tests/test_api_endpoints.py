@@ -1859,6 +1859,7 @@ def test_obs_status_happy_path(monkeypatch, dummy_response):
         "&dayObsEnd=20250102"
         "&includeEntries=true"
         "&includeIntervals=false"
+        "&nightOnlyMetrics=true"
         "&metric=fault_loss"
         "&metric=weather_loss"
     )
@@ -1870,6 +1871,7 @@ def test_obs_status_happy_path(monkeypatch, dummy_response):
         dayObsEnd,
         includeEntries,
         includeIntervals,
+        nightOnlyMetrics,
         metrics,
         auth_token,
     ):
@@ -1877,6 +1879,7 @@ def test_obs_status_happy_path(monkeypatch, dummy_response):
         captured_args["dayObsEnd"] = dayObsEnd
         captured_args["includeEntries"] = includeEntries
         captured_args["includeIntervals"] = includeIntervals
+        captured_args["nightOnlyMetrics"] = nightOnlyMetrics
         captured_args["metrics"] = metrics
         captured_args["auth_token"] = auth_token
 
@@ -1903,6 +1906,7 @@ def test_obs_status_happy_path(monkeypatch, dummy_response):
         "dayObsEnd": 20250102,
         "includeEntries": True,
         "includeIntervals": False,
+        "nightOnlyMetrics": True,
         "metrics": ["fault_loss", "weather_loss"],
         "auth_token": "dummy-token",
     }
@@ -1918,11 +1922,13 @@ def test_obs_status_defaults(monkeypatch, dummy_response):
         dayObsEnd,
         includeEntries,
         includeIntervals,
+        nightOnlyMetrics,
         metrics,
         auth_token,
     ):
         captured_args["includeEntries"] = includeEntries
         captured_args["includeIntervals"] = includeIntervals
+        captured_args["nightOnlyMetrics"] = nightOnlyMetrics
         captured_args["metrics"] = metrics
 
         return dummy_response
@@ -1941,6 +1947,7 @@ def test_obs_status_defaults(monkeypatch, dummy_response):
     assert captured_args == {
         "includeEntries": True,
         "includeIntervals": False,
+        "nightOnlyMetrics": True,
         "metrics": None,
     }
 
@@ -1955,6 +1962,7 @@ def test_obs_status_single_metric(monkeypatch, dummy_response):
         dayObsEnd,
         includeEntries,
         includeIntervals,
+        nightOnlyMetrics,
         metrics,
         auth_token,
     ):
@@ -2002,6 +2010,7 @@ def test_include_entries_boolean_parsing(
         dayObsEnd,
         includeEntries,
         includeIntervals,
+        nightOnlyMetrics,
         metrics,
         auth_token,
     ):
@@ -2031,6 +2040,7 @@ def test_obs_status_empty_metric_list(monkeypatch, dummy_response):
         dayObsEnd,
         includeEntries,
         includeIntervals,
+        nightOnlyMetrics,
         metrics,
         auth_token,
     ):

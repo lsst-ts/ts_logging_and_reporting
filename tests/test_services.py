@@ -26,6 +26,7 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 from matplotlib import pyplot as plt
+from astropy.time import Time
 
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
 from lsst.ts.logging_and_reporting.web_app.services import (
@@ -636,6 +637,9 @@ def unix_ms_to_dayobs_int(unix_ms: int) -> int:
 DEFAULT_NIGHT_START_DT = unix_ms_to_dt(DEFAULT_NIGHT_START_MS)
 DEFAULT_NIGHT_END_DT = unix_ms_to_dt(DEFAULT_NIGHT_END_MS)
 
+SECOND_NIGHT_START_DT = unix_ms_to_dt(SECOND_NIGHT_START_MS)
+SECOND_NIGHT_END_DT = unix_ms_to_dt(DEFAULT_NIGHT_END_MS)
+
 DEFAULT_START_DAYOBS_INT = unix_ms_to_dayobs_int(DEFAULT_NIGHT_START_MS)
 DEFAULT_END_DAYOBS_INT = unix_ms_to_dayobs_int(DEFAULT_NIGHT_END_MS)
 
@@ -695,6 +699,14 @@ def patch_almanac(monkeypatch, almanac):
     )
 
 
+def test_dayobs_to_noon_utc():
+    result = rubin_nights_service.dayobs_to_noon_utc(20260603)
+
+    assert isinstance(result, Time)
+    assert result.isot == "2026-06-03T12:00:00.000"
+    assert result.scale == "utc"
+
+
 class TestObsStatusEvents:
     """Tests for get_obs_status_events."""
 
@@ -731,6 +743,35 @@ class TestObsStatusEvents:
         assert isinstance(result, list)
         assert len(result) == 1
         assert "time_ms" in result[0]
+
+    def test_get_obs_status_events_keeps_only_final_prior_event(self, monkeypatch):
+        class DummyEfd:
+            def select_time_series(self, topic, fields, t_start, t_end):
+                return pd.DataFrame(
+                    [
+                        {"status": 0, "note": "too early", "statusLabels": []},
+                        {"status": 1, "note": "last prior", "statusLabels": []},
+                        {"status": 2, "note": "after start", "statusLabels": []},
+                    ],
+                    index=[
+                        pd.Timestamp("1970-01-01T10:00:00Z"),
+                        pd.Timestamp("1970-01-01T11:00:00Z"),
+                        pd.Timestamp("1970-01-01T13:00:00Z"),
+                    ],
+                )
+
+        monkeypatch.setattr(
+            rubin_nights_service,
+            "get_clients",
+            lambda auth_token=None: {"efd": DummyEfd()},
+        )
+
+        result = rubin_nights_service.get_obs_status_events(
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
+        )
+
+        assert [r["status"] for r in result] == [1, 2]
 
     def test_get_obs_status_events_returns_empty_list_on_error(self, monkeypatch):
         monkeypatch.setattr(
@@ -936,13 +977,39 @@ class TestIntervals:
         assert isinstance(decoded, list)
 
 
-class TestAlmanacHandling:
-    """Tests for almanac conversion to ms intervals."""
+class TestAlmanacAndDayobsHandling:
+    """Tests for almanac and dayobs conversion to ms intervals."""
 
     def test_build_ms_night_intervals(self):
         result = rubin_nights_service.build_ms_night_intervals(make_almanac())
 
         assert result == [make_night_interval()]
+
+    def test_build_ms_night_intervals_mulitple_nights(self):
+        nights_dt = make_almanac()
+        nights_dt.append(
+            {
+                "twilight_evening": SECOND_NIGHT_START_DT,
+                "twilight_morning": SECOND_NIGHT_END_DT,
+            }
+        )
+
+        result = rubin_nights_service.build_ms_night_intervals(nights_dt)
+
+        nights_ms = [
+            make_night_interval(),
+            make_night_interval(SECOND_NIGHT_START_MS, DEFAULT_NIGHT_END_MS),
+        ]
+
+        assert result == nights_ms
+
+    def test_build_ms_dayobs_intervals(self):
+        result = rubin_nights_service.build_ms_dayobs_intervals(
+            DEFAULT_START_DAYOBS_INT, DEFAULT_END_DAYOBS_INT
+        )
+
+        assert result[0]["start_ms"] == DEFAULT_NIGHT_START_MS + (12 * ONE_HOUR_UNIX_MS)
+        assert result[0]["end_ms"] == DEFAULT_NIGHT_START_MS + (36 * ONE_HOUR_UNIX_MS) - 1000
 
     def test_almanac_to_unix_ms(self):
         ts = DEFAULT_NIGHT_END_DT
@@ -950,6 +1017,22 @@ class TestAlmanacHandling:
         result = rubin_nights_service.almanac_to_unix_ms(ts)
 
         assert result == DEFAULT_NIGHT_END_MS
+
+    def test_dayobs_to_unix_ms_default(self):
+        result = rubin_nights_service.dayobs_to_unix_ms(DEFAULT_START_DAYOBS_INT)
+
+        assert result == DEFAULT_NIGHT_START_MS + (12 * ONE_HOUR_UNIX_MS)
+
+    def test_dayobs_to_unix_ms_various_cases(self):
+        hours = [0, 3, 12]
+
+        result_0 = rubin_nights_service.dayobs_to_unix_ms(DEFAULT_START_DAYOBS_INT, hours[0])
+        result_1 = rubin_nights_service.dayobs_to_unix_ms(DEFAULT_START_DAYOBS_INT, hours[1])
+        result_2 = rubin_nights_service.dayobs_to_unix_ms(DEFAULT_START_DAYOBS_INT, hours[2])
+
+        assert result_0 == DEFAULT_NIGHT_START_MS + (hours[0] * ONE_HOUR_UNIX_MS)
+        assert result_1 == DEFAULT_NIGHT_START_MS + (hours[1] * ONE_HOUR_UNIX_MS)
+        assert result_2 == DEFAULT_NIGHT_START_MS + (hours[2] * ONE_HOUR_UNIX_MS)
 
 
 class TestPredicates:
@@ -1303,6 +1386,51 @@ class TestGetObsStatus:
         assert "metrics" in result
         assert "fault_loss" in result["metrics"]
         assert "operational" in result["metrics"]
+
+    def test_get_obs_status_include_day_metrics(self, monkeypatch):
+        # Patch some daytime events and check that the dayobs interval
+        # path is taken and the day interval is included in the
+        # returned metric.
+        patch_events(
+            monkeypatch,
+            [
+                make_event(
+                    status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
+                    time_ms=DEFAULT_EVENT_INTERVAL_START_MS + (15 * ONE_HOUR_UNIX_MS),
+                ),
+                make_event(
+                    status=rubin_nights_service.OBSERVATORY_STATES["FAULT"],
+                    time_ms=DEFAULT_EVENT_INTERVAL_END_MS + (15 * ONE_HOUR_UNIX_MS),
+                ),
+            ],
+        )
+
+        mock_build_ms_dayobs_intervals = Mock(
+            return_value=[
+                {
+                    "start_ms": DEFAULT_NIGHT_START_MS,
+                    "end_ms": SECOND_NIGHT_END_MS,
+                }
+            ]
+        )
+
+        monkeypatch.setattr(
+            rubin_nights_service,
+            "build_ms_dayobs_intervals",
+            mock_build_ms_dayobs_intervals,
+        )
+
+        result = rubin_nights_service.get_obs_status(
+            DEFAULT_START_DAYOBS_INT,
+            DEFAULT_END_DAYOBS_INT,
+            requested_metrics=["fault_loss"],
+            night_only_metrics=False,
+        )
+
+        rubin_nights_service.build_ms_dayobs_intervals.assert_called_once()
+
+        assert "fault_loss" in result["metrics"]
+        assert result["metrics"]["fault_loss"] == DEFAULT_EVENT_INTERVAL_HR
 
     def test_get_obs_status_empty_metric(self, monkeypatch):
         patch_events(monkeypatch, [])

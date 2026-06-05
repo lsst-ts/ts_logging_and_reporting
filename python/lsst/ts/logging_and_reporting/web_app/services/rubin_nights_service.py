@@ -58,6 +58,17 @@ OBS_STATUS_AVAILABLE_DAYOBS = 20260225
 MILLISECONDS_IN_AN_HOUR = 3600000
 
 
+def dayobs_to_noon_utc(dayobs: int) -> Time:
+    """Convert a YYYYMMDD dayobs to its noon UTC boundary,
+    in the format required for rubin-nights query inputs.
+    """
+    return Time(
+        f"{rn_dayobs.day_obs_int_to_str(dayobs)}T12:00:00",
+        format="isot",
+        scale="utc",
+    )
+
+
 def get_time_accounting(
     dayObsStart: int,
     dayObsEnd: int,
@@ -139,8 +150,7 @@ def get_open_close_dome(
     instrument: str,
     auth_token: str = None,
 ) -> dict:
-    """
-    Retrieve the dome open and close times for a specified
+    """Retrieve the dome open and close times for a specified
     range of observation days and instrument.
     Currently only for Simonyi.
 
@@ -169,8 +179,8 @@ def get_open_close_dome(
         # Get connections to rubin_nights services
         clients = get_clients(auth_token=auth_token)
 
-        day_min = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format="isot", scale="utc")
-        day_max = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00", format="isot", scale="utc")
+        day_min = dayobs_to_noon_utc(dayObsStart)
+        day_max = dayobs_to_noon_utc(dayObsEnd)
         dome_open = get_dome_open_close(day_min, day_max, clients["efd"])
         return dome_open
     except Exception as e:
@@ -183,8 +193,7 @@ def get_context_feed(
     dayobs_end: int,
     auth_token: str = None,
 ) -> list:
-    """
-    Retrieve consolidated context feed messages for a given range of
+    """Retrieve consolidated context feed messages for a given range of
     observation days.
 
     This function queries the Rubin Observatory services via the
@@ -222,12 +231,8 @@ def get_context_feed(
         endpoints = get_clients(auth_token=auth_token)
 
         # Convert dayobs_start and dayobs_end to t_start and t_end
-        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayobs_start)}T12:00:00", format="isot", scale="utc")
-        t_end = Time(
-            f"{rn_dayobs.day_obs_int_to_str(dayobs_end)}T12:00:00",
-            format="isot",
-            scale="utc",
-        ) + TimeDelta(1, format="jd")
+        t_start = dayobs_to_noon_utc(dayobs_start)
+        t_end = dayobs_to_noon_utc(dayobs_end) + TimeDelta(1, format="jd")
 
         # Returns pandas dataframe and list
         df, cols = get_consolidated_messages(t_start, t_end, endpoints, all_tracebacks=True)
@@ -278,14 +283,12 @@ def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: st
     )
     try:
         clients = get_clients(auth_token=auth_token)
-        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayObsStart)}T12:00:00", format="isot", scale="utc")
 
-        t_end = Time(
-            f"{rn_dayobs.day_obs_int_to_str(dayObsEnd)}T12:00:00",
-            format="isot",
-            scale="utc",
-        )
+        t_start = dayobs_to_noon_utc(dayObsStart)
+        t_end = dayobs_to_noon_utc(dayObsEnd)
+
         visits = clients["consdb"].get_visits(instrument.lower(), t_start, t_end, augment=True)
+
         return visits
 
     except Exception as e:
@@ -304,6 +307,11 @@ def get_obs_status_events(
     """Retrieve observatory status records for a given range of
     observation days.
 
+    The query window is expanded beyond the requested range to
+    ensure the initial observatory status can be determined.
+    The single event prior to the start of the requested range, if
+    it exists, is included in the returned records.
+
     Parameters
     ----------
     dayobs_start : `int`
@@ -317,7 +325,9 @@ def get_obs_status_events(
     Returns
     -------
     `list` [`dict`]
-        A list containing a dict of observatory status records.
+        A list of observatory status records. The first record may
+        precede the requested ``dayobs_start`` and represents the most
+        recent observatory status prior to the requested range.
 
         Returns an empty list if an error occurs.
     """
@@ -326,24 +336,34 @@ def get_obs_status_events(
         # Get connections to rubin_nights services
         endpoints = get_clients(auth_token=auth_token)
 
-        # Convert dayobs_start and dayobs_end to t_start and t_end
-        t_start = Time(f"{rn_dayobs.day_obs_int_to_str(dayobs_start)}T12:00:00", format="isot", scale="utc")
-        t_end = Time(
-            f"{rn_dayobs.day_obs_int_to_str(dayobs_end)}T12:00:00",
-            format="isot",
-            scale="utc",
-        ) + TimeDelta(1, format="jd")
+        # Convert dayobs_start and dayobs_end to query start and end times,
+        # where we query an extra 12 hours prior to the dayobs_start start
+        # time, so we can know the observatory status at the start of the
+        # dayobs. At a minimum, this should capture the automated state
+        # change at 0 deg sunrise.
+        dayobs_start_time = dayobs_to_noon_utc(dayobs_start)
+        query_start_time = dayobs_start_time - TimeDelta(0.5, format="jd")
+        query_end_time = dayobs_to_noon_utc(dayobs_end) + TimeDelta(1, format="jd")
 
         # Add ObservatoryStatus topic
         efd_client = endpoints["efd"]
         topic = "lsst.sal.Scheduler.logevent_observatoryStatus"
         fields = ["status", "note", "statusLabels"]
-        obs_status_messages: pd.DataFrame = efd_client.select_time_series(topic, fields, t_start, t_end)
+        obs_status_messages: pd.DataFrame = efd_client.select_time_series(
+            topic, fields, query_start_time, query_end_time
+        )
+
+        # Find the last event before the requested start dayobs.
+        dayobs_start_time_dt = pd.Timestamp(dayobs_start_time.to_datetime(), tz="UTC")
+        prior_events = obs_status_messages[obs_status_messages.index < dayobs_start_time_dt]
+        if not prior_events.empty:
+            # Keep the final prior event + everything after it.
+            obs_status_messages = obs_status_messages.loc[prior_events.index[-1] :]
 
         # Set timestamp as a column instead of the index
         # to preserve it in subsequent list transformation
         time_as_col = obs_status_messages.reset_index(names="time")
-        # Create a column of unix ms timestamps for plotting library
+        # Create a column of Unix ms timestamps for plotting library
         time_as_col["time_ms"] = time_as_col["time"].astype("int64") // 1_000_000
         records = time_as_col.to_dict(orient="records")
 
@@ -473,6 +493,28 @@ def get_obs_status_intervals(
     return intervals
 
 
+def dayobs_to_unix_ms(dayobs: int, hour: int = 12) -> int:
+    """Convert a dayobs int to Unix time in milliseconds (UTC).
+
+    Parameters
+    ----------
+    dayobs : `int`
+        Observation day (YYYYMMDD).
+    hour : `int`
+        Hour to set, optional.
+
+    Returns
+    -------
+    `int`
+        Unix timestamp in milliseconds.
+    """
+    date = datetime.strptime(str(dayobs), "%Y%m%d").replace(
+        hour=hour,
+        tzinfo=timezone.utc,
+    )
+    return int(date.timestamp() * 1000)
+
+
 def almanac_to_unix_ms(almanac_time: str) -> int:
     """Convert an almanac timestamp string to Unix time in milliseconds (UTC).
 
@@ -489,6 +531,55 @@ def almanac_to_unix_ms(almanac_time: str) -> int:
     dt = datetime.strptime(almanac_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
     return int(dt.timestamp() * 1000)
+
+
+def build_ms_dayobs_intervals(
+    dayobs_start: int,
+    dayobs_end: int,
+) -> list[dict]:
+    """Construct a set of dayobs intervals from start/end dayobs.
+
+    Each dayobs between the start/end dayobs is converted into a
+    millisecond interval covering the corresponding dayobs window.
+    Intervals are defined from 12:00:00 UTC on a dayobs to
+    11:59:59 UTC on the following dayobs to avoid overlap between
+    adjacent dayobs intervals.
+
+    Parameters
+    ----------
+    dayobs_start : `int`
+        Start observation day (YYYYMMDD).
+    dayobs_end : `int`
+        End observation day (YYYYMMDD).
+
+    Returns
+    -------
+    `list` [`dict`]
+        List of dayobs intervals with:
+        - ``start_ms``
+        - ``end_ms``
+    """
+    dayobs_intervals = []
+
+    dayobs = dayobs_start
+
+    while dayobs <= dayobs_end:
+        next_dayobs = add_or_subtract_dayobs_days(dayobs, 1)
+
+        start_ms = dayobs_to_unix_ms(dayobs)
+        # End one second before the next dayobs boundary (12:00 UTC).
+        end_ms = dayobs_to_unix_ms(next_dayobs) - 1000
+
+        dayobs_intervals.append(
+            {
+                "start_ms": start_ms,
+                "end_ms": end_ms,
+            }
+        )
+
+        dayobs = next_dayobs
+
+    return dayobs_intervals
 
 
 def build_ms_night_intervals(almanac_info: list[dict]) -> list[dict]:
@@ -811,6 +902,7 @@ def get_obs_status(
     dayobs_end: int,
     include_entries: bool = True,
     include_intervals: bool = False,
+    night_only_metrics: bool = True,
     requested_metrics: list[str] | None = None,
     auth_token: str = None,
 ) -> dict[str, Any]:
@@ -818,9 +910,9 @@ def get_obs_status(
 
     This function fetches raw observatory status events, optionally
     converts them into intervals, and computes requested metrics by
-    intersecting state intervals with night-time boundaries. Metadata
-    about the availability of data across the requested range is also
-    provided.
+    intersecting state intervals with night-time or dayobs boundaries.
+    Metadata about the availability of data across the requested range
+    is also provided.
 
     Parameters
     ----------
@@ -832,6 +924,8 @@ def get_obs_status(
         If True, include raw event entries in the response.
     include_intervals : `bool`, optional
         If True, include computed interval data in the response.
+    night_only_metrics : `bool`, optional
+        If False, entries outside night hours contribute to metrics.
     requested_metrics : `list` [`str`] or None, optional
         List of metrics to compute.
     auth_token : `str`, optional
@@ -868,13 +962,17 @@ def get_obs_status(
             response["intervals"] = obs_status_intervals
 
         if requested_metrics:
-            # Get night boundaries from almanac adapter.
-            # First, we need to add an extra day because the almanac
-            # adapter has a non-inclusive end dayobs.
-            almanac_dayobs_end = add_or_subtract_dayobs_days(dayobs_end, 1)
-            almanac_info = get_almanac(dayobs_start, almanac_dayobs_end)
-            # Construct night intervals from almanac data.
-            night_intervals = build_ms_night_intervals(almanac_info)
+            # Do we want metrics computed for the night only or all day?
+            if not night_only_metrics:
+                dayobs_intervals = build_ms_dayobs_intervals(dayobs_start, dayobs_end)
+            else:
+                # Get night boundaries from almanac adapter.
+                # First, we need to add an extra day because the almanac
+                # adapter has a non-inclusive end dayobs.
+                almanac_dayobs_end = add_or_subtract_dayobs_days(dayobs_end, 1)
+                almanac_info = get_almanac(dayobs_start, almanac_dayobs_end)
+                # Construct night intervals from almanac data.
+                dayobs_intervals = build_ms_night_intervals(almanac_info)
 
             # Create object to store metrics in.
             obs_status_metrics = {}
@@ -892,7 +990,7 @@ def get_obs_status(
                 # Compute metric.
                 obs_status_metrics[metric] = sum_interval_overlap(
                     obs_status_intervals,
-                    night_intervals,
+                    dayobs_intervals,
                     should_count,
                 )
 

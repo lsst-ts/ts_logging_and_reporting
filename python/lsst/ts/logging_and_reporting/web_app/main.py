@@ -377,6 +377,7 @@ async def read_obs_status(
     dayObsEnd: int,
     includeEntries: bool = True,
     includeIntervals: bool = False,
+    nightOnlyMetrics: bool = True,
     metrics: list[str] | None = Query(
         None,
         alias="metric",
@@ -389,6 +390,7 @@ async def read_obs_status(
             dayObsEnd,
             includeEntries,
             includeIntervals,
+            nightOnlyMetrics,
             metrics,
             auth_token=auth_token,
         )
