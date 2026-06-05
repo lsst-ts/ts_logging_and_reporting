@@ -1,3 +1,19 @@
+v0.14.0-alpha.1 (2026-06-05)
+============================
+
+New Features
+------------
+
+- Add endpoint to generate a static map of number of visits for a given date range and instrument and return it as a base64-encoded PNG image. (`OSW-1475 <https://rubinobs.atlassian.net//browse/OSW-1475>`_)
+- Add service and endpoint for fetching observatory status data. (`OSW-2119 <https://rubinobs.atlassian.net//browse/OSW-2119>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Bump rubin-nights to v0.16. (`OSW-2408 <https://rubinobs.atlassian.net//browse/OSW-2408>`_)
+
+
 v0.13.2 (2026-05-28)
 ====================
 
