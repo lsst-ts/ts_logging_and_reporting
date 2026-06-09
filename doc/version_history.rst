@@ -1,6 +1,14 @@
 v0.14.0-alpha.1 (2026-06-05)
 ============================
 
+Other Changes and Additions
+---------------------------
+
+- Bump rubin-nights to v0.17. (`OSW-2419 <https://rubinobs.atlassian.net//browse/OSW-2419>`_)
+
+v0.14.0-alpha.1 (2026-06-05)
+============================
+
 New Features
 ------------
 
@@ -11,7 +19,6 @@ New Features
 Other Changes and Additions
 ---------------------------
 
-- Bump rubin-nights to v0.17. (`OSW-2419 <https://rubinobs.atlassian.net//browse/OSW-2419>`_)
 - Bump rubin-nights to v0.16. (`OSW-2408 <https://rubinobs.atlassian.net//browse/OSW-2408>`_)
 
 
