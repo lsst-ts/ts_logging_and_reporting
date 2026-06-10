@@ -529,7 +529,19 @@ async def read_block_details(
 
 
 def _encode_png_payload(image_bytes):
-    """Serialize PNG bytes into a JSON-safe payload."""
+    """Serialize PNG bytes into a JSON-safe payload.
+
+    Parameters
+    ----------
+    image_bytes : `bytes`
+        Raw bytes of the PNG image.
+
+    Returns
+    -------
+    `dict` or `None`
+        A dictionary containing the MIME type and base64-encoded
+        data of the image, or `None` if the input is `None`.
+    """
     if image_bytes is None:
         return None
 
@@ -547,7 +559,8 @@ async def static_visit_map(
     instrument: str,
     auth_token: str = Depends(rsp_auth),
 ):
-    """Generate a static visit map for a given date range and instrument.
+    """Generate a static visit map for a date range and instrument.
+
     Parameters
     ----------
     request : `Request`
@@ -557,14 +570,15 @@ async def static_visit_map(
     dayObsEnd : `int`
         End date in YYYYMMDD format.
     instrument : `str`
-        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+        Instrument name, such as ``lsstCam`` or ``latiss``.
     auth_token : `str`
-        Authentication token (injected by FastAPI dependency).
+        Authentication token injected by the FastAPI dependency.
+
     Returns
     -------
-    `dict`
-        A dictionary containing a base64-encoded PNG
-        image of the static visit map.
+    result : `dict`
+        Dictionary containing the base64-encoded PNG image for the static
+        visit map.
     """
     logger.info(
         "Generating static map for visits between %s and %s (instrument: %s)",
@@ -573,19 +587,15 @@ async def static_visit_map(
         instrument,
     )
     try:
-        visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        map_data = visits.dropna(subset=["s_ra", "s_dec", "sky_rotation", "obs_start_mjd"]).to_records()
+        visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token, augment=False)
 
-        if len(map_data) == 0:
-            logger.warning("No valid visit data for static map generation")
-            return {"static_map": None}
+        png_bytes = build_static_visit_map(visits)
 
-        png_bytes = build_static_visit_map(map_data)
+        return {"static_map": _encode_png_payload(png_bytes) if png_bytes else None}
+
     except ConsdbQueryError as ce:
         logger.error("ConsdbQueryError in /static-map: %s", ce, exc_info=True)
         raise HTTPException(status_code=502, detail="ConsDB query failed")
     except Exception as e:
         logger.error("Failed to build visit map: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to generate visit map")
-
-    return {"static_map": _encode_png_payload(png_bytes)}
+        raise HTTPException(status_code=500, detail="Failed to generate static visit map")

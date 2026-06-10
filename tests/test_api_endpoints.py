@@ -1038,28 +1038,6 @@ def sample_visit_data_for_visit_maps():
     return pd.DataFrame(visits_list)
 
 
-@pytest.fixture
-def sample_visit_data_for_static_map():
-    """Sample visit data for testing static visit maps."""
-
-    return pd.DataFrame(
-        [
-            {
-                "s_ra": 180.0,
-                "s_dec": -30.0,
-                "sky_rotation": 45.0,
-                "obs_start_mjd": 60000.1,
-            },
-            {
-                "s_ra": 181.5,
-                "s_dec": -29.5,
-                "sky_rotation": 46.0,
-                "obs_start_mjd": 60000.2,
-            },
-        ]
-    )
-
-
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
 @patch("lsst.ts.logging_and_reporting.web_app.main.build_visit_maps_using_builder")
 def test_visit_maps_full_mode_both_maps(
@@ -1106,6 +1084,30 @@ def test_visit_maps_full_mode_both_maps(
     app.dependency_overrides.pop(rsp_auth, None)
 
 
+@pytest.fixture
+def sample_visit_data_for_static_map():
+    """Sample visit data for testing static visit maps."""
+
+    return pd.DataFrame(
+        [
+            {
+                "science_program": "BLOCK-365",
+                "s_ra": 180.0,
+                "s_dec": -30.0,
+                "sky_rotation": 45.0,
+                "obs_start_mjd": 60000.1,
+            },
+            {
+                "s_ra": 181.5,
+                "s_dec": -29.5,
+                "sky_rotation": 46.0,
+                "obs_start_mjd": 60000.2,
+                "science_program": "BLOCK-365",
+            },
+        ]
+    )
+
+
 @patch("lsst.ts.logging_and_reporting.web_app.main.build_static_visit_map")
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
 def test_static_visit_map_success(
@@ -1132,7 +1134,9 @@ def test_static_visit_map_success(
     assert data["static_map"]["mime_type"] == "image/png"
     assert data["static_map"]["data"]
 
-    mock_get_visits.assert_called_once_with(20240101, 20240102, "lsstCam", auth_token="dummy-token")
+    mock_get_visits.assert_called_once_with(
+        20240101, 20240102, "lsstCam", auth_token="dummy-token", augment=False
+    )
     mock_build_static_visit_map.assert_called_once()
     map_data = mock_build_static_visit_map.call_args.args[0]
     assert len(map_data) == len(sample_visit_data_for_static_map)
@@ -1140,16 +1144,17 @@ def test_static_visit_map_success(
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.build_static_visit_map")
+@patch("lsst.ts.logging_and_reporting.web_app.main._encode_png_payload")
 @patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
 def test_static_visit_map_no_valid_rows(
     mock_get_visits,
-    mock_build_static_visit_map,
+    mock_encode_png_payload,
 ):
     mock_get_visits.return_value = pd.DataFrame(
         [
             {
-                "s_ra": None,
+                "science_program": "dummy_program",
+                "s_ra": 180.0,
                 "s_dec": -30.0,
                 "sky_rotation": 45.0,
                 "obs_start_mjd": 60000.1,
@@ -1170,8 +1175,7 @@ def test_static_visit_map_no_valid_rows(
 
     assert response.status_code == 200
     assert response.json() == {"static_map": None}
-    mock_build_static_visit_map.assert_not_called()
-
+    mock_encode_png_payload.assert_not_called()
     app.dependency_overrides.pop(rsp_auth, None)
 
 
@@ -1218,7 +1222,7 @@ def test_static_visit_map_build_failure_returns_500(
     )
 
     assert response.status_code == 500
-    assert response.json()["detail"] == "Failed to generate visit map"
+    assert response.json()["detail"] == "Failed to generate static visit map"
 
     app.dependency_overrides.pop(rsp_auth, None)
 

@@ -10,6 +10,7 @@ import rubin_sim.maf as maf
 import uranography
 from bokeh.models.ui.ui_element import UIElement
 from rubin_nights import rubin_sim_addons as rn_sim
+from rubin_nights.reference_values import SCIENCE_PROGRAMS
 from rubin_scheduler.scheduler.utils import get_current_footprint
 from rubin_sim.sim_archive import fetch_sim_stats_for_night
 from schedview.collect.visits import NIGHT_STACKERS
@@ -171,38 +172,44 @@ def _get_visit_map_config(
     theme: str = "DARK",
     applet_mode: bool = False,
 ) -> dict:
-    """Get configuration parameters for visit map rendering
-    based on theme and mode.
+    """Get visit map rendering configuration.
+
     Parameters
     ----------
     theme : `str`, optional
-        Theme for the visit map, either "DARK" or "LIGHT".
-        Default is "DARK".
+        Theme to use for the visit map. Must be either ``DARK`` or ``LIGHT``.
+        The default is ``DARK``.
     applet_mode : `bool`, optional
-        Whether the visit map is being rendered in applet mode
-        (with simplified controls and smaller size).
-        Default is False (full mode).
+        If `True`, return configuration for applet mode, with simplified
+        controls and a smaller layout. If `False`, return configuration for
+        full mode. The default is `False`.
+
     Returns
     -------
     config : `dict`
-        Dictionary containing configuration parameters for
-        visit map rendering, including:
-        - "map_classes": List of uranography map classes to
-        use (e.g., ArmillarySphere, Planisphere).
-        - "figure_kwargs": Dictionary of keyword arguments
-        for figure creation (e.g., size, background color).
-        - "visit_fill_colors": List of colors for filling
-        visit patches, based on the theme.
-        - "horizon_color": Color for the horizon line, based on the theme.
-        - "star_size": Size of the sun and moon markers,
-        based on the profile.
-        - "horizon_thickness": Line width for horizon lines,
-        based on the profile.
-        - "show_extra_controls": Whether to show extra controls
-        like zenith
-        button and coordinate system selector, based on the profile.
-        - "control_styles": Dictionary of styles for interactive controls
-        (e.g., sliders, buttons), with colors based on the theme.
+        Configuration parameters for visit map rendering. The dictionary
+        includes the following keys:
+
+        map_classes : `list`
+            Uranography map classes to render, such as ``ArmillarySphere`` and
+            ``Planisphere``.
+        figure_kwargs : `dict`
+            Keyword arguments used when creating figures, such as size and
+            background color.
+        visit_fill_colors : `list`
+            Colors used to fill visit patches, based on the selected theme.
+        horizon_color : `str`
+            Color used for the horizon line, based on the selected theme.
+        star_size : `int` or `float`
+            Size of the sun and moon markers.
+        horizon_thickness : `int` or `float`
+            Line width used for horizon lines.
+        show_extra_controls : `bool`
+            Whether to show additional controls, such as the zenith button and
+            coordinate system selector.
+        control_styles : `dict`
+            Styles for interactive controls, such as sliders and buttons, with
+            colors based on the selected theme.
     """
     profile_name = "applet" if applet_mode else "full"
 
@@ -228,6 +235,7 @@ def _get_visit_map_config(
 def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, theme="DARK") -> UIElement | None:
     """Build interactive visit maps using the VisitMapBuilder
     class and uranography.
+
     Parameters
     ----------
     visits : `pd.DataFrame`
@@ -236,12 +244,13 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
         Whether to build the visit map in applet mode (with simplified
         controls and smaller size). Default is False (full mode).
     theme : `str`, optional
-        Theme for the visit map, either "DARK" or "LIGHT". Default is "DARK".
+        Theme for the visit map, either `DARK` or `LIGHT`. Default is `DARK`.
+
     Returns
     -------
     viewable : `UIElement` or `None`
         A Bokeh UIElement containing the interactive visit map,
-        or None if there were no valid visits to plot.
+        or `None` if there were no valid visits to plot.
     """
     map_visits = _prepare_visit_maps_data(visits)
     if map_visits.empty:
@@ -329,7 +338,7 @@ def _add_dec_labels(ax) -> None:
 
 def _add_ra_labels(ax) -> None:
     """Add right ascension labels to the healpy sky axes.
-    Labels are added every 60 degrees, startingat 0 and
+    Labels are added every 60 degrees, starting at 0 and
     ending at 300.
     However, the graticules are drawn every 30 degrees,
     so there will be graticules without labels in between.
@@ -355,6 +364,7 @@ def _add_ra_labels(ax) -> None:
 def _add_graticules(ax) -> None:
     """Draw graticule grid lines and RA/Dec labels on the
     main healpy sky axis.
+
     Parameters
     ----------
     ax : `matplotlib.axes.Axes`
@@ -426,13 +436,14 @@ def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
 
     Parameters
     ----------
-    map_data : array-like
-        Structured visit records with ra, dec, sky_rotation, and mjd columns.
+    map_data : `array-like`
+        Structured visit records containing ``ra``, ``dec``, ``sky_rotation``,
+        and ``mjd`` columns.
 
     Returns
     -------
-    `maf.MetricBundle`
-        The executed bundle with populated metric values.
+    bundle : `maf.MetricBundle`
+        Executed metric bundle with populated metric values.
     """
     m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
     slicer = maf.HealpixSlicer(
@@ -463,24 +474,27 @@ def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
     return bundle
 
 
-def build_static_visit_map(map_data) -> bytes:
-    """Build the primary static visit map and return PNG bytes.
+def build_static_visit_map(visits) -> bytes:
+    """Build the primary static visit map.
 
     Parameters
     ----------
-    map_data : array-like
-        Structured visit records. Must be non-empty.
-    day_obs_start : `int`
-        Start of the observation date range (dayObs integer).
-    day_obs_end : `int`
-        End of the observation date range (dayObs integer).
+    visits : `pandas.DataFrame`
+        Visit records used to generate the map.
 
     Returns
     -------
-    `bytes`
-        PNG image bytes.
+    png_bytes : `bytes`
+        Static visit map image as PNG bytes.
     """
-    bundle = _compute_nvisits_bundle(map_data)
+
+    map_data = visits[visits["science_program"].isin(SCIENCE_PROGRAMS)] if not visits.empty else visits
+
+    if map_data.empty:
+        logger.warning("No science visits available for static map generation")
+        return None
+
+    bundle = _compute_nvisits_bundle(map_data.to_records())
 
     plot = bundle.plot()
     fig = plt.figure(plot["SkyMap"])

@@ -209,7 +209,9 @@ def get_context_feed(
         return []
 
 
-def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: str):
+def get_visits(
+    dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: str, augment: bool = True
+) -> pd.DataFrame:
     """Get visits from rubin-nights for a given dayObs range and instrument.
 
     Parameters
@@ -247,7 +249,7 @@ def get_visits(dayObsStart: int, dayObsEnd: int, instrument: str, auth_token: st
             format="isot",
             scale="utc",
         )
-        visits = clients["consdb"].get_visits(instrument.lower(), t_start, t_end, augment=True)
+        visits = clients["consdb"].get_visits(instrument.lower(), t_start, t_end, augment=augment)
         return visits
 
     except Exception as e:

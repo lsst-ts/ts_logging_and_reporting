@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 
+import pandas as pd
 import pytest
 from matplotlib import pyplot as plt
 
@@ -247,9 +248,18 @@ def test_build_static_visit_map_styles_and_adds_graticules(monkeypatch):
     monkeypatch.setattr(scheduler_service, "_add_graticules", fake_add_graticules)
 
     try:
-        png_bytes = scheduler_service.build_static_visit_map(
-            [{"s_ra": 10.0, "s_dec": -20.0, "sky_rotation": 45.0, "obs_start_mjd": 60000.0}]
+        visits = pd.DataFrame(
+            [
+                {
+                    "s_ra": 10.0,
+                    "s_dec": -20.0,
+                    "sky_rotation": 45.0,
+                    "obs_start_mjd": 60000.0,
+                    "science_program": "BLOCK-365",
+                }
+            ]
         )
+        png_bytes = scheduler_service.build_static_visit_map(visits)
     finally:
         plt.close(fig)
 
