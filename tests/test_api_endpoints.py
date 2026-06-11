@@ -10,6 +10,7 @@ from rubin_nights.connections import get_clients
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
+from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     JIRA_BLOCK_BASE_URL,
     ZEPHYR_BLOCK_BASE_URL,
@@ -1079,6 +1080,149 @@ def test_visit_maps_full_mode_both_maps(
 
     call_kwargs = mock_build_visitmaps_using_builder.call_args[1]
     assert call_kwargs["applet_mode"] is False
+
+    app.dependency_overrides.pop(rsp_auth, None)
+
+
+@pytest.fixture
+def sample_visit_data_for_static_map():
+    """Sample visit data for testing static visit maps."""
+
+    return pd.DataFrame(
+        [
+            {
+                "science_program": "BLOCK-365",
+                "s_ra": 180.0,
+                "s_dec": -30.0,
+                "sky_rotation": 45.0,
+                "obs_start_mjd": 60000.1,
+            },
+            {
+                "s_ra": 181.5,
+                "s_dec": -29.5,
+                "sky_rotation": 46.0,
+                "obs_start_mjd": 60000.2,
+                "science_program": "BLOCK-365",
+            },
+        ]
+    )
+
+
+@patch("lsst.ts.logging_and_reporting.web_app.main.build_static_visit_map")
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+def test_static_visit_map_success(
+    mock_get_visits,
+    mock_build_static_visit_map,
+    sample_visit_data_for_static_map,
+):
+    mock_get_visits.return_value = sample_visit_data_for_static_map
+    mock_build_static_visit_map.return_value = b"fake-png-bytes"
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(
+        "/static-visit-map",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240102,
+            "instrument": "lsstCam",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["static_map"]["mime_type"] == "image/png"
+    assert data["static_map"]["data"]
+
+    mock_get_visits.assert_called_once_with(
+        20240101, 20240102, "lsstCam", auth_token="dummy-token", augment=False
+    )
+    mock_build_static_visit_map.assert_called_once()
+    map_data = mock_build_static_visit_map.call_args.args[0]
+    assert len(map_data) == len(sample_visit_data_for_static_map)
+
+    app.dependency_overrides.pop(rsp_auth, None)
+
+
+@patch("lsst.ts.logging_and_reporting.web_app.main._encode_png_payload")
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+def test_static_visit_map_no_valid_rows(
+    mock_get_visits,
+    mock_encode_png_payload,
+):
+    mock_get_visits.return_value = pd.DataFrame(
+        [
+            {
+                "science_program": "dummy_program",
+                "s_ra": 180.0,
+                "s_dec": -30.0,
+                "sky_rotation": 45.0,
+                "obs_start_mjd": 60000.1,
+            }
+        ]
+    )
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(
+        "/static-visit-map",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240102,
+            "instrument": "lsstCam",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"static_map": None}
+    mock_encode_png_payload.assert_not_called()
+    app.dependency_overrides.pop(rsp_auth, None)
+
+
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+def test_static_visit_map_get_visits_consdb_error(mock_get_visits):
+    mock_get_visits.side_effect = ConsdbQueryError("consdb down")
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(
+        "/static-visit-map",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240102,
+            "instrument": "lsstCam",
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "ConsDB query failed"
+
+    app.dependency_overrides.pop(rsp_auth, None)
+
+
+@patch("lsst.ts.logging_and_reporting.web_app.main.build_static_visit_map")
+@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+def test_static_visit_map_build_failure_returns_500(
+    mock_get_visits,
+    mock_build_static_visit_map,
+    sample_visit_data_for_static_map,
+):
+    mock_get_visits.return_value = sample_visit_data_for_static_map
+    mock_build_static_visit_map.side_effect = RuntimeError("plot failed")
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(
+        "/static-visit-map",
+        params={
+            "dayObsStart": 20240101,
+            "dayObsEnd": 20240102,
+            "instrument": "lsstCam",
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to generate static visit map"
 
     app.dependency_overrides.pop(rsp_auth, None)
 

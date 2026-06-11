@@ -1,31 +1,28 @@
+import copy
 import logging
-from copy import deepcopy
 from datetime import datetime, timedelta
-from functools import partial
+from io import BytesIO
 
-import bokeh
-import colorcet
 import healpy as hp
-import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
+import rubin_sim.maf as maf
 import uranography
 from bokeh.models.ui.ui_element import UIElement
 from rubin_nights import rubin_sim_addons as rn_sim
+from rubin_nights.reference_values import SCIENCE_PROGRAMS
 from rubin_scheduler.scheduler.utils import get_current_footprint
 from rubin_sim.sim_archive import fetch_sim_stats_for_night
-from schedview import band_column
 from schedview.collect.visits import NIGHT_STACKERS
-from schedview.compute.camera import LsstCameraFootprintPerimeter
-from schedview.compute.maf import compute_hpix_metric_in_bands
 from schedview.compute.visits import add_coords_tuple
 from schedview.plot.visit_skymaps import VisitMapBuilder
-from uranography.api import ArmillarySphere, Planisphere, make_zscale_linear_cmap
+from uranography.api import ArmillarySphere, Planisphere
 
 from lsst.utils.plotting import get_multiband_plot_colors
 
 logger = logging.getLogger(__name__)
 
-
+# Constants for interactive visit map rendering
 THEMES = {
     "LIGHT": {
         "PLOT_BAND_COLORS": get_multiband_plot_colors(dark_background=False),
@@ -64,222 +61,18 @@ VISIT_MAP_PROFILES = {
     },
 }
 
+# Constants for static visit map generation
+NSIDE = 32
+RENDER_DPI = 150
 
-def my_map_visits_over_hpix(
-    visits,
-    conditions,
-    map_hpix,
-    plot=None,
-    scale_limits=None,
-    palette=colorcet.blues,
-    map_class=Planisphere,
-    prerender_hpix=True,
-):
-    """Plot visit locations over a healpix map.
+COLOR_FG = "#E5E5E5"
+COLOR_BG = "black"
 
-    Parameters
-    ----------
-    visits : `pd.DataFrame`
-        The table of visits to plot, with columns matching the opsim database
-        definitions.
-    conditions : `rubin_scheduler.scheduler.features.Conditions`
-        An instance of a rubin_scheduler conditions object.
-    map_hpix : `numpy.array`
-        An array of healpix values
-    plot : `bokeh.models.plots.Plot` or `None`
-        The bokeh plot on which to make the plot. None creates a new plot.
-        None by default.
-    scale_limits : `list` of `float` or `None`
-        The scale limits for the healpix values. If None, use zscale to set
-        the scale.
-    palette : `str`
-        The bokeh palette to use for the healpix map.
-    map_class : `Planisphere` or `Armillary`, optional
-        The class of map to use.  Defaults to uranography.Planisphere.
-    prerender_hpix : `bool`, optional
-        Pre-render the healpix map? Defaults to `True`.
-
-    Returns
-    -------
-    plot : `bokeh.models.plots.Plot`
-        The plot with the map.
-    """
-    camera_perimeter = LsstCameraFootprintPerimeter()
-
-    if plot is None:
-        plot = bokeh.plotting.figure(
-            width=256,
-            height=256,
-            match_aspect=True,
-        )
-
-    sphere_map = map_class(mjd=conditions.mjd, plot=plot)
-
-    if scale_limits is None:
-        try:
-            good_values = map_hpix[~map_hpix.mask]
-        except AttributeError:
-            good_values = map_hpix
-
-        cmap = make_zscale_linear_cmap(good_values, palette=palette)
-    else:
-        cmap = bokeh.transform.linear_cmap("value", palette, scale_limits[0], scale_limits[1])
-
-    if prerender_hpix:
-        # Convert the healpix map into an image raster, and send that instead
-        # the full healpix map (sent as one polygon for each healpixel).
-        # An high nside, this should reduce the data sent to the browser.
-        # However, it will not be responsive to controls.
-        if not map_class == Planisphere:
-            raise NotImplementedError()
-        if not plot.width == plot.height:
-            raise NotImplementedError()
-
-        xsize = plot.width
-        ysize = plot.height
-        # For Lambert Azimuthal Equal Area, projection space is 4 radians wide
-        # and high, so projection units per pixel is 4 radians/xsize.
-        # reso is in units of arcmin, though.
-        reso = 60 * np.degrees(4.0 / xsize)
-        projector = hp.projector.AzimuthalProj(
-            rot=sphere_map.laea_rot, xsize=xsize, ysize=ysize, reso=reso, lamb=True
-        )
-        map_raster = projector.projmap(map_hpix, partial(hp.vec2pix, hp.npix2nside(len(map_hpix))))
-
-        # Set area outside projection to nan, not -inf, so bokeh does not
-        # try coloring it.
-        map_raster[np.isneginf(map_raster)] = np.nan
-
-        reso_radians = np.radians(projector.arrayinfo["reso"] / 60)
-        width_hpxy = reso_radians * map_raster.shape[0]
-        height_hpxy = reso_radians * map_raster.shape[1]
-        sphere_map.plot.image(
-            [map_raster],
-            x=-width_hpxy / 2,
-            y=-height_hpxy / 2,
-            dw=width_hpxy,
-            dh=height_hpxy,
-            color_mapper=cmap.transform,
-            level="image",
-        )
-    else:
-        sphere_map.add_healpix(map_hpix, nside=hp.npix2nside(len(map_hpix)), cmap=cmap)
-
-    if len(visits) > 0:
-        ras, decls = camera_perimeter(visits.fieldRA, visits.fieldDec, visits.rotSkyPos)
-
-        perimeter_df = pd.DataFrame(
-            {
-                "ra": ras,
-                "decl": decls,
-            }
-        )
-        sphere_map.add_patches(
-            perimeter_df, patches_kwargs={"fill_color": None, "line_color": "black", "line_width": 1}
-        )
-
-    sphere_map.decorate()
-
-    sphere_map.add_marker(
-        ra=np.degrees(conditions.sun_ra),
-        decl=np.degrees(conditions.sun_dec),
-        name="Sun",
-        glyph_size=8,
-        circle_kwargs={"color": "yellow", "fill_alpha": 1},
-    )
-
-    sphere_map.add_marker(
-        ra=np.degrees(conditions.moon_ra),
-        decl=np.degrees(conditions.moon_dec),
-        name="Moon",
-        glyph_size=8,
-        circle_kwargs={"color": "orange", "fill_alpha": 0.8},
-    )
-
-    return plot
-
-
-def my_create_hpix_visit_map_grid(hpix_maps, visits, conditions, **kwargs):
-    """Create a grid of healpix maps with visits overplotted.
-
-    Parameters
-    ----------
-    map_hpix : `numpy.array`
-        An array of healpix values.
-    visits : `pd.DataFrame`
-        The table of visits to plot, with columns matching the opsim database
-        definitions.
-    conditions : `rubin_scheduler.scheduler.features.Conditions`
-        An instance of a rubin_scheduler conditions object.
-
-    Returns
-    -------
-    plot : `bokeh.models.plots.Plot`
-        The plot with the map.
-    """
-    visit_map = {}
-    for band in hpix_maps:
-        visit_map[band] = my_map_visits_over_hpix(
-            visits.query(f"filter == '{band}'"), conditions, hpix_maps[band], **kwargs
-        )
-        visit_map[band].title = band
-
-    # Convert the dictionary of maps into a list of lists,
-    # corresponding to the rows of the grid.
-    num_cols = 3
-    map_lists = []
-    for band_idx, band in enumerate(hpix_maps):
-        if band_idx % num_cols == 0:
-            map_lists.append([visit_map[band]])
-        else:
-            map_lists[-1].append(visit_map[band])
-
-    map_grid = bokeh.layouts.gridplot(map_lists, sizing_mode="scale_both")
-
-    return map_grid
-
-
-def my_create_metric_visit_map_grid(
-    metric, metric_visits, visits, observatory, nside=32, use_matplotlib=False, **kwargs
-) -> UIElement | None:
-    """Create a grid of maps of metric values with visits overplotted.
-
-    Parameters
-    ----------
-    metric : `numpy.array`
-        An array of healpix values.
-    metric_visits : `pd.DataFrame`
-        The visits to use to compute the metric.
-    visits : `pd.DataFrame`
-        The table of visits to plot, with columns matching the opsim database
-        definitions.
-    observatory : `ModelObservatory`
-        The model observotary to use.
-    nside : `int`
-        The nside with which to compute the metric.
-    use_matplotlib: `bool`
-        Use matplotlib instead of bokeh? Defaults to `False`.
-
-    Returns
-    -------
-    plot : `bokeh.models.plots.Plot`
-        The plot with the map or `None` if no visits are provided.
-    """
-
-    if len(metric_visits):
-        metric_hpix = compute_hpix_metric_in_bands(metric_visits, metric, nside=nside)
-    else:
-        metric_hpix = {b: np.zeros(hp.nside2npix(nside)) for b in visits[band_column(visits)].unique()}
-
-    if len(visits):
-        map_grid = my_create_hpix_visit_map_grid(
-            metric_hpix, visits, observatory.return_conditions(), **kwargs
-        )
-
-        bokeh.io.show(map_grid)
-        return map_grid
-
-    return None
+FONT_SIZE_BODY = 13
+FONT_SIZE_LABELS = 12
+FONT_SIZE_TICKS = 11
+GRATICULE_SPACING_DEG = 30
+GRATICULE_LINEWIDTH = 1.2
 
 
 def get_expected_exposures(
@@ -340,6 +133,8 @@ def get_expected_exposures(
         raise
 
 
+# The following functions are used for preparing the visit
+# data and building the interactive visit map using uranography.
 def _prepare_visit_maps_data(
     visits: pd.DataFrame,
 ):
@@ -377,12 +172,51 @@ def _get_visit_map_config(
     theme: str = "DARK",
     applet_mode: bool = False,
 ) -> dict:
+    """Get visit map rendering configuration.
+
+    Parameters
+    ----------
+    theme : `str`, optional
+        Theme to use for the visit map. Must be either ``DARK`` or ``LIGHT``.
+        The default is ``DARK``.
+    applet_mode : `bool`, optional
+        If `True`, return configuration for applet mode, with simplified
+        controls and a smaller layout. If `False`, return configuration for
+        full mode. The default is `False`.
+
+    Returns
+    -------
+    config : `dict`
+        Configuration parameters for visit map rendering. The dictionary
+        includes the following keys:
+
+        map_classes : `list`
+            Uranography map classes to render, such as ``ArmillarySphere`` and
+            ``Planisphere``.
+        figure_kwargs : `dict`
+            Keyword arguments used when creating figures, such as size and
+            background color.
+        visit_fill_colors : `list`
+            Colors used to fill visit patches, based on the selected theme.
+        horizon_color : `str`
+            Color used for the horizon line, based on the selected theme.
+        star_size : `int` or `float`
+            Size of the sun and moon markers.
+        horizon_thickness : `int` or `float`
+            Line width used for horizon lines.
+        show_extra_controls : `bool`
+            Whether to show additional controls, such as the zenith button and
+            coordinate system selector.
+        control_styles : `dict`
+            Styles for interactive controls, such as sliders and buttons, with
+            colors based on the selected theme.
+    """
     profile_name = "applet" if applet_mode else "full"
 
     theme_config = THEMES[theme]
-    profile_config = deepcopy(VISIT_MAP_PROFILES[profile_name])
+    profile_config = copy.deepcopy(VISIT_MAP_PROFILES[profile_name])
 
-    figure_kwargs = deepcopy(profile_config["figure_kwargs"])
+    figure_kwargs = copy.deepcopy(profile_config["figure_kwargs"])
     figure_kwargs["border_fill_color"] = theme_config["BACKGROUND_COLOR"]
     figure_kwargs["background_fill_color"] = theme_config["BACKGROUND_COLOR"]
 
@@ -399,6 +233,25 @@ def _get_visit_map_config(
 
 
 def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, theme="DARK") -> UIElement | None:
+    """Build interactive visit maps using the VisitMapBuilder
+    class and uranography.
+
+    Parameters
+    ----------
+    visits : `pd.DataFrame`
+        DataFrame containing visit data in opsim format.
+    applet_mode : `bool`, optional
+        Whether to build the visit map in applet mode (with simplified
+        controls and smaller size). Default is False (full mode).
+    theme : `str`, optional
+        Theme for the visit map, either `DARK` or `LIGHT`. Default is `DARK`.
+
+    Returns
+    -------
+    viewable : `UIElement` or `None`
+        A Bokeh UIElement containing the interactive visit map,
+        or `None` if there were no valid visits to plot.
+    """
     map_visits = _prepare_visit_maps_data(visits)
     if map_visits.empty:
         logger.warning("No valid visits to plot on visit maps.")
@@ -458,3 +311,201 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
 
     viewable = builder.build()
     return viewable
+
+
+#######################################################
+## The following functions are used for generating the static visit map image.
+def _add_dec_labels(ax) -> None:
+    """Add declination labels to the healpy sky axes.
+
+    Parameters
+    ----------
+    ax : `matplotlib.axes.Axes`
+        The axes to add the declination labels to.
+    """
+    for dec_deg in (-60, -30, 0, 30, 60):
+        hp.projtext(
+            30,
+            dec_deg,
+            f"{dec_deg}°",
+            lonlat=True,
+            color=COLOR_FG,
+            fontsize=FONT_SIZE_LABELS,
+            ha="left",
+            va="center",
+        )
+
+
+def _add_ra_labels(ax) -> None:
+    """Add right ascension labels to the healpy sky axes.
+    Labels are added every 60 degrees, starting at 0 and
+    ending at 300.
+    However, the graticules are drawn every 30 degrees,
+    so there will be graticules without labels in between.
+
+    Parameters
+    ----------
+    ax : `matplotlib.axes.Axes`
+        The axes to add the right ascension labels to.
+    """
+    for ra_deg in (0, 60, 120, 180, 240, 300):
+        hp.projtext(
+            ra_deg,
+            -8,
+            f"{ra_deg}°",
+            lonlat=True,
+            color=COLOR_FG,
+            fontsize=FONT_SIZE_LABELS,
+            ha="center",
+            va="top",
+        )
+
+
+def _add_graticules(ax) -> None:
+    """Draw graticule grid lines and RA/Dec labels on the
+    main healpy sky axis.
+
+    Parameters
+    ----------
+    ax : `matplotlib.axes.Axes`
+        The axes to add the graticules and labels to.
+    """
+    plt.sca(ax)
+    hp.graticule(
+        dpar=GRATICULE_SPACING_DEG,
+        dmer=GRATICULE_SPACING_DEG,
+        color=COLOR_FG,
+        lw=GRATICULE_LINEWIDTH,
+    )
+    _add_dec_labels(ax)
+    _add_ra_labels(ax)
+
+
+def _style_text(fig) -> None:
+    """Apply foreground colour to all text in the figure.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        The figure containing the text objects to style.
+    """
+    for text in fig.findobj(match=plt.Text):
+        text.set_color(COLOR_FG)
+
+
+def _style_axes(fig, main_ax) -> None:
+    """Apply dark theme styling to axes chrome and sky-axis outlines.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        The figure containing the axes to style.
+    main_ax : `matplotlib.axes.Axes`
+        The primary sky map axes (the one containing the image).
+    """
+    for ax in fig.axes:
+        ax.set_facecolor(COLOR_BG)
+        ax.tick_params(colors=COLOR_FG)
+
+        for spine in ax.spines.values():
+            spine.set_color(COLOR_FG)
+
+        if ax is main_ax:
+            for line in ax.lines:
+                line.set_color(COLOR_FG)
+                line.set_linewidth(GRATICULE_LINEWIDTH)
+
+
+def _style_figure(fig, main_ax) -> None:
+    """Apply full dark theme to the figure.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        The figure to style.
+    main_ax : `matplotlib.axes.Axes`
+        The primary sky map axes (the one containing the image).
+    """
+    fig.patch.set_facecolor(COLOR_BG)
+    _style_text(fig)
+    _style_axes(fig, main_ax)
+
+
+def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
+    """Run the Nvisits count metric over the provided visit data.
+
+    Parameters
+    ----------
+    map_data : `array-like`
+        Structured visit records containing ``ra``, ``dec``, ``sky_rotation``,
+        and ``mjd`` columns.
+
+    Returns
+    -------
+    bundle : `maf.MetricBundle`
+        Executed metric bundle with populated metric values.
+    """
+    m_nvis = maf.CountMetric(col="obs_start_mjd", metric_name="Nvisits")
+    slicer = maf.HealpixSlicer(
+        nside=NSIDE,
+        lon_col="s_ra",
+        lat_col="s_dec",
+        rot_sky_pos_col_name="sky_rotation",
+    )
+    bundle = maf.MetricBundle(
+        m_nvis,
+        slicer,
+        "",
+        plot_funcs=[maf.HealpixSkyMap()],
+        plot_dict={
+            "title": "",
+            "percentile_clip": 98,
+            "n_ticks": 7,
+            "extend": "max",
+            "cmap": "viridis",
+            "bgcolor": COLOR_BG,
+            "badcolor": COLOR_BG,
+            "fontsize": FONT_SIZE_BODY,
+            "labelsize": FONT_SIZE_TICKS,
+        },
+    )
+    group = maf.MetricBundleGroup({"nvisits": bundle}, None, save_early=False)
+    group.run_current("", map_data)
+    return bundle
+
+
+def build_static_visit_map(visits) -> bytes:
+    """Build the primary static visit map.
+
+    Parameters
+    ----------
+    visits : `pandas.DataFrame`
+        Visit records used to generate the map.
+
+    Returns
+    -------
+    png_bytes : `bytes`
+        Static visit map image as PNG bytes.
+    """
+
+    map_data = visits[visits["science_program"].isin(SCIENCE_PROGRAMS)] if not visits.empty else visits
+
+    if map_data.empty:
+        logger.warning("No science visits available for static map generation")
+        return None
+
+    bundle = _compute_nvisits_bundle(map_data.to_records())
+
+    plot = bundle.plot()
+    fig = plt.figure(plot["SkyMap"])
+    main_ax = next((ax for ax in fig.axes if ax.images), None)
+
+    _style_figure(fig, main_ax)
+
+    if main_ax is not None:
+        _add_graticules(main_ax)
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight", facecolor=COLOR_BG)
+    plt.close(fig)
+    return buf.getvalue()
