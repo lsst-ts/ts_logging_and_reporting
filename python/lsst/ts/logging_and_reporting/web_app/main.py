@@ -1,10 +1,11 @@
 import base64
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import List
 
 from bokeh.embed import json_item
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,7 @@ from lsst.ts.logging_and_reporting.utils import (
 )
 
 from .. import __version__
+from .cache_headers import CACHE_SHORT, apply_cache_headers
 from .services.almanac_service import get_almanac
 from .services.consdb_service import (
     get_data_log,
@@ -88,15 +90,19 @@ async def health():
 
 
 @app.get("/mock-exposures")
-async def read_exposures_from_mock_data(request: Request, dayObsStart: int, dayObsEnd: int, instrument: str):
+async def read_exposures_from_mock_data(
+    request: Request, response: Response, dayObsStart: int, dayObsEnd: int, instrument: str
+):
     logger.info("Getting exposures from mock data")
     exposures = get_mock_exposures(dayObsStart, dayObsEnd, instrument)
+    apply_cache_headers(response, dayObsStart, dayObsEnd)
     return {"exposures": exposures}
 
 
 @app.get("/exposures")
 async def read_exposures(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -150,6 +156,7 @@ async def read_exposures(
 
             exposures = jsonable_encoder(exposures_safe_dict)
 
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {
             "exposures": exposures,
             "exposures_count": len(exposures),
@@ -170,6 +177,7 @@ async def read_exposures(
 @app.get("/expected-exposures")
 async def read_expected_exposures(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
 ):
@@ -180,6 +188,7 @@ async def read_expected_exposures(
             dayObsEnd,
         )
 
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {"sum_exposures": expected_exposures["sum"]}
 
     except Exception as e:
@@ -190,6 +199,7 @@ async def read_expected_exposures(
 @app.get("/data-log")
 async def read_data_log(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -198,6 +208,7 @@ async def read_data_log(
     logger.info(f"Getting data log for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
         records = get_data_log(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return jsonable_encoder({"data_log": records})
 
     except ConsdbQueryError as ce:
@@ -211,6 +222,7 @@ async def read_data_log(
 @app.get("/jira-tickets")
 async def read_jira_tickets(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -222,6 +234,7 @@ async def read_jira_tickets(
     )
     try:
         tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument, auth_token, jira_hostname)
+        apply_cache_headers(response, dayObsStart, dayObsEnd, always_short=True)
         return {"issues": tickets}
     except BaseLogrepError as ble:
         logger.error(f"Jira API error in /jira-tickets: {ble}")
@@ -232,10 +245,11 @@ async def read_jira_tickets(
 
 
 @app.get("/almanac")
-async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
+async def read_almanac(request: Request, response: Response, dayObsStart: int, dayObsEnd: int):
     logger.info(f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
     try:
         almanac_info = get_almanac(dayObsStart, dayObsEnd)
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {"almanac_info": almanac_info}
     except Exception as e:
         logger.error(f"Error in /almanac: {e}", exc_info=True)
@@ -245,6 +259,7 @@ async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
 @app.get("/narrative-log")
 async def read_narrative_log(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -258,6 +273,7 @@ async def read_narrative_log(
         records = get_messages(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == "weather")
         time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == "fault")
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {
             "narrative_log": records,
             "time_lost_to_weather": time_lost_to_weather,
@@ -271,6 +287,7 @@ async def read_narrative_log(
 @app.get("/exposure-flags")
 async def read_exposure_flags(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -282,6 +299,7 @@ async def read_exposure_flags(
     )
     try:
         flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {
             "exposure_flags": flags,
         }
@@ -293,6 +311,7 @@ async def read_exposure_flags(
 @app.get("/exposure-entries")
 async def read_exposure_entries(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -304,6 +323,7 @@ async def read_exposure_entries(
     )
     try:
         entries = get_exposurelog_entries(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {
             "exposure_entries": entries,
         }
@@ -315,12 +335,14 @@ async def read_exposure_entries(
 @app.get("/night-reports")
 async def read_nightreport(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     auth_token: str = Depends(rsp_auth),
 ):
     try:
         records = get_night_reports(dayObsStart, dayObsEnd, auth_token=auth_token)
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {
             "reports": records,
         }
@@ -332,12 +354,14 @@ async def read_nightreport(
 @app.get("/context-feed")
 async def read_context_feed(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     auth_token: str = Depends(rsp_auth),
 ):
     try:
         (efd_and_messages, cols) = get_context_feed(dayObsStart, dayObsEnd, auth_token=auth_token)
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {
             "data": efd_and_messages,
             "cols": cols,
@@ -370,6 +394,7 @@ def _build_multi_night_visit_map(
 @app.get("/multi-night-visit-maps")
 async def multi_night_visit_maps(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -381,6 +406,8 @@ async def multi_night_visit_maps(
     ----------
     request : `Request`
         FastAPI request object.
+    response: `Response`
+        FastAPI response object.
     dayObsStart : `int`
         Start date in YYYYMMDD format.
     dayObsEnd : `int`
@@ -412,6 +439,7 @@ async def multi_night_visit_maps(
             appletMode,
             auth_token,
         )
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {
             "interactive": json_item(v_map) if v_map is not None else None,
         }
@@ -421,9 +449,101 @@ async def multi_night_visit_maps(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/survey-progress-map")
+async def survey_progress_map(
+    request: Request,
+    response: Response,
+    dayObs: int,
+    instrument: str,
+):
+    """Generate a survey progress map for a given night using Bokeh.
+
+    Parameters
+    ----------
+    request : `Request`
+        FastAPI request object.
+    response : `Response`
+        FastAPI response object.
+    dayObs : `int`
+        Date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+
+    Returns
+    -------
+    `dict`
+        A dictionary containing the Bokeh JSON item for
+        the static survey progress map.
+    """
+    logger.info(f"Getting survey progress map for night: {dayObs} and instrument: {instrument}")
+    try:
+        import time
+
+        import numpy as np
+        from rubin_sim import maf
+        from schedview.collect.visits import NIGHT_STACKERS, read_visits
+        from schedview.plot.survey import create_metric_visit_map_grid
+
+        observatory = ModelObservatory(init_load_length=1)
+
+        dayobs_dt = datetime.strptime(str(dayObs), "%Y%m%d")
+
+        start_time = time.perf_counter()
+
+        visits = read_visits(dayobs_dt.date(), instrument.lower(), stackers=NIGHT_STACKERS, num_nights=50)
+
+        visits["filter"] = visits["band"]
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        logger.debug(f"read_visits() executed in {elapsed_time:.6f} seconds")
+
+        s_map = None
+
+        if len(visits):
+            start_time = time.perf_counter()
+
+            dayobs_visits = visits[visits["day_obs"] == dayObs]
+
+            previous_day_obs_dt = dayobs_dt - timedelta(days=1)
+            previous_day_obs = previous_day_obs_dt.strftime("%Y%m%d")
+
+            previous_visits = visits[visits["day_obs"] == int(previous_day_obs)]
+
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            logger.debug(f"fetching previous night visits executed in {elapsed_time:.6f} seconds")
+
+            if (
+                len(dayobs_visits)
+                and len(previous_visits)
+                and not np.all(np.isnan(dayobs_visits["fiveSigmaDepth"]))
+                and not np.all(np.isnan(previous_visits["fiveSigmaDepth"]))
+            ):
+                start_time = time.perf_counter()
+                s_map = create_metric_visit_map_grid(
+                    maf.CountMetric(col="fiveSigmaDepth", metric_name="Numbers of visits"),
+                    previous_visits.loc[np.isfinite(previous_visits["fiveSigmaDepth"]), :],
+                    visits.loc[np.isfinite(visits["fiveSigmaDepth"]), :],
+                    observatory,
+                    nside=32,
+                    use_matplotlib=False,
+                )
+                end_time = time.perf_counter()
+                elapsed_time = end_time - start_time
+                logger.debug(f"create_metric_visit_map_grid() executed in {elapsed_time:.6f} seconds")
+
+        apply_cache_headers(response, dayObs, dayObs)
+        return {"static": json_item(s_map) if s_map is not None else {}}
+    except Exception as e:
+        logger.error(f"Error in /survey-progress-map: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/block-details")
 async def read_block_details(
     request: Request,
+    response: Response,
     keys: List[str] = Query(..., alias="key"),
     zephyr_token: str = Depends(zephyr_auth),
     jira_token: str = Depends(jira_auth),
@@ -513,6 +633,7 @@ async def read_block_details(
         # Flesh out response dict with source type and URL
         data = build_block_response(zephyr_blocks, jira_blocks)
 
+        response.headers["Cache-Control"] = CACHE_SHORT
         return {
             "data": data,
             "errors": errors,
@@ -554,6 +675,7 @@ def _encode_png_payload(image_bytes):
 @app.get("/static-visit-map")
 async def static_visit_map(
     request: Request,
+    response: Response,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -591,6 +713,7 @@ async def static_visit_map(
 
         png_bytes = build_static_visit_map(visits)
 
+        apply_cache_headers(response, dayObsStart, dayObsEnd)
         return {"static_map": _encode_png_payload(png_bytes) if png_bytes else None}
 
     except ConsdbQueryError as ce:
