@@ -23,10 +23,10 @@
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
-from astropy.time import Time
-from matplotlib import pyplot as plt
 import pandas as pd
 import pytest
+from astropy.time import Time
+from matplotlib import pyplot as plt
 
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
 from lsst.ts.logging_and_reporting.web_app.services import (
