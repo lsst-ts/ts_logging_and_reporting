@@ -42,6 +42,7 @@ requirements:
         - astroplan
         - astropy
         - fastapi
+        - healpy =1.18.1 # versions >1.18.1 have issues with the static visits map. See: OSW-2439.
         - ipython
         - pydantic
         - uvicorn
