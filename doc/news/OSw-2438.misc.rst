@@ -1,0 +1,1 @@
+Pin healpy to v1.18.1.
