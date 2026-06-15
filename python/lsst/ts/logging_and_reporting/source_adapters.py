@@ -20,7 +20,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 # #############################################################################
 
-import copy
 import datetime as dt
 import itertools
 import traceback
@@ -92,7 +91,7 @@ class SourceAdapter(ABC):
         self.status = dict()
 
         # Store dayobs range
-        self.max_date = ut.dayobs2dt(max_dayobs or "TODAY")
+        self.max_date = ut.dayobs2dt(max_dayobs)
         self.max_dayobs = ut.datetime_to_dayobs(self.max_date)
         if min_dayobs:
             self.min_date = ut.dayobs2dt(min_dayobs)
@@ -167,7 +166,6 @@ class SourceAdapter(ABC):
 
         if self.verbose and not ok:
             print(f"DEBUG protected_post: FAIL: {result=}")
-
         # when ok=True, result is records (else error message)
         return ok, result, code
 
@@ -182,6 +180,10 @@ class SourceAdapter(ABC):
         RETURN: If the GET works well: ok=True, result=json
         RETURN: If the GET is bad: ok=False, result=error_msg_string
         """
+        # Is this function useful anymore? we are now more separated
+        # towards each applet requesting its own data separately,
+        # one applet won't hold up another
+        # TODO we should handle retries here
         ok = True
         code = 200
         timeout = timeout or self.timeout
@@ -189,12 +191,14 @@ class SourceAdapter(ABC):
             print(f"DEBUG protected_get({url=},{timeout=})")
         try:
             response = requests.get(url, timeout=timeout, headers=ut.get_auth_header(self.token))
+            # TODO: check if the response is empty and return an empty df
             if self.verbose:
                 print(
                     f"DEBUG protected_get({url=},{ut.get_auth_header(self.token)=},{timeout=}) => "
                     f"{response.status_code=} {response.reason}"
                 )
             response.raise_for_status()
+
         except requests.exceptions.HTTPError as err:
             # Invalid URL?, etc.
             traceback.print_exc()
@@ -204,6 +208,7 @@ class SourceAdapter(ABC):
             result = f"[{self.abbrev}] Error getting data from API at {url}. "
             result += f"{timeout=} {reason=} "
             result += str(err)
+
         except requests.exceptions.ConnectionError as err:
             # No VPN? Broken API?
             traceback.print_exc()
@@ -211,11 +216,13 @@ class SourceAdapter(ABC):
             code = None
             result = f"Error connecting to {url} (with timeout={timeout}). "
             result += str(err)
+
         except Exception as err:
             traceback.print_exc()
             ok = False
             code = None
             result = f"Error getting data from API at {url}. {err}"
+
         else:  # No exception. Could something else be wrong?
             if self.verbose:
                 print(f"DEBUG protected_get: {response.status_code=} {response.reason=}")
@@ -225,6 +232,7 @@ class SourceAdapter(ABC):
 
         if self.verbose and not ok:
             print(f"DEBUG protected_get: FAIL: {result=}")
+
         return ok, result, code
 
     def get_status(self, endpoint=None):
@@ -639,293 +647,3 @@ class NarrativelogAdapter(SourceAdapter):
         return status
 
     # END: class NarrativelogAdapter
-
-
-class ExposurelogAdapter(SourceAdapter):
-    abbrev = "EXP"
-    ignore_fields = ["id"]
-    outfields = {
-        "date_added",
-        "date_invalidated",
-        "day_obs",
-        "exposure_flag",
-        "id",
-        "instrument",
-        "is_human",
-        "is_valid",
-        "level",
-        "message_text",
-        "obs_id",
-        "parent_id",
-        "seq_num",
-        "site_id",
-        "tags",
-        "urls",
-        "user_agent",
-        "user_id",
-    }
-    default_record_limit = 2500  # Adapter specific default
-    service = "exposurelog"
-    endpoints = [
-        "instruments",
-        "exposures",
-        "messages",
-    ]
-    primary_endpoint = "messages"
-    log_dt_field = "date_added"
-
-    def __init__(
-        self,
-        *,
-        server_url=None,
-        min_dayobs=None,  # INCLUSIVE: default=Yesterday
-        max_dayobs=None,  # EXCLUSIVE: default=Today other=YYYY-MM-DD
-        limit=None,
-        verbose=False,
-        warning=False,
-        auth_token=None,
-    ):
-        super().__init__(
-            server_url=server_url,
-            max_dayobs=max_dayobs,
-            min_dayobs=min_dayobs,
-            limit=limit,
-            verbose=verbose,
-            warning=warning,
-            auth_token=auth_token,
-        )
-
-        # status[endpoint] = dict(endpoint_url, number_of_records, error)
-        self.status = dict()
-        self.instruments = dict()  # dict[instrument] = registry
-
-        self.exposures = dict()  # dd[instrument] = [rec, ...]
-        # Load the data (records) we need from relevant endpoints
-        # in dependency order.
-        self.status["instruments"] = self.get_instruments()
-        for instrument in self.instruments.keys():
-            endpoint = f"exposures.{instrument}"
-            self.status[endpoint] = self.get_exposures(instrument)
-        if self.min_date:
-            self.status[self.primary_endpoint] = self.get_records()
-        # Copy exposure_flag from messages to exposures (some to many).
-        self.add_exposure_flag_to_exposures()
-
-    @property
-    def sources(self):
-        return {"Exposure Log API": f"{self.server}/{self.service}/{self.primary_endpoint}"}
-
-    # SIDE-EFFECT: Modifies self.exp_src.exposures in place.429
-    def add_exposure_flag_to_exposures(self):
-        count = 0
-        for instrument in self.exposures.keys():
-            new_recs = list()
-            for rec in self.exposures[instrument]:
-                new_rec = copy.copy(rec)
-                mrec = self.messages_lut.get(rec["obs_id"])
-                if mrec is None:
-                    new_rec["exposure_flag"] = "no flag"
-                else:
-                    count += 1
-                    new_rec["exposure_flag"] = mrec["exposure_flag"]
-                    if self.verbose:
-                        print(f"add_exposure_flag_to_exposures {rec=}")
-                new_recs.append(new_rec)
-            self.exposures[instrument] = new_recs
-        return count
-
-    @property
-    def urls(self):
-        """RETURN flattened list of all URLs."""
-        rurls = [r.get("urls", []) for r in self.records]
-        return set(itertools.chain.from_iterable(rurls))
-
-    def check_endpoints(self, verbose=True):
-        if verbose:
-            msg = "Try to connect ({self.timeout=}) to each endpoint of "
-            msg += f"{self.server}/{self.service} "
-            print(msg)
-
-        url_http_status_code = dict()
-        for ep in self.endpoints:
-            qstr = "?instrument=na" if ep == "exposures" else ""
-            url = f"{self.server}/{self.service}/{ep}{qstr}"
-            ok, result, status_code = self.protected_get(url)
-            url_http_status_code[url] = status_code if ok else "GET error"
-
-        return url_http_status_code, all([v == 200 for v in url_http_status_code.values()])
-
-    def get_instruments(self):
-        url = f"{self.server}/{self.service}/instruments"
-        recs = dict(dummy=[])
-        ok, result, code = self.protected_get(url)
-        if not ok:
-            status = dict(
-                endpoint_url=url,
-                number_of_records=None,
-                error=result,
-            )
-            return status
-
-        recs = result
-        self.instruments = {
-            instrum: int(reg.replace("butler_instruments_", ""))
-            for reg, inst_list in recs.items()
-            for instrum in inst_list
-        }
-        status = dict(
-            endpoint_url=url,
-            number_of_records=len(recs),
-            error=None,
-        )
-        return status
-
-    # RETURNS status: dict[endpoint_url, number_of_records, error]
-    # SIDE-EFFECT: puts records in self.exposures
-    # /exposurelog/exposures
-    # ?registry=2&instrument=LATISS&order_by=-timespan_end&offset=0&limit=50
-    def get_exposures(self, instrument):
-        endpoint = f"{self.server}/{self.service}/exposures"
-        if self.verbose:
-            print(f"Debug get_exposures {endpoint=}")
-
-        registry = self.instruments[instrument]
-        qparams = dict(
-            registry=registry,
-            instrument=instrument,
-            order_by="-timespan_end",
-            offset=0,
-            limit=self.limit,
-        )
-        if self.min_dayobs:
-            qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
-        if self.max_dayobs:
-            qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
-        recs = []
-        while len(recs) <= maximum_record_limit:
-            if self.verbose:
-                print(f"Debug get_exposures qstr: {urlencode(qparams)}")
-            url = f"{endpoint}?{urlencode(qparams)}"
-            ok, result, code = self.protected_get(url)
-            if not ok:  # failure
-                status = dict(
-                    endpoint_url=url,
-                    number_of_records=None,
-                    error=result,
-                )
-                break
-            page = result
-            recs += page
-            status = dict(
-                endpoint_url=url,
-                number_of_records=len(recs),
-                error=None,
-            )
-            if len(page) < self.limit:
-                break  # we defintely got all we asked for
-            qparams["offset"] += len(page)
-        # END: while
-
-        for r in recs:
-            r["exposure_flag"] = None
-
-        self.exposures[instrument] = recs
-        self.exposures_lut = dict()
-        for rec in recs:
-            exp_secs = (
-                dt.datetime.fromisoformat(rec["timespan_end"])
-                - dt.datetime.fromisoformat(rec["timespan_end"])
-            ).total_seconds()
-            rec["exposure_time"] = exp_secs
-            self.exposures_lut[rec["obs_id"]] = rec
-        return status
-
-    def get_records(
-        self,
-        site_ids=None,
-        obs_ids=None,
-        instruments=None,
-        message_text=None,
-        is_human="either",
-        is_valid="true",
-        exposure_flags=None,
-    ):
-        endpoint = f"{self.server}/{self.service}/messages"
-        if self.verbose:
-            print(f"Debug get_records: {endpoint=}")
-
-        qparams = dict(
-            is_human=is_human,
-            is_valid=is_valid,
-            order_by="-day_obs",
-            offset=0,
-            limit=self.limit,
-        )
-        if site_ids:
-            qparams["site_ids"] = site_ids
-        if obs_ids:
-            qparams["obs_ids"] = obs_ids
-        if instruments:
-            qparams["instruments"] = instruments
-        if self.min_dayobs:
-            qparams["min_day_obs"] = ut.dayobs_int(self.min_dayobs)
-        if self.max_dayobs:
-            qparams["max_day_obs"] = ut.dayobs_int(self.max_dayobs)
-        if exposure_flags:
-            qparams["exposure_flags"] = exposure_flags
-
-        qstr = urlencode(qparams)
-        url = f"{endpoint}?{qstr}"
-        recs = []
-        error = None
-        # try:
-        while len(recs) <= maximum_record_limit:
-            if self.verbose:
-                print(f"Debug get_records qstr: {urlencode(qparams)}")
-            url = f"{endpoint}?{urlencode(qparams)}"
-            ok, result, code = self.protected_get(url)
-            if not ok:  # failure
-                status = dict(
-                    endpoint_url=url,
-                    number_of_records=None,
-                    error=result,
-                )
-                return status
-            page = result
-            recs += page
-            status = dict(endpoint_url=url, number_of_records=len(recs), error=None)
-            if len(page) < self.limit:
-                break  # we defintely got all we asked for
-            qparams["offset"] += len(page)
-
-        # Change exposure_flag to avoid confusion with python None type
-        for rec in recs:
-            if rec.get("exposure_flag") == "none":
-                # Does not have a flag, but may have had one in the past
-                # Or may just have a message.
-                rec["exposure_flag"] = "unknown"
-
-        self.records = recs
-        # messages[instrument] => [rec, ...]
-        self.messages = dict()
-        # messages_lut[obs_id] => rec
-        self.messages_lut = {r["obs_id"]: r for r in recs}
-        for instrum in set([r["instrument"] for r in recs]):
-            self.messages[instrum] = [r for r in recs if instrum == r["instrument"]]
-
-        status = dict(
-            endpoint_url=url,
-            number_of_records=len(recs),
-            error=error,
-        )
-        return status
-
-
-# END: class ExposurelogAdapter
-
-
-adapters = [
-    ExposurelogAdapter,
-    NarrativelogAdapter,
-    NightReportAdapter,
-]
