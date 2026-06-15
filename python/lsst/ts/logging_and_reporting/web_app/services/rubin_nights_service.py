@@ -739,8 +739,8 @@ def contains_idle(status: int) -> bool:
 def counts_as_fault_loss(status: int) -> bool:
     """Determine whether a status should be counted as fault time loss.
 
-    Fault loss includes ``FAULT`` and ``FAULT | WEATHER`` states,
-    but excludes any interval that includes ``DOWNTIME``.
+    Fault loss includes any interval with a ``FAULT`` state,
+    except for those also with a ``DOWNTIME`` state.
 
     Parameters
     ----------
