@@ -74,11 +74,17 @@ def test_get_almanac(monkeypatch):
             self.night_hours = 11
             self.as_dict = [
                 {
-                    "Evening Nautical Twilight": "2024-01-01 19:00:00",
-                    "Morning Nautical Twilight": "2024-01-02 06:00:00",
                     "Moon Rise": "2024-01-01 21:00:00",
                     "Moon Set": "2024-01-02 03:00:00",
                     "Moon Illumination": 0.75,
+                    "Evening Astronomical Twilight": "2024-01-01 18:00:00",
+                    "Morning Astronomical Twilight": "2024-01-02 07:00:00",
+                    "Evening Nautical Twilight": "2024-01-01 19:00:00",
+                    "Morning Nautical Twilight": "2024-01-02 06:00:00",
+                    "Evening Civil Twilight": "2024-01-01 20:00:00",
+                    "Morning Civil Twilight": "2024-01-02 05:00:00",
+                    "Sun Rise": "2024-01-01 21:00:00",
+                    "Sun Set": "2024-01-02 04:00:00",
                 }
             ]
 
@@ -91,8 +97,14 @@ def test_get_almanac(monkeypatch):
     assert isinstance(result, list)
     assert result[0]["night_hours"] == 11
     assert result[0]["moon_illumination"] == 0.75
-    assert "twilight_evening" in result[0]
-    assert "twilight_morning" in result[0]
+    assert "twilight_evening_18deg" in result[0]
+    assert "twilight_morning_18deg" in result[0]
+    assert "twilight_evening_12deg" in result[0]
+    assert "twilight_morning_12deg" in result[0]
+    assert "twilight_evening_6deg" in result[0]
+    assert "twilight_morning_6deg" in result[0]
+    assert "twilight_evening_0deg" in result[0]
+    assert "twilight_morning_0deg" in result[0]
 
 
 def test_get_expected_exposures_normal_behaviour(monkeypatch):
@@ -686,8 +698,8 @@ def make_night_interval(
 def make_almanac():
     return [
         {
-            "twilight_evening": DEFAULT_NIGHT_START_DT,
-            "twilight_morning": DEFAULT_NIGHT_END_DT,
+            "twilight_evening_12deg": DEFAULT_NIGHT_START_DT,
+            "twilight_morning_12deg": DEFAULT_NIGHT_END_DT,
         }
     ]
 
@@ -998,8 +1010,8 @@ class TestAlmanacAndDayobsHandling:
         nights_dt = make_almanac()
         nights_dt.append(
             {
-                "twilight_evening": SECOND_NIGHT_START_DT,
-                "twilight_morning": SECOND_NIGHT_END_DT,
+                "twilight_evening_12deg": SECOND_NIGHT_START_DT,
+                "twilight_morning_12deg": SECOND_NIGHT_END_DT,
             }
         )
 

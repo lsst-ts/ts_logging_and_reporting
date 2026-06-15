@@ -594,8 +594,8 @@ def build_ms_night_intervals(almanac_info: list[dict]) -> list[dict]:
     ----------
     almanac_info : `list` [`dict`]
         List of almanac records containing:
-        - ``twilight_evening``
-        - ``twilight_morning``
+        - ``twilight_evening_12deg``
+        - ``twilight_morning_12deg``
 
     Returns
     -------
@@ -609,8 +609,8 @@ def build_ms_night_intervals(almanac_info: list[dict]) -> list[dict]:
     for day in almanac_info:
         night_intervals.append(
             {
-                "start_ms": almanac_to_unix_ms(day["twilight_evening"]),
-                "end_ms": almanac_to_unix_ms(day["twilight_morning"]),
+                "start_ms": almanac_to_unix_ms(day["twilight_evening_12deg"]),
+                "end_ms": almanac_to_unix_ms(day["twilight_morning_12deg"]),
             }
         )
 
