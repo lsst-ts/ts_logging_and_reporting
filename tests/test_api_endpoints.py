@@ -1,3 +1,25 @@
+#
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -1814,3 +1836,300 @@ def test_block_details_integration_jira_failure(monkeypatch):
     # Check expected error collected
     assert "jira" in data["errors"]
     assert data["errors"]["jira"] == "Jira service down"
+
+
+@pytest.fixture
+def dummy_response():
+    return {
+        "entries": [],
+        "intervals": [],
+        "summary": {
+            "fault_loss": 1.23,
+        },
+    }
+
+
+@pytest.fixture(autouse=True)
+def clear_dependency_overrides():
+    """Ensure dependency overrides never leak between tests."""
+    yield
+    app.dependency_overrides.clear()
+
+
+def test_obs_status_happy_path(monkeypatch, dummy_response):
+    endpoint = (
+        "/obs-status"
+        "?dayObsStart=20250101"
+        "&dayObsEnd=20250102"
+        "&includeEntries=true"
+        "&includeIntervals=false"
+        "&nightOnlyMetrics=true"
+        "&metric=fault_loss"
+        "&metric=weather_loss"
+    )
+
+    captured_args = {}
+
+    def mock_get_obs_status(
+        dayObsStart,
+        dayObsEnd,
+        includeEntries,
+        includeIntervals,
+        nightOnlyMetrics,
+        metrics,
+        auth_token,
+    ):
+        captured_args["dayObsStart"] = dayObsStart
+        captured_args["dayObsEnd"] = dayObsEnd
+        captured_args["includeEntries"] = includeEntries
+        captured_args["includeIntervals"] = includeIntervals
+        captured_args["nightOnlyMetrics"] = nightOnlyMetrics
+        captured_args["metrics"] = metrics
+        captured_args["auth_token"] = auth_token
+
+        return dummy_response
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        mock_get_obs_status,
+    )
+
+    # Authentication test
+    _test_endpoint_authentication(endpoint, monkeypatch)
+
+    # Override auth dependency
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 200
+    assert response.json() == dummy_response
+
+    assert captured_args == {
+        "dayObsStart": 20250101,
+        "dayObsEnd": 20250102,
+        "includeEntries": True,
+        "includeIntervals": False,
+        "nightOnlyMetrics": True,
+        "metrics": ["fault_loss", "weather_loss"],
+        "auth_token": "dummy-token",
+    }
+
+
+def test_obs_status_defaults(monkeypatch, dummy_response):
+    endpoint = "/obs-status?dayObsStart=20250101&dayObsEnd=20250102"
+
+    captured_args = {}
+
+    def mock_get_obs_status(
+        dayObsStart,
+        dayObsEnd,
+        includeEntries,
+        includeIntervals,
+        nightOnlyMetrics,
+        metrics,
+        auth_token,
+    ):
+        captured_args["includeEntries"] = includeEntries
+        captured_args["includeIntervals"] = includeIntervals
+        captured_args["nightOnlyMetrics"] = nightOnlyMetrics
+        captured_args["metrics"] = metrics
+
+        return dummy_response
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        mock_get_obs_status,
+    )
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 200
+
+    assert captured_args == {
+        "includeEntries": True,
+        "includeIntervals": False,
+        "nightOnlyMetrics": True,
+        "metrics": None,
+    }
+
+
+def test_obs_status_single_metric(monkeypatch, dummy_response):
+    endpoint = "/obs-status?dayObsStart=20250101&dayObsEnd=20250102&metric=fault_loss"
+
+    captured_metrics = {}
+
+    def mock_get_obs_status(
+        dayObsStart,
+        dayObsEnd,
+        includeEntries,
+        includeIntervals,
+        nightOnlyMetrics,
+        metrics,
+        auth_token,
+    ):
+        captured_metrics["metrics"] = metrics
+        return dummy_response
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        mock_get_obs_status,
+    )
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 200
+    assert captured_metrics["metrics"] == ["fault_loss"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("true", True),
+        ("false", False),
+        ("1", True),
+        ("0", False),
+        ("yes", True),
+        ("no", False),
+        ("on", True),
+        ("off", False),
+    ],
+)
+def test_include_entries_boolean_parsing(
+    monkeypatch,
+    dummy_response,
+    value,
+    expected,
+):
+    endpoint = f"/obs-status?dayObsStart=20250101&dayObsEnd=20250102&includeEntries={value}"
+
+    captured_value = {}
+
+    def mock_get_obs_status(
+        dayObsStart,
+        dayObsEnd,
+        includeEntries,
+        includeIntervals,
+        nightOnlyMetrics,
+        metrics,
+        auth_token,
+    ):
+        captured_value["includeEntries"] = includeEntries
+        return dummy_response
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        mock_get_obs_status,
+    )
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 200
+    assert captured_value["includeEntries"] is expected
+
+
+def test_obs_status_empty_metric_list(monkeypatch, dummy_response):
+    endpoint = "/obs-status?dayObsStart=20250101&dayObsEnd=20250102"
+
+    captured_metrics = {}
+
+    def mock_get_obs_status(
+        dayObsStart,
+        dayObsEnd,
+        includeEntries,
+        includeIntervals,
+        nightOnlyMetrics,
+        metrics,
+        auth_token,
+    ):
+        captured_metrics["metrics"] = metrics
+        return dummy_response
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        mock_get_obs_status,
+    )
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 200
+    assert captured_metrics["metrics"] is None
+
+
+@pytest.mark.parametrize(
+    "missing_param",
+    [
+        "dayObsStart",
+        "dayObsEnd",
+    ],
+)
+def test_missing_required_params_return_422(monkeypatch, missing_param):
+    params = {
+        "dayObsStart": "20250101",
+        "dayObsEnd": "20250102",
+    }
+
+    del params[missing_param]
+
+    endpoint = "/obs-status"
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint, params=params)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("param", "value"),
+    [
+        ("dayObsStart", "abc"),
+        ("dayObsEnd", "abc"),
+    ],
+)
+def test_invalid_integer_params_return_422(
+    monkeypatch,
+    param,
+    value,
+):
+    params = {
+        "dayObsStart": "20250101",
+        "dayObsEnd": "20250102",
+    }
+
+    params[param] = value
+
+    endpoint = "/obs-status"
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint, params=params)
+
+    assert response.status_code == 422
+
+
+def test_obs_status_internal_exception_returns_500(monkeypatch):
+    endpoint = "/obs-status?dayObsStart=20250101&dayObsEnd=20250102"
+
+    def raise_error(*args, **kwargs):
+        raise Exception("failure")
+
+    monkeypatch.setattr(
+        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        raise_error,
+    )
+
+    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "failure"
