@@ -1,1 +1,0 @@
-Add endpoint to generate a static map of number of visits for a given date range and instrument and return it as a base64-encoded PNG image.
