@@ -820,30 +820,12 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post, monkeypatch):
                 }
             ]
         )
-        mock_time_accounting.return_value = pd.DataFrame(
-            {
-                "exposure_id": [2025073000001],
-                "exposure_name": ["MC_O_20250730_000001"],
-                "exp_time": [30],
-                "img_type": ["science"],
-                "observation_reason": ["BLOCK-365"],
-                "science_program": ["field_survey_science"],
-                "target_name": ["Rubin_SV_225_-40"],
-                "can_see_sky": [True],
-                "band": ["r"],
-                "obs_start": ["2025-07-30T23:33:43.069000"],
-                "physical_filter": ["r_57"],
-                "day_obs": [20250730],
-                "seq_num": [1],
-                "obs_end": ["2025-07-30T23:34:13.999000"],
-                "overhead": [9.0],
-                "zero_point_median": [32.1],
-                "visit_id": [2025071600135],
-                "pixel_scale_median": [0.2],
-                "psf_sigma_median": [1.1],
-                "visit_gap": [3],
-            }
-        )
+        mock_time_accounting.return_value = {
+            "sum_overhead_with_filter_change": 0.0,
+            "sum_overhead_without_filter_change": 0.0,
+            "sum_visit_gap_with_filter_change": 0.0,
+            "sum_visit_gap_without_filter_change": 0.0,
+        }
         app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
         app.dependency_overrides[get_clients] = lambda: {"efd": Mock()}
 
@@ -862,19 +844,26 @@ def test_exposures_endpoint(mock_requests_get, mock_requests_post, monkeypatch):
                 "open_hours": 9.05935107777778,
             }
         ]
+        assert data["night_on_sky_time_accounting"] == {
+            "sum_overhead_with_filter_change": 0.0,
+            "sum_overhead_without_filter_change": 0.0,
+            "sum_visit_gap_with_filter_change": 0.0,
+            "sum_visit_gap_without_filter_change": 0.0,
+        }
         mock_time_accounting.assert_called_once()
         mock_open_close.assert_called_once()
 
         # test that the request succeeds if the
         # rubin_nights data wasn't available
         mock_open_close.return_value = pd.DataFrame()
-        mock_time_accounting.return_value = pd.DataFrame()
+        mock_time_accounting.return_value = {}
         response = client.get(endpoint)
         assert response.status_code == 200
         data = response.json()
         assert "exposures" in data
         assert data["exposures_count"] == 1
         assert data["open_dome_times"] == []
+        assert data["night_on_sky_time_accounting"] == {}
 
         app.dependency_overrides.pop(rsp_auth, None)
         app.dependency_overrides.pop(get_clients, None)
