@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -26,8 +27,8 @@ def get_exposures(
     dayobs_end: int,
     telescope: str,
     auth_token: str = None,
-) -> dict:
-    exposures = {}
+) -> list[dict[str, Any]]:
+    exposures = []
     logger.info(f"Getting exposures for start: {dayobs_start}, end: {dayobs_end} and telescope: {telescope}")
     cons_db = ConsdbAdapter(
         server_url=nd_utils.Server.get_url(),
