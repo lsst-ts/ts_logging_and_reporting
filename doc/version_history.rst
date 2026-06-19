@@ -1,3 +1,18 @@
+0.15.0-alpha.2 (2026-06-19)
+===========================
+
+New Features
+------------
+
+- Simply frontend dome times and time accounting calculations by doing them in the backend and utilising the aggregations introduced in rubin-nights > 0.10 (`OSW-1557 <https://rubinobs.atlassian.net//browse/OSW-1557>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Bump rubin-nights to v0.18. (`OSW-2469 <https://rubinobs.atlassian.net//browse/OSW-2469>`_)
+
+
 v0.14.0 (2026-06-18)
 ====================
 
