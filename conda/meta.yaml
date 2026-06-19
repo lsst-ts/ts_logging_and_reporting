@@ -47,7 +47,7 @@ requirements:
         - pydantic
         - uvicorn
         - rubin-scheduler =3.21
-        - rubin-nights =0.17.0 # versions >0.17.0 have issues with the Context Feed (EFD DBs situation). See OSW-2469.
+        - rubin-nights =0.18
         - schedview =0.23
         - rubin-sim =2.6
         - bokeh =3
