@@ -25,6 +25,7 @@ import logging
 import re
 from typing import List
 
+import pandas as pd
 from bokeh.embed import json_item
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -52,6 +53,9 @@ from .services.jira_service import get_block_ticket_summaries, get_jira_tickets
 from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
+    _compute_closed_hours,
+    _current_dayobs_utc,
+    _elapsed_night_hours,
     get_context_feed,
     get_obs_status,
     get_open_close_dome,
@@ -134,14 +138,23 @@ async def read_exposures(
         open_dome_times_records, open_dome_hours_records, open_dome_error = [], {}, None
         try:
             open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, auth_token)
-            logger.debug(f"Open/close dome times from rubin_nights: {open_dome_times}")
 
             if open_dome_times is not None and not open_dome_times.empty:
                 open_dome_times_records = make_json_safe(open_dome_times.to_dict(orient="records"))
 
                 try:
                     open_dome_totals = open_dome_times.groupby("day_obs").agg(
-                        {"night_hours": "max", "open_hours": "sum"}
+                        {"night_hours": "max", "open_hours": "sum", "sunset12": "first", "sunrise12": "first"}
+                    )
+                    now_utc = pd.Timestamp.now(tz="UTC")
+                    current_dayobs = _current_dayobs_utc(now_utc)
+                    open_dome_totals["closed_hours"] = open_dome_totals.apply(
+                        lambda row: _compute_closed_hours(row, current_dayobs, now_utc),
+                        axis=1,
+                    )
+                    open_dome_totals["elapsed_night_hours"] = open_dome_totals.apply(
+                        lambda row: _elapsed_night_hours(row, current_dayobs, now_utc),
+                        axis=1,
                     )
                     open_dome_hours_records = make_json_safe(open_dome_totals.to_dict(orient="index"))
                 except Exception as e:

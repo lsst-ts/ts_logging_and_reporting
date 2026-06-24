@@ -22,7 +22,7 @@
 
 import logging
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import numpy as np
@@ -240,193 +240,105 @@ def get_time_accounting(
     return twilight_sums
 
 
-_DOME_OPEN_COLUMNS = [
-    "day_obs",
-    "open_time",
-    "close_time",
-    "dome_hours",
-    "sunset12",
-    "sunrise12",
-    "night_hours",
-    "open_hours",
-]
-_ZERO_DURATION_COLUMNS = ("dome_hours", "open_hours")
-_NULL_TIME_COLUMNS = ("open_time", "close_time")
-_ALMANAC_TWILIGHT_COLUMN_MAP = {
-    "sunset12": "twilight_evening_12deg",
-    "sunrise12": "twilight_morning_12deg",
-}
+def _current_dayobs_utc(now_utc: pd.Timestamp | datetime) -> int:
+    """Compute the current dayobs from a UTC timestamp.
 
-
-def _dayobs_range(start_dayobs: int, end_dayobs_exclusive: int) -> list[int]:
-    """List of dayobs ints from start_dayobs up to
-    (excluding) end_dayobs_exclusive."""
-    days = []
-    current = start_dayobs
-    while current < end_dayobs_exclusive:
-        days.append(current)
-        current = add_or_subtract_dayobs_days(current, 1)
-    return days
-
-
-def _almanac_by_visit_dayobs(almanac_info: list[dict]) -> dict[int, dict]:
-    """Map each almanac record to the visit day_obs it covers.
-
-    Mirrors the mapping already established for time accounting: the
-    almanac service labels a night's record with the dayobs of its
-    *morning* twilight -- one calendar day after the day_obs visits
-    taken that night are tagged with.
+    A dayobs runs from noon UTC to noon UTC, so subtracting 12 hours
+    and taking the date gives the correct dayobs for any time in that
+    window.
     """
-    return {add_or_subtract_dayobs_days(record["dayobs"], -1): record for record in almanac_info}
+    return int((now_utc - timedelta(hours=12)).strftime("%Y%m%d"))
 
 
-def _build_missing_dayobs_row(
-    dayobs: int,
-    columns: pd.Index,
-    almanac_record: dict | None,
-) -> dict[str, Any]:
-    """Construct a placeholder row for a dayobs missing from dome_open.
+def _compute_closed_hours(
+    row: pd.Series,
+    current_dayobs: int,
+    now_utc: datetime,
+) -> float:
+    """Compute closed_hours for a single dome row.
 
-    Mirrors the shape of a real "dome closed all night" row (e.g.
-    dome_hours/open_hours: 0, open_time/close_time: null), except
-    sunset12/sunrise12/night_hours are backfilled from the matching
-    almanac record rather than measured, since no real dome event
-    exists to derive them from.
+    The input row may come either from the raw dome-open dataframe
+    (where ``day_obs`` is a column) or from a dataframe aggregated by
+    ``day_obs`` (where it becomes the Series name / index key).
+
+    Three cases:
+
+    Past night (day_obs < current_dayobs):
+        closed_hours = night_hours - open_hours.
+
+    Current night in progress, dome has not opened (open_hours == 0):
+        closed_hours = elapsed time since evening twilight (sunset12).
+
+    Current night in progress, dome has opened (open_hours > 0):
+        closed_hours = night_hours - open_hours..
+        `rubin-nights` calculates open_hours based on elapsed times
+        when the dome has opened but haven't closed yet.
     """
-    row: dict[str, Any] = {}
-    for col in columns:
-        if col == "day_obs":
-            row[col] = int(dayobs)
-        elif col in _ZERO_DURATION_COLUMNS:
-            row[col] = 0.0
-        elif col in _NULL_TIME_COLUMNS:
-            row[col] = pd.NaT
-        elif col == "night_hours":
-            row[col] = almanac_record.get("night_hours") if almanac_record else np.nan
-        elif col in _ALMANAC_TWILIGHT_COLUMN_MAP:
-            almanac_key = _ALMANAC_TWILIGHT_COLUMN_MAP[col]
-            value = almanac_record.get(almanac_key) if almanac_record else None
-            row[col] = pd.Timestamp(value) if value else pd.NaT
-        else:
-            logger.warning(
-                f"sanitize_dome_open_close: no fill rule for column '{col}' "
-                f"on synthesized row for missing dayobs {dayobs}; defaulting to NaN"
-            )
-            row[col] = np.nan
-    return row
+    day_obs = row.get("day_obs", row.name)
+    sunset12_utc = pd.to_datetime(row["sunset12"], utc=True)
+    sunrise12_utc = pd.to_datetime(row["sunrise12"], utc=True)
+
+    night_in_progress = (
+        day_obs == current_dayobs
+        and pd.notna(sunset12_utc)
+        and pd.notna(sunrise12_utc)
+        and sunset12_utc <= now_utc <= sunrise12_utc
+    )
+
+    if not night_in_progress:
+        return row["night_hours"] - row["open_hours"]
+
+    elapsed_hours = (now_utc - sunset12_utc).total_seconds() / 3600
+
+    if row["open_hours"] == 0:
+        return elapsed_hours
+    else:
+        return row["night_hours"] - row["open_hours"]
 
 
-def sanitize_dome_open_close(
-    dome_open: pd.DataFrame,
-    dayObsStart: int,
-    dayObsEnd: int,
-) -> pd.DataFrame:
-    """Restrict and complete dome open/close records for the requested
-    night range.
+def _elapsed_night_hours(
+    row: pd.Series,
+    current_dayobs: int,
+    now_utc: pd.Timestamp,
+) -> float:
+    """Hours elapsed since evening twilight, capped at night_hours.
 
-    Three corrections are applied:
-
-    1. Normalize schema: dome_open is reindexed onto _DOME_OPEN_COLUMNS
-       so every row -- real or synthesized -- always carries the full
-       expected field set. The upstream response has been observed to
-       sometimes omit columns entirely (not just leave them null) on a
-       given call; without this step, that omission would silently
-       propagate into every row, including any synthesized placeholder
-       rows built in step 3, which would otherwise inherit the same gap.
-    2. Trim: get_dome_open_close is queried over
-       [noon(dayObsStart), noon(dayObsEnd)], which spans nights
-       dayObsStart through (dayObsEnd - 1) inclusive -- dayObsEnd itself
-       is only the boundary timestamp. It has been observed to
-       occasionally return a trailing extra dayObs beyond that
-       boundary; this trims it back to exactly the requested range.
-    3. Fill: any dayobs in the requested range with no entry at all in
-       the trimmed result gets a synthesized placeholder row -- twilight
-       times and night_hours from get_almanac, 0 for duration columns,
-       NaT for open/close time columns. See _build_missing_dayobs_row.
+    For past nights, returns night_hours (the night is complete).
+    For the current night in progress, returns time elapsed since
+    sunset12 -- this is the correct baseline for fault time, since
+    exposure_time, overhead, and weather_loss all only reflect what
+    has happened so far, not the full projected night.
 
     Parameters
     ----------
-    dome_open : pd.DataFrame
-        Raw dome open/close records, expected to carry day_obs (YYYYMMDD
-        ints) as either a column or the index.
-    dayObsStart : int
-        Start of the requested dayObs range (inclusive).
-    dayObsEnd : int
-        End of the requested dayObs range (the boundary timestamp;
-        the last valid night is dayObsEnd - 1).
+    row : pd.Series
+        Aggregated per-night dome row with sunset12, sunrise12,
+        night_hours, and day_obs.
+    current_dayobs : int
+        The dayobs currently in progress.
+    now_utc : pd.Timestamp
+        Current UTC time, timezone-aware.
 
     Returns
     -------
-    pd.DataFrame
-        Exactly one entry per night in [dayObsStart, dayObsEnd - 1],
-        with a consistent schema of _DOME_OPEN_COLUMNS, sorted by
-        day_obs. Returns the input unchanged if day_obs can't be
-        located as either a column or the index name.
+    float
+        Elapsed night hours to use as the fault time baseline.
     """
-    if dome_open is None:
-        dome_open = pd.DataFrame()
+    day_obs = row.get("day_obs", row.name)
+    sunset12_utc = pd.to_datetime(row["sunset12"], utc=True)
+    sunrise12_utc = pd.to_datetime(row["sunrise12"], utc=True)
 
-    # Normalise day_obs to a plain column regardless of how it arrived.
-    if not dome_open.empty and "day_obs" not in dome_open.columns:
-        if dome_open.index.name == "day_obs":
-            dome_open = dome_open.reset_index()
-        else:
-            logger.warning(
-                "sanitize_dome_open_close: could not locate 'day_obs' as a "
-                "column or index name; returning data unfiltered"
-            )
-            return dome_open
+    night_in_progress = (
+        day_obs == current_dayobs
+        and pd.notna(sunset12_utc)
+        and pd.notna(sunrise12_utc)
+        and sunset12_utc <= now_utc <= sunrise12_utc
+    )
 
-    if not dome_open.empty:
-        missing_columns = [c for c in _DOME_OPEN_COLUMNS if c not in dome_open.columns]
-        if missing_columns:
-            logger.warning(
-                f"sanitize_dome_open_close: dome_open response is missing "
-                f"expected column(s) {missing_columns}; filling with NaN. "
-                f"This likely indicates an upstream schema gap worth "
-                f"investigating, distinct from a missing-dayobs gap."
-            )
-        # Reindex onto the canonical column set: adds any missing columns
-        # as NaN, drops/ignores anything unexpected, and fixes column
-        # order -- guaranteeing every row that follows has the full schema.
-        dome_open = dome_open.reindex(columns=_DOME_OPEN_COLUMNS)
+    if not night_in_progress:
+        return row["night_hours"]
 
-    last_valid_dayobs = add_or_subtract_dayobs_days(dayObsEnd, -1)
-    requested_dayobs = _dayobs_range(dayObsStart, dayObsEnd)
-
-    if dome_open.empty:
-        trimmed = pd.DataFrame(columns=_DOME_OPEN_COLUMNS)
-        present_dayobs: set[int] = set()
-    else:
-        in_range = (dome_open["day_obs"] >= dayObsStart) & (dome_open["day_obs"] <= last_valid_dayobs)
-        dropped = int((~in_range).sum())
-        if dropped:
-            logger.info(
-                f"sanitize_dome_open_close: dropping {dropped} row(s) outside "
-                f"[{dayObsStart}, {last_valid_dayobs}]"
-            )
-        trimmed = dome_open.loc[in_range]
-        present_dayobs = set(trimmed["day_obs"])
-
-    missing_dayobs = [d for d in requested_dayobs if d not in present_dayobs]
-
-    if missing_dayobs:
-        logger.info(
-            f"sanitize_dome_open_close: synthesizing placeholder rows for "
-            f"dayobs missing from dome data: {missing_dayobs}"
-        )
-        almanac_info = get_almanac(dayObsStart, dayObsEnd)
-        almanac_by_dayobs = _almanac_by_visit_dayobs(almanac_info)
-
-        new_rows = [
-            _build_missing_dayobs_row(d, _DOME_OPEN_COLUMNS, almanac_by_dayobs.get(d)) for d in missing_dayobs
-        ]
-        trimmed = pd.concat(
-            [trimmed, pd.DataFrame(new_rows, columns=_DOME_OPEN_COLUMNS)],
-            ignore_index=True,
-        )
-
-    return trimmed.sort_values("day_obs").reset_index(drop=True)
+    return (now_utc - sunset12_utc).total_seconds() / 3600
 
 
 def get_open_close_dome(
@@ -434,27 +346,29 @@ def get_open_close_dome(
     dayObsEnd: int,
     instrument: str,
     auth_token: str = None,
-) -> dict:
-    """Retrieve the dome open and close times for a specified
-    range of observation days and instrument.
-    Currently only for Simonyi.
+) -> pd.DataFrame:
+    """Retrieve dome open/close records for the requested night range.
 
     Parameters
     ----------
     dayObsStart : int
         The starting observation day (as an integer, e.g., YYYYMMDD).
     dayObsEnd : int
-        The ending observation day (as an integer, e.g., YYYYMMDD).
+        The exclusive upper boundary observation day (as an integer,
+        e.g., YYYYMMDD). The last returned night is ``dayObsEnd - 1``.
     instrument : str
-        The name of the instrument for which to retrieve dome open/close times.
+        The instrument name. Currently logged but not used to filter
+        the dome query.
     auth_token : str, optional
         Authentication token used when connecting to Rubin Observatory
         services.
 
     Returns
     -------
-    dict
-        A dictionary containing the dome open and close times.
+    pd.DataFrame
+        Dome open/close records sanitized to one row per requested
+        ``day_obs`` in ``[dayObsStart, dayObsEnd - 1]``, with the
+        canonical schema defined by ``_DOME_OPEN_COLUMNS``.
     """
     logger.info(
         f"Getting open/close dome times from rubin-nights for dayObsStart: {dayObsStart}, "
@@ -466,7 +380,11 @@ def get_open_close_dome(
     day_min = dayobs_to_noon_utc(dayObsStart)
     day_max = dayobs_to_noon_utc(dayObsEnd)
     dome_open = get_dome_open_close(day_min, day_max, clients["efd"])
-    return sanitize_dome_open_close(dome_open, dayObsStart, dayObsEnd)
+
+    if "day_obs" not in dome_open.columns and dome_open.index.name == "day_obs":
+        dome_open = dome_open.reset_index()
+
+    return dome_open
 
 
 def get_context_feed(
