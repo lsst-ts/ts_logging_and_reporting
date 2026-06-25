@@ -55,7 +55,6 @@ from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
     _compute_closed_hours,
     _current_dayobs_utc,
-    _elapsed_night_hours,
     get_context_feed,
     get_obs_status,
     get_open_close_dome,
@@ -152,10 +151,6 @@ async def read_exposures(
                         lambda row: _compute_closed_hours(row, current_dayobs, now_utc),
                         axis=1,
                     )
-                    open_dome_totals["elapsed_night_hours"] = open_dome_totals.apply(
-                        lambda row: _elapsed_night_hours(row, current_dayobs, now_utc),
-                        axis=1,
-                    )
                     open_dome_hours_records = make_json_safe(open_dome_totals.to_dict(orient="index"))
                 except Exception as e:
                     logger.error(f"Error aggregating open/close dome times: {e}", exc_info=True)
@@ -170,7 +165,6 @@ async def read_exposures(
             open_dome_hours_records = None
             open_dome_error = "Failed to retrieve dome open/close times"
 
-        # TODO: return time accounting sums by day_obs?
         night_time_on_sky_sums, time_accounting_error = None, None
         try:
             night_time_on_sky_sums = get_time_accounting(
