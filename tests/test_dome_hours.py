@@ -8,7 +8,6 @@ import pytest
 from lsst.ts.logging_and_reporting.web_app.services.rubin_nights_service import (
     _compute_closed_hours,
     _current_dayobs_utc,
-    _elapsed_night_hours,
     get_open_close_dome,
 )
 
@@ -212,66 +211,6 @@ class TestComputeClosedHoursEdgeCases:
         )
         now_utc = SUNSET12 + timedelta(hours=3)
         assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(11.0)
-
-
-# ---------------------------------------------------------------------------
-# _elapsed_night_hours
-# ---------------------------------------------------------------------------
-
-
-class TestElapsedNightHours:
-    def test_past_night_returns_full_night_hours(self):
-        row = make_aggregated_row(day_obs=PREV_DAYOBS, night_hours=11.0)
-        now_utc = SUNSET12 + timedelta(hours=2)
-        assert _elapsed_night_hours(row, DAYOBS, now_utc) == pytest.approx(11.0)
-
-    def test_current_night_in_progress_returns_elapsed(self):
-        row = make_aggregated_row(day_obs=DAYOBS, night_hours=NIGHT_HOURS)
-        now_utc = SUNSET12 + timedelta(hours=3)
-        assert _elapsed_night_hours(row, DAYOBS, now_utc) == pytest.approx(3.0)
-
-    def test_current_night_just_started(self):
-        row = make_aggregated_row(day_obs=DAYOBS, night_hours=NIGHT_HOURS)
-        now_utc = SUNSET12 + timedelta(minutes=30)
-        assert _elapsed_night_hours(row, DAYOBS, now_utc) == pytest.approx(0.5)
-
-    def test_future_night_returns_full_night_hours(self):
-        row = make_aggregated_row(
-            day_obs=NEXT_DAYOBS,
-            sunset12=pd.Timestamp("2026-04-10 23:00:00", tz="UTC"),
-            sunrise12=pd.Timestamp("2026-04-11 10:00:00", tz="UTC"),
-            night_hours=11.0,
-        )
-        now_utc = SUNSET12 + timedelta(hours=2)
-        assert _elapsed_night_hours(row, DAYOBS, now_utc) == pytest.approx(11.0)
-
-    def test_now_before_sunset12_on_current_dayobs_returns_full_night_hours(self):
-        # Current dayobs but before the night has started -- not in progress.
-        row = make_aggregated_row(day_obs=DAYOBS, night_hours=NIGHT_HOURS)
-        now_utc = SUNSET12 - timedelta(hours=1)
-        assert _elapsed_night_hours(row, DAYOBS, now_utc) == pytest.approx(NIGHT_HOURS)
-
-    def test_nat_sunset12_falls_back_to_full_night_hours(self):
-        row = make_aggregated_row(day_obs=DAYOBS, sunset12=pd.NaT, night_hours=NIGHT_HOURS)
-        now_utc = SUNSET12 + timedelta(hours=3)
-        assert _elapsed_night_hours(row, DAYOBS, now_utc) == pytest.approx(NIGHT_HOURS)
-
-    def test_elapsed_never_exceeds_night_hours(self):
-        # now_utc is past sunrise -- still returns elapsed since sunset,
-        # but the night_in_progress condition (now <= sunrise12) is False,
-        # so it returns night_hours instead.
-        row = make_aggregated_row(day_obs=DAYOBS, night_hours=NIGHT_HOURS)
-        now_utc = SUNRISE12 + timedelta(hours=2)
-        assert _elapsed_night_hours(row, DAYOBS, now_utc) == pytest.approx(NIGHT_HOURS)
-
-    def test_elapsed_is_consistent_with_closed_hours_when_dome_closed(self):
-        # When the dome never opened, elapsed_night_hours - 0 open_hours
-        # should equal closed_hours for a night in progress.
-        row = make_aggregated_row(day_obs=DAYOBS, open_hours=0.0, night_hours=NIGHT_HOURS)
-        now_utc = SUNSET12 + timedelta(hours=4)
-        elapsed = _elapsed_night_hours(row, DAYOBS, now_utc)
-        closed = _compute_closed_hours(row, DAYOBS, now_utc)
-        assert elapsed == pytest.approx(closed)
 
 
 # ---------------------------------------------------------------------------

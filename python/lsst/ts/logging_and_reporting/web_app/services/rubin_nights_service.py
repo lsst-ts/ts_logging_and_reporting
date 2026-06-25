@@ -296,51 +296,6 @@ def _compute_closed_hours(
         return row["night_hours"] - row["open_hours"]
 
 
-def _elapsed_night_hours(
-    row: pd.Series,
-    current_dayobs: int,
-    now_utc: pd.Timestamp,
-) -> float:
-    """Hours elapsed since evening twilight, capped at night_hours.
-
-    For past nights, returns night_hours (the night is complete).
-    For the current night in progress, returns time elapsed since
-    sunset12 -- this is the correct baseline for fault time, since
-    exposure_time, overhead, and weather_loss all only reflect what
-    has happened so far, not the full projected night.
-
-    Parameters
-    ----------
-    row : pd.Series
-        Aggregated per-night dome row with sunset12, sunrise12,
-        night_hours, and day_obs.
-    current_dayobs : int
-        The dayobs currently in progress.
-    now_utc : pd.Timestamp
-        Current UTC time, timezone-aware.
-
-    Returns
-    -------
-    float
-        Elapsed night hours to use as the fault time baseline.
-    """
-    day_obs = row.get("day_obs", row.name)
-    sunset12_utc = pd.to_datetime(row["sunset12"], utc=True)
-    sunrise12_utc = pd.to_datetime(row["sunrise12"], utc=True)
-
-    night_in_progress = (
-        day_obs == current_dayobs
-        and pd.notna(sunset12_utc)
-        and pd.notna(sunrise12_utc)
-        and sunset12_utc <= now_utc <= sunrise12_utc
-    )
-
-    if not night_in_progress:
-        return row["night_hours"]
-
-    return (now_utc - sunset12_utc).total_seconds() / 3600
-
-
 def get_open_close_dome(
     dayObsStart: int,
     dayObsEnd: int,

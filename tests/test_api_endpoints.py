@@ -818,7 +818,6 @@ def test_exposures_endpoint_returns_updated_fields(monkeypatch):
         patch("lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome") as mock_open_close,
         patch("lsst.ts.logging_and_reporting.web_app.main.get_time_accounting") as mock_time_accounting,
         patch("lsst.ts.logging_and_reporting.web_app.main._compute_closed_hours", return_value=7.0),
-        patch("lsst.ts.logging_and_reporting.web_app.main._elapsed_night_hours", return_value=5.0),
     ):
         mock_open_close.return_value = pd.DataFrame(
             [
@@ -863,7 +862,6 @@ def test_exposures_endpoint_returns_updated_fields(monkeypatch):
                 "sunset12": "2025-07-30T23:00:00Z",
                 "sunrise12": "2025-07-31T11:00:00Z",
                 "closed_hours": 7.0,
-                "elapsed_night_hours": 5.0,
             }
         }
         assert data["open_dome_error"] is None
@@ -973,6 +971,46 @@ def test_exposures_endpoint_time_accounting_error(monkeypatch):
         assert data["time_accounting_error"] == "Failed to compute night time accounting"
 
 
+def test_exposures_endpoint_no_exposures_returns_zeroed_time_accounting(monkeypatch):
+    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+    zeroed_time_accounting = {
+        "sum_overhead_with_filter_change": 0.0,
+        "sum_overhead_without_filter_change": 0.0,
+        "sum_visit_gap_with_filter_change": 0.0,
+        "sum_visit_gap_without_filter_change": 0.0,
+    }
+
+    with (
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
+            return_value=[],
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome",
+            side_effect=RuntimeError("efd unavailable"),
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
+            return_value=zeroed_time_accounting,
+        ),
+    ):
+        _test_endpoint_authentication(endpoint, monkeypatch)
+
+        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["exposures"] == []
+        assert data["exposures_count"] == 0
+        assert data["sum_exposure_time"] == 0
+        assert data["on_sky_exposures_count"] == 0
+        assert data["total_on_sky_exposure_time"] == 0
+        assert data["open_dome_times"] is None
+        assert data["day_obs_open_dome_hours"] is None
+        assert data["open_dome_error"] == "Failed to retrieve dome open/close times"
+        assert data["night_on_sky_time_accounting"] == zeroed_time_accounting
+        assert data["time_accounting_error"] is None
+
+
 def test_jira_endpoint_authentication(monkeypatch):
     endpoint = "/jira-tickets?dayObsStart=1&dayObsEnd=2&instrument=LATISS"
 
@@ -1031,15 +1069,24 @@ def test_jira_tickets_endpoint(mock_requests_get, monkeypatch):
 
 
 def test_almanac_endpoint(monkeypatch):
+    mock_almanac = [
+        {
+            "dayobs": 20240102,
+            "night_hours": 9.5,
+            "elapsed_twilight_hours": 3.25,
+            "twilight_evening_12deg": "2024-01-01 23:00:00",
+            "twilight_morning_12deg": "2024-01-02 08:30:00",
+        }
+    ]
     monkeypatch.setattr(
         "lsst.ts.logging_and_reporting.web_app.main.get_almanac",
-        lambda dayObsStart, dayObsEnd: {"sunset": 123, "sunrise": 456},
+        lambda dayObsStart, dayObsEnd: mock_almanac,
     )
     response = client.get("/almanac?dayObsStart=20240101&dayObsEnd=20240102")
     assert response.status_code == 200
     data = response.json()
     assert "almanac_info" in data
-    assert data["almanac_info"] == {"sunset": 123, "sunrise": 456}
+    assert data["almanac_info"] == mock_almanac
 
 
 def test_context_feed_endpoint(monkeypatch):
