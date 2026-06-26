@@ -23,7 +23,7 @@
 import base64
 import logging
 import re
-from typing import List
+from typing import Any, List
 
 import pandas as pd
 from bokeh.embed import json_item
@@ -126,7 +126,34 @@ async def read_exposures(
     dayObsEnd: int,
     instrument: str,
     auth_token: str = Depends(rsp_auth),
-):
+) -> dict[str, Any]:
+    """Return exposures and derived night-summary metrics.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used for the ConsDB exposure query.
+    auth_token : str, optional
+        Authentication token injected from the request context.
+
+    Returns
+    -------
+    dict[str, Any]
+        JSON-serialisable response containing raw exposure records,
+        exposure totals, dome-open summaries, and twilight-windowed
+        time-accounting metrics.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        Raised with status 502 if the underlying ConsDB query fails, or
+        500 for any other unhandled error. Dome-open and time-accounting
+        sub-query failures are reported in the response payload instead.
+    """
     logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
         exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)

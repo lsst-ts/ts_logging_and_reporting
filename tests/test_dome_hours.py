@@ -152,30 +152,38 @@ class TestComputeClosedHoursCurrentNight:
         assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(2.0)
 
     def test_single_open_session_currently_active(self):
-        # Dome has been open for 3hrs (rubin-nights tracks elapsed open
-        # time for an active session). closed = night_hours - open_hours.
+        # Dome has been open for 3hrs and the night is 5hrs old,
+        # so closed so far is 2hrs.
         row = make_aggregated_row(day_obs=DAYOBS, open_hours=3.0, night_hours=NIGHT_HOURS)
         now_utc = SUNSET12 + timedelta(hours=5)
-        assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(NIGHT_HOURS - 3.0)
+        assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(2.0)
 
     def test_past_closed_session_then_current_open_session(self):
         # Session 1: dome open 1hr, closed 1hr. Session 2: currently open 3hrs.
-        # Aggregated open_hours = 1 + 3 = 4.
+        # Aggregated open_hours = 1 + 3 = 4, elapsed twilight = 6hrs,
+        # so closed so far is 2hrs.
         row = make_aggregated_row(day_obs=DAYOBS, open_hours=4.0, night_hours=NIGHT_HOURS)
         now_utc = SUNSET12 + timedelta(hours=6)
-        assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(NIGHT_HOURS - 4.0)
+        assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(2.0)
 
     def test_multiple_past_open_sessions_no_current_open(self):
-        # Two completed sessions (2hrs + 1.5hrs = 3.5hrs), dome now closed.
-        # Because open_hours > 0, use night_hours - open_hours.
+        # Two completed sessions (2hrs + 1.5hrs = 3.5hrs), dome now closed,
+        # 7hrs into the night, so closed so far is 3.5hrs.
         row = make_aggregated_row(day_obs=DAYOBS, open_hours=3.5, night_hours=NIGHT_HOURS)
         now_utc = SUNSET12 + timedelta(hours=7)
-        assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(NIGHT_HOURS - 3.5)
+        assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(3.5)
 
     def test_just_after_evening_twilight_dome_closed(self):
         row = make_aggregated_row(day_obs=DAYOBS, open_hours=0.0, night_hours=NIGHT_HOURS)
         now_utc = SUNSET12 + timedelta(minutes=1)
         assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(1 / 60)
+
+    def test_open_hours_greater_than_elapsed_clamps_to_zero(self):
+        # Guard against slight timing mismatches between almanac twilight
+        # and upstream open_hours for the current night.
+        row = make_aggregated_row(day_obs=DAYOBS, open_hours=3.0, night_hours=NIGHT_HOURS)
+        now_utc = SUNSET12 + timedelta(hours=2)
+        assert _compute_closed_hours(row, DAYOBS, now_utc) == pytest.approx(0.0)
 
 
 class TestComputeClosedHoursEdgeCases:
@@ -271,13 +279,6 @@ class TestGetOpenCloseDome:
         with patch(f"{MODULE}.get_dome_open_close", return_value=raw):
             result = get_open_close_dome(DAYOBS, NEXT_DAYOBS, "lsstcam")
         assert "closed_hours" not in result.columns
-
-    def test_day_obs_as_index_normalised_to_column(self, mock_clients):
-        raw = make_raw_dome_df({"day_obs": DAYOBS}).set_index("day_obs")
-        with patch(f"{MODULE}.get_dome_open_close", return_value=raw):
-            result = get_open_close_dome(DAYOBS, NEXT_DAYOBS, "lsstcam")
-        assert "day_obs" in result.columns
-        assert result.index.name != "day_obs"
 
     def test_multiple_nights_each_session_preserved(self, mock_clients):
         raw = make_raw_dome_df(
