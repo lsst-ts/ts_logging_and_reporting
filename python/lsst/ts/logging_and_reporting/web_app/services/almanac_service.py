@@ -1,6 +1,7 @@
 import logging
 import traceback
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from lsst.ts.logging_and_reporting.almanac import Almanac
 
@@ -8,7 +9,19 @@ logger = logging.getLogger(__name__)
 
 
 def _as_utc_datetime(timestamp: str) -> datetime:
-    """Parse an almanac timestamp string as a timezone-aware UTC datetime."""
+    """Parse an almanac timestamp as a timezone-aware UTC datetime.
+
+    Parameters
+    ----------
+    timestamp : str
+        ISO-format timestamp string returned by the almanac adapter.
+
+    Returns
+    -------
+    datetime.datetime
+        Timestamp converted to UTC. Naive inputs are assumed to already
+        represent UTC.
+    """
     dt = datetime.fromisoformat(timestamp)
     if dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
@@ -21,8 +34,28 @@ def _compute_elapsed_twilight_hours(
     twilight_morning_12deg: str,
     now_utc: datetime | None = None,
 ) -> float:
-    """Compute completed twilight hours for a night.
+    """Compute completed nautical-twilight hours for a night.
 
+    Parameters
+    ----------
+    night_hours : float
+        Total duration of the night, in hours.
+    twilight_evening_12deg : str
+        Evening 12-degree twilight timestamp in ISO format.
+    twilight_morning_12deg : str
+        Morning 12-degree twilight timestamp in ISO format.
+    now_utc : datetime.datetime or None, optional
+        Reference UTC timestamp. If not provided, the current UTC time
+        is used.
+
+    Returns
+    -------
+    float
+        Completed twilight hours, clamped to the inclusive range
+        ``[0, night_hours]``.
+
+    Notes
+    -----
     Future nights contribute 0 hours, completed nights contribute the full
     ``night_hours``, and an in-progress night contributes the elapsed time
     since evening nautical twilight.
@@ -40,7 +73,30 @@ def _compute_elapsed_twilight_hours(
     return min(elapsed_hours, night_hours)
 
 
-def get_almanac(dayobs_start: int, dayobs_end: int) -> list:
+def get_almanac(dayobs_start: int, dayobs_end: int) -> list[dict[str, Any]]:
+    """Return almanac records for a dayobs range.
+
+    Parameters
+    ----------
+    dayobs_start : int
+        Inclusive lower bound of the requested dayobs range.
+    dayobs_end : int
+        Exclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Almanac records containing twilight, moon, and night-duration
+        fields, plus ``elapsed_twilight_hours`` for each returned
+        night.
+
+    Notes
+    -----
+    The returned records are labeled by the dayobs of the morning
+    twilight boundary, so querying ``[dayobs_start, dayobs_end)`` yields
+    records whose ``dayobs`` values span ``dayobs_start + 1`` through
+    ``dayobs_end``.
+    """
     logger.info(f"Getting almanac for start: {dayobs_start}, end: {dayobs_end}")
     try:
         # adding one day to the start and end dates as the Almanac adapter

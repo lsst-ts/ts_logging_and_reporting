@@ -60,8 +60,18 @@ SECONDS_IN_AN_HOUR = 3600
 
 
 def dayobs_to_noon_utc(dayobs: int) -> Time:
-    """Convert a YYYYMMDD dayobs to its noon UTC boundary,
-    in the format required for rubin-nights query inputs.
+    """Convert a dayobs integer to its noon-UTC boundary.
+
+    Parameters
+    ----------
+    dayobs : int
+        Observation day in ``YYYYMMDD`` form.
+
+    Returns
+    -------
+    astropy.time.Time
+        Noon UTC timestamp for the supplied dayobs, formatted for
+        Rubin Nights query APIs.
     """
     return Time(
         f"{rn_dayobs.day_obs_int_to_str(dayobs)}T12:00:00",
@@ -71,8 +81,21 @@ def dayobs_to_noon_utc(dayobs: int) -> Time:
 
 
 def _twilight_windows_by_dayobs(almanac_info: list[dict]) -> dict[int, tuple[int, int]]:
-    """Map each visit's day_obs to its 12-degree twilight window, in ms.
+    """Map each visit dayobs to its 12-degree twilight window.
 
+    Parameters
+    ----------
+    almanac_info : list[dict]
+        Almanac records keyed by the Rubin Nights dayobs convention.
+
+    Returns
+    -------
+    dict[int, tuple[int, int]]
+        Mapping from visit ``day_obs`` to ``(evening_twilight_ms,
+        morning_twilight_ms)`` in Unix milliseconds.
+
+    Notes
+    -----
     The almanac service labels a night's record with the dayobs of its
     *morning* twilight boundary -- one calendar day after the day_obs that
     visits taken during that night are tagged with -- so each record is
@@ -90,8 +113,19 @@ def _twilight_windows_by_dayobs(almanac_info: list[dict]) -> dict[int, tuple[int
 
 
 def _obs_start_tai_to_utc_ms(obs_start: pd.Series) -> pd.Series:
-    """Convert a Series of TAI ISO-format
-    obs_start strings to Unix ms (UTC)."""
+    """Convert TAI observation-start timestamps to Unix milliseconds.
+
+    Parameters
+    ----------
+    obs_start : pandas.Series
+        Observation-start timestamps in TAI ISO-string form.
+
+    Returns
+    -------
+    pandas.Series
+        UTC Unix timestamps in milliseconds, preserving the input index.
+        Missing input values are returned as ``NaN``.
+    """
     result = pd.Series(np.nan, index=obs_start.index, dtype="float64")
     valid = obs_start.notna()
     if valid.any():
@@ -101,17 +135,24 @@ def _obs_start_tai_to_utc_ms(obs_start: pd.Series) -> pd.Series:
 
 
 def _compute_filter_changed(visits_sorted: pd.DataFrame) -> pd.Series:
-    """Flag each visit as a filter/band change relative to the
-    immediately preceding visit. Expects `visits_sorted` to already be
-    ordered by obs_start.
+    """Flag visits whose filter differs from the previous visit.
+
+    Parameters
+    ----------
+    visits_sorted : pandas.DataFrame
+        Visit table already sorted by ``obs_start``.
+
+    Returns
+    -------
+    pandas.Series
+        Boolean mask indicating whether each visit changed filter/band
+        relative to the immediately preceding visit.
     """
     band_prev = visits_sorted["band"].shift(1)
 
-    # NaN-aware inequality: a value changing to/from NaN also counts
-    # as a change, but NaN-to-NaN does not.
     band_changed = (visits_sorted["band"] != band_prev) & ~(visits_sorted["band"].isna() & band_prev.isna())
 
-    band_changed.iloc[0] = False  # no prior visit to compare the first entry against
+    band_changed.iloc[0] = False
 
     return band_changed
 
@@ -120,10 +161,29 @@ def _sum_on_sky_within_twilight(
     visits: pd.DataFrame,
     almanac_info: list[dict],
 ) -> dict[str, float]:
-    """Sum overhead/visit_gap (in hours) for visits with can_see_sky True
-    whose obs_start (TAI) falls within that night's 12-degree twilight
-    window, split by whether the filter/band changed from the previous
-    visit. overhead and visit_gap are stored in seconds; the sums are
+    """Summarize on-sky overhead and visit-gap time within twilight.
+
+    Parameters
+    ----------
+    visits : pandas.DataFrame
+        Visit records containing ``day_obs``, ``obs_start``,
+        ``can_see_sky``, ``band``, ``overhead``, and ``visit_gap``.
+    almanac_info : list[dict]
+        Almanac records covering the nights represented by ``visits``.
+
+    Returns
+    -------
+    dict[str, float]
+        Four hour-valued sums split by whether the filter changed from
+        the previous visit:
+        ``sum_overhead_with_filter_change``,
+        ``sum_overhead_without_filter_change``,
+        ``sum_visit_gap_with_filter_change``, and
+        ``sum_visit_gap_without_filter_change``.
+
+    Notes
+    -----
+    ``overhead`` and ``visit_gap`` are stored in seconds. The sums are
     converted to hours once, at the end, to avoid compounding rounding
     error across many per-row divisions.
     """
@@ -161,27 +221,23 @@ def get_time_accounting(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    exposures: list,
-    auth_token: str = None,
+    exposures: list[dict[str, Any]],
+    auth_token: str | None = None,
 ) -> dict[str, float]:
-    """
-    Compute twilight-windowed time-accounting sums for a given instrument
-    and range of observation days.
-    This function takes a list of exposures and augments them with
-    visit information, calculates model slew times, and computes
-    valid overheads for each visit.
+    """Compute twilight-windowed time-accounting sums for exposures.
 
     Parameters
     ----------
     dayObsStart : int
-        The starting dayObs (observation day) for which to retrieve data.
+        Inclusive lower bound of the requested dayobs range.
     dayObsEnd : int
-        The ending dayObs (observation day) for which to retrieve data.
+        Exclusive upper bound of the requested dayobs range.
     instrument : str
-        The name of the instrument for which to retrieve time accounting data.
-    exposures : list
-        A list of exposure dictionaries or objects to be processed.
-    auth_token : str, optional
+        Instrument name. Currently logged but not used to choose the
+        augmentation or query logic in this function.
+    exposures : list[dict[str, Any]]
+        Exposure records from the ``/exposures`` query.
+    auth_token : str or None, optional
         Authentication token used when connecting to Rubin Observatory
         services.
 
@@ -208,7 +264,6 @@ def get_time_accounting(
 
     exposures_df = pd.DataFrame(exposures)
 
-    # Get connections to rubin_nights services
     clients = get_clients(auth_token=auth_token)
 
     visits = rn_aug.augment_visits(exposures_df, "lsstcam", skip_rs_columns=True)
@@ -230,8 +285,6 @@ def get_time_accounting(
     visits = visits.where(pd.notnull(visits), None)
 
     # Get almanac data for twilight boundaries, to enable night-only metrics.
-    # Fetched here -- before the NaN->None JSON-safety pass below -- so the
-    # twilight sums can be computed with plain vectorised float comparisons.
     almanac_dayobs_end = add_or_subtract_dayobs_days(dayObsEnd, 1)
     almanac_info = get_almanac(dayObsStart, almanac_dayobs_end)
 
@@ -241,8 +294,20 @@ def get_time_accounting(
 
 
 def _current_dayobs_utc(now_utc: pd.Timestamp | datetime) -> int:
-    """Compute the current dayobs from a UTC timestamp.
+    """Compute the active dayobs for a UTC timestamp.
 
+    Parameters
+    ----------
+    now_utc : pandas.Timestamp or datetime.datetime
+        UTC timestamp to convert.
+
+    Returns
+    -------
+    int
+        Dayobs in ``YYYYMMDD`` form.
+
+    Notes
+    -----
     A dayobs runs from noon UTC to noon UTC, so subtracting 12 hours
     and taking the date gives the correct dayobs for any time in that
     window.
@@ -253,26 +318,39 @@ def _current_dayobs_utc(now_utc: pd.Timestamp | datetime) -> int:
 def _compute_closed_hours(
     row: pd.Series,
     current_dayobs: int,
-    now_utc: datetime,
+    now_utc: pd.Timestamp | datetime,
 ) -> float:
-    """Compute closed_hours for a single dome row.
+    """Compute closed dome hours for a single aggregated dome row.
 
+    Parameters
+    ----------
+    row : pandas.Series
+        Dome-open row or grouped row containing ``night_hours``,
+        ``open_hours``, ``sunset12``, and ``sunrise12``. ``day_obs`` may
+        be either a column or the Series name.
+    current_dayobs : int
+        Current dayobs in ``YYYYMMDD`` form.
+    now_utc : pandas.Timestamp or datetime.datetime
+        Current UTC timestamp used to detect an in-progress night.
+
+    Returns
+    -------
+    float
+        Closed hours for the night represented by ``row``.
+
+    Notes
+    -----
     The input row may come either from the raw dome-open dataframe
     (where ``day_obs`` is a column) or from a dataframe aggregated by
     ``day_obs`` (where it becomes the Series name / index key).
 
-    Three cases:
-
-    Past night (day_obs < current_dayobs):
-        closed_hours = night_hours - open_hours.
-
-    Current night in progress, dome has not opened (open_hours == 0):
-        closed_hours = elapsed time since evening twilight (sunset12).
-
-    Current night in progress, dome has opened (open_hours > 0):
-        closed_hours = night_hours - open_hours..
-        `rubin-nights` calculates open_hours based on elapsed times
-        when the dome has opened but haven't closed yet.
+    For completed nights, closed hours are ``night_hours - open_hours``.
+    For the current night, the intended meaning is "closed so far", so
+    the value is computed against elapsed twilight time:
+    ``max(0, elapsed_twilight_hours - open_hours)``. This uses the
+    elapsed ``open_hours`` reported by Rubin Nights once the dome has
+    opened, but still returns elapsed twilight time before the first
+    opening when ``open_hours == 0``.
     """
     day_obs = row.get("day_obs", row.name)
     sunset12_utc = pd.to_datetime(row["sunset12"], utc=True)
@@ -290,54 +368,44 @@ def _compute_closed_hours(
 
     elapsed_hours = (now_utc - sunset12_utc).total_seconds() / 3600
 
-    if row["open_hours"] == 0:
-        return elapsed_hours
-    else:
-        return row["night_hours"] - row["open_hours"]
+    return max(0.0, elapsed_hours - row["open_hours"])
 
 
 def get_open_close_dome(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = None,
+    auth_token: str | None = None,
 ) -> pd.DataFrame:
-    """Retrieve dome open/close records for the requested night range.
+    """Retrieve dome open/close records for a dayobs range.
 
     Parameters
     ----------
     dayObsStart : int
-        The starting observation day (as an integer, e.g., YYYYMMDD).
+        Inclusive lower bound of the requested dayobs range.
     dayObsEnd : int
-        The exclusive upper boundary observation day (as an integer,
-        e.g., YYYYMMDD). The last returned night is ``dayObsEnd - 1``.
+        Exclusive upper bound of the requested dayobs range.
     instrument : str
-        The instrument name. Currently logged but not used to filter
-        the dome query.
-    auth_token : str, optional
+        Instrument name. Currently logged but not used to filter the
+        dome query.
+    auth_token : str or None, optional
         Authentication token used when connecting to Rubin Observatory
         services.
 
     Returns
     -------
     pd.DataFrame
-        Dome open/close records sanitized to one row per requested
-        ``day_obs`` in ``[dayObsStart, dayObsEnd - 1]``, with the
-        canonical schema defined by ``_DOME_OPEN_COLUMNS``.
+        Raw Rubin Nights dome-open records for the query window.
     """
     logger.info(
         f"Getting open/close dome times from rubin-nights for dayObsStart: {dayObsStart}, "
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
-    # Get connections to rubin_nights services
     clients = get_clients(auth_token=auth_token)
 
     day_min = dayobs_to_noon_utc(dayObsStart)
     day_max = dayobs_to_noon_utc(dayObsEnd)
     dome_open = get_dome_open_close(day_min, day_max, clients["efd"])
-
-    if "day_obs" not in dome_open.columns and dome_open.index.name == "day_obs":
-        dome_open = dome_open.reset_index()
 
     return dome_open
 
