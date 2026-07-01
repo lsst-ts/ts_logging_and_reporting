@@ -43,6 +43,7 @@ from lsst.ts.logging_and_reporting.utils import (
 )
 
 from .. import __version__
+from .middleware import CacheControlMiddleware
 from .services.almanac_service import get_almanac
 from .services.consdb_service import (
     get_data_log,
@@ -92,6 +93,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(CacheControlMiddleware)
 
 
 logger.info("Starting FastAPI app")
