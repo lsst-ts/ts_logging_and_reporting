@@ -22,7 +22,7 @@
 
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -36,7 +36,10 @@ from rubin_nights.observatory_status import get_dome_open_close
 from rubin_nights.scriptqueue import get_consolidated_messages
 
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, stringify_special_floats
+from lsst.ts.logging_and_reporting.utils import (
+    add_or_subtract_dayobs_days,
+    stringify_special_floats,
+)
 
 from .almanac_service import get_almanac
 
@@ -291,28 +294,6 @@ def get_time_accounting(
     twilight_sums = _sum_on_sky_within_twilight(visits, almanac_info)
 
     return twilight_sums
-
-
-def _current_dayobs_utc(now_utc: pd.Timestamp | datetime) -> int:
-    """Compute the active dayobs for a UTC timestamp.
-
-    Parameters
-    ----------
-    now_utc : pandas.Timestamp or datetime.datetime
-        UTC timestamp to convert.
-
-    Returns
-    -------
-    int
-        Dayobs in ``YYYYMMDD`` form.
-
-    Notes
-    -----
-    A dayobs runs from noon UTC to noon UTC, so subtracting 12 hours
-    and taking the date gives the correct dayobs for any time in that
-    window.
-    """
-    return int((now_utc - timedelta(hours=12)).strftime("%Y%m%d"))
 
 
 def _compute_closed_hours(

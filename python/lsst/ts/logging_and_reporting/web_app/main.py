@@ -36,6 +36,7 @@ from fastapi.responses import JSONResponse
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
+    current_dayobs_utc,
     get_access_token,
     get_jira_hostname,
     make_json_safe,
@@ -54,7 +55,6 @@ from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
     _compute_closed_hours,
-    _current_dayobs_utc,
     get_context_feed,
     get_obs_status,
     get_open_close_dome,
@@ -173,7 +173,7 @@ async def read_exposures(
                         {"night_hours": "max", "open_hours": "sum", "sunset12": "first", "sunrise12": "first"}
                     )
                     now_utc = pd.Timestamp.now(tz="UTC")
-                    current_dayobs = _current_dayobs_utc(now_utc)
+                    current_dayobs = current_dayobs_utc(now_utc)
                     open_dome_totals["closed_hours"] = open_dome_totals.apply(
                         lambda row: _compute_closed_hours(row, current_dayobs, now_utc),
                         axis=1,
