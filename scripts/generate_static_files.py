@@ -677,11 +677,19 @@ def main():
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(message)s",
-        stream=sys.stdout,
-    )
+    level = getattr(logging, args.log_level)
+    fmt = logging.Formatter("%(message)s")
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(level)
+    stdout_handler.addFilter(lambda r: r.levelno < logging.WARNING)
+    stdout_handler.setFormatter(fmt)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(max(level, logging.WARNING))
+    stderr_handler.setFormatter(fmt)
+
+    logging.basicConfig(level=level, handlers=[stdout_handler, stderr_handler])
 
     # PID lock to prevent concurrent runs (O_CREAT|O_EXCL is atomic)
     lock_path = "/tmp/generate_static_files.lock"
