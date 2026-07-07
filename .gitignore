@@ -171,3 +171,7 @@ cython_debug/
 towncrier.toml
 .LICENSE.txt
 python/lsst/ts/logging_and_reporting/data/*
+python/lsst/ts/logging_and_reporting/web_app/data/*
+
+# Static file generator output
+static_output/
