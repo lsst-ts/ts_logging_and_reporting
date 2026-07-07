@@ -170,3 +170,6 @@ cython_debug/
 .ruff.toml
 towncrier.toml
 python/lsst/ts/logging_and_reporting/web_app/data/*
+
+# Static file generator output
+static_output/
