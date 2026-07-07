@@ -11,6 +11,7 @@ See STATIC_GENERATOR_PLAN.md for full design documentation.
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -22,6 +23,8 @@ except ImportError:
     print("ERROR: 'requests' package is required. Install with: pip install requests")
     sys.exit(1)
 
+
+logger = logging.getLogger(__name__)
 
 INSTRUMENTS = ["LATISS", "LSSTCam"]
 
@@ -231,26 +234,35 @@ def fetch_and_save(url: str, file_path: str, timeout: int):
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
             end_ts = time.time()
-            print(f"  HTTP error ({end_ts - start_ts:.2f}s): {e}", file=sys.stderr)
+            logger.warning("HTTP error (%.2fs): %s", end_ts - start_ts, e)
             return (start_ts, end_ts, False)
         except requests.exceptions.ConnectionError as e:
             if attempt < max_retries:
                 wait = 2**attempt
-                print(
-                    f"  Connection error (attempt {attempt + 1}/{max_retries + 1}), retrying in {wait}s: {e}",
-                    file=sys.stderr,
+                logger.warning(
+                    "Connection error (attempt %d/%d), retrying in %ds: %s",
+                    attempt + 1,
+                    max_retries + 1,
+                    wait,
+                    e,
                 )
                 time.sleep(wait)
                 continue
             end_ts = time.time()
-            print(
-                f"  Connection error after {max_retries + 1} attempts ({end_ts - start_ts:.2f}s): {e}",
-                file=sys.stderr,
+            logger.warning(
+                "Connection error after %d attempts (%.2fs): %s",
+                max_retries + 1,
+                end_ts - start_ts,
+                e,
             )
             return (start_ts, end_ts, False)
         except requests.exceptions.Timeout:
             end_ts = time.time()
-            print(f"  Request timed out after {timeout}s ({end_ts - start_ts:.2f}s)", file=sys.stderr)
+            logger.warning(
+                "Request timed out after %ds (%.2fs)",
+                timeout,
+                end_ts - start_ts,
+            )
             return (start_ts, end_ts, False)
 
         # Write atomically
@@ -268,7 +280,7 @@ def fetch_and_save(url: str, file_path: str, timeout: int):
             except OSError:
                 pass
             end_ts = time.time()
-            print(f"  File write error ({end_ts - start_ts:.2f}s): {e}", file=sys.stderr)
+            logger.error("File write error (%.2fs): %s", end_ts - start_ts, e)
             raise  # Abort on write errors — likely a permissions problem
 
 
@@ -344,7 +356,7 @@ class Progress:
     def tick(self, status: str, filename: str, detail: str = ""):
         self.current += 1
         suffix = f" ({detail})" if detail else ""
-        print(f"[{self.current}/{self.total}] {status} {filename}{suffix}", flush=True)
+        logger.info("[%d/%d] %s %s%s", self.current, self.total, status, filename, suffix)
 
     def record_created(self, filename: str, dry_run: bool, start: float = None, end: float = None):
         self.created += 1
@@ -371,13 +383,18 @@ class Progress:
         self.tick("ERROR", filename, timing)
 
     def summary(self, batch_start: float = None):
-        print(f"\nSummary: {self.created} created, {self.skipped} skipped, {self.errors} errors")
+        logger.info(
+            "\nSummary: %d created, %d skipped, %d errors",
+            self.created,
+            self.skipped,
+            self.errors,
+        )
         if batch_start is not None:
             batch_end = time.time()
             batch_duration = batch_end - batch_start
             end_utc = datetime.fromtimestamp(batch_end, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            print(f"Batch ended at  {end_utc} UTC")
-            print(f"Total duration: {batch_duration:.1f}s")
+            logger.info("Batch ended at  %s UTC", end_utc)
+            logger.info("Total duration: %.1fs", batch_duration)
 
 
 # ---------------------------------------------------------------------------
@@ -408,10 +425,23 @@ def build_dayobs_tasks(
         filename = build_filename(endpoint, params)
         file_path = os.path.join(output_dir, filename)
         if should_regenerate(
-            file_path, start, end, today, yesterday, is_new_day, force_refresh, historic_mode
+            file_path,
+            start,
+            end,
+            today,
+            yesterday,
+            is_new_day,
+            force_refresh,
+            historic_mode,
         ):
             tasks.append(
-                {"filename": filename, "endpoint": endpoint, "params": params, "start": start, "end": end}
+                {
+                    "filename": filename,
+                    "endpoint": endpoint,
+                    "params": params,
+                    "start": start,
+                    "end": end,
+                }
             )
         elif os.path.exists(file_path):
             skipped += 1
@@ -471,7 +501,12 @@ def build_dayobs_tasks(
             # multi-night-visit-maps has an extra appletMode param
             _check(
                 "multi-night-visit-maps",
-                {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument, "appletMode": False},
+                {
+                    "dayObsStart": start,
+                    "dayObsEnd": end,
+                    "instrument": instrument,
+                    "appletMode": False,
+                },
                 start,
                 end,
             )
@@ -521,15 +556,17 @@ def build_block_details_tasks(
             if cf_keys:
                 _record_keyset(frozenset(cf_keys), start, end)
         elif not dry_run:
-            print(
-                f"  WARNING: context-feed file missing for {start}-{end}, skipping block key extraction",
-                file=sys.stderr,
+            logger.warning(
+                "context-feed missing for %d-%d, skipping block key extraction",
+                start,
+                end,
             )
 
         # Data-log and exposures keys per instrument
         for instrument in INSTRUMENTS:
             dl_filename = build_filename(
-                "data-log", {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument}
+                "data-log",
+                {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument},
             )
             dl_path = os.path.join(output_dir, dl_filename)
             if os.path.exists(dl_path):
@@ -537,13 +574,11 @@ def build_block_details_tasks(
                 if dl_keys:
                     _record_keyset(frozenset(dl_keys), start, end)
             elif not dry_run:
-                print(
-                    f"  WARNING: data-log missing for {start}-{end} {instrument}",
-                    file=sys.stderr,
-                )
+                logger.warning("data-log missing for %d-%d %s", start, end, instrument)
 
             exp_filename = build_filename(
-                "exposures", {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument}
+                "exposures",
+                {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument},
             )
             exp_path = os.path.join(output_dir, exp_filename)
             if os.path.exists(exp_path):
@@ -551,10 +586,7 @@ def build_block_details_tasks(
                 if exp_keys:
                     _record_keyset(frozenset(exp_keys), start, end)
             elif not dry_run:
-                print(
-                    f"  WARNING: exposures missing for {start}-{end} {instrument}",
-                    file=sys.stderr,
-                )
+                logger.warning("exposures missing for %d-%d %s", start, end, instrument)
 
     tasks = []
     skipped = 0
@@ -637,7 +669,19 @@ def main():
         action="store_true",
         help="Only generate block-details files (skip version and dayobs endpoints)",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level",
+    )
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(message)s",
+        stream=sys.stdout,
+    )
 
     # PID lock to prevent concurrent runs (O_CREAT|O_EXCL is atomic)
     lock_path = "/tmp/generate_static_files.lock"
@@ -646,8 +690,8 @@ def main():
         os.write(lock_fd, str(os.getpid()).encode())
         os.close(lock_fd)
     except FileExistsError:
-        print(f"Lock file found: {lock_path}. Another instance may be running. Aborting.", file=sys.stderr)
-        print(f"Remove {lock_path} if you're sure no other instance is running.", file=sys.stderr)
+        logger.error("Lock file found: %s. Another instance may be running. Aborting.", lock_path)
+        logger.error("Remove %s if you're sure no other instance is running.", lock_path)
         sys.exit(1)
 
     try:
@@ -655,11 +699,11 @@ def main():
         if args.dayobs_override is not None:
             today = args.dayobs_override
             historic_mode = True
-            print(f"Historic mode: using dayobs {today} as 'today'")
+            logger.info("Historic mode: using dayobs %d as 'today'", today)
         else:
             today = get_current_dayobs()
             historic_mode = False
-            print(f"Today's dayobs: {today}")
+            logger.info("Today's dayobs: %d", today)
 
         yesterday = dayobs_add_days(today, -1)
 
@@ -670,19 +714,23 @@ def main():
         )
         is_new_day = not historic_mode and not os.path.exists(today_sentinel)
         if is_new_day:
-            print(f"First run for dayobs {today} — yesterday's files ({yesterday}) will be refreshed")
+            logger.info(
+                "First run for dayobs %d — yesterday's files (%d) will be refreshed",
+                today,
+                yesterday,
+            )
 
         if args.force_refresh:
-            print("Force refresh enabled — all files will be regenerated")
+            logger.info("Force refresh enabled — all files will be regenerated")
 
         if args.dry_run:
-            print("Dry run mode — no requests will be made and no files will be written")
+            logger.info("Dry run mode — no requests will be made and no files will be written")
 
         os.makedirs(args.output_dir, exist_ok=True)
 
         batch_start = time.time()
         start_utc = datetime.fromtimestamp(batch_start, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        print(f"Batch started at {start_utc} UTC")
+        logger.info("Batch started at %s UTC", start_utc)
 
         # Generate all dayobs combinations
         combos = generate_dayobs_combinations(today, args.max_days)
@@ -717,7 +765,7 @@ def main():
 
             # --- Pass 1 ---
             for task in version_tasks:
-                print("\nVersion fetch")
+                logger.info("\nVersion fetch")
                 url = build_url(args.backend_url, task["endpoint"], task["params"])
                 file_path = os.path.join(args.output_dir, task["filename"])
                 if args.dry_run:
@@ -732,7 +780,7 @@ def main():
                     time.sleep(args.rate_limit)
 
             # --- Pass 2 ---
-            print(f"\nStarting dayobs {today} fetches ({len(dayobs_tasks)} files)")
+            logger.info("\nStarting dayobs %d fetches (%d files)", today, len(dayobs_tasks))
             for task in dayobs_tasks:
                 url = build_url(args.backend_url, task["endpoint"], task["params"])
                 file_path = os.path.join(args.output_dir, task["filename"])
@@ -765,7 +813,7 @@ def main():
         progress.total += len(block_tasks)
         progress.skipped += block_skipped
 
-        print(f"\nStarting block-details fetches ({len(block_tasks)} files)")
+        logger.info("\nStarting block-details fetches (%d files)", len(block_tasks))
         for task in block_tasks:
             url = build_url(args.backend_url, task["endpoint"], task["params"])
             file_path = os.path.join(args.output_dir, task["filename"])
