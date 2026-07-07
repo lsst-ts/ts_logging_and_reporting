@@ -14,7 +14,9 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 
 try:
@@ -352,14 +354,17 @@ class Progress:
         self.created = 0
         self.skipped = 0
         self.errors = 0
+        self._lock = threading.RLock()
 
     def tick(self, status: str, filename: str, detail: str = ""):
-        self.current += 1
-        suffix = f" ({detail})" if detail else ""
-        logger.info("[%d/%d] %s %s%s", self.current, self.total, status, filename, suffix)
+        with self._lock:
+            self.current += 1
+            suffix = f" ({detail})" if detail else ""
+            logger.info("[%d/%d] %s %s%s", self.current, self.total, status, filename, suffix)
 
     def record_created(self, filename: str, dry_run: bool, start: float = None, end: float = None):
-        self.created += 1
+        with self._lock:
+            self.created += 1
         timing = ""
         if start is not None and end is not None:
             start_str = datetime.fromtimestamp(start, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
@@ -372,11 +377,13 @@ class Progress:
         self.tick("Would create" if dry_run else "Created", filename, timing)
 
     def record_skipped(self, filename: str, reason: str = "exists"):
-        self.skipped += 1
+        with self._lock:
+            self.skipped += 1
         self.tick("Skipped", filename, reason)
 
     def record_error(self, filename: str, start: float, end: float):
-        self.errors += 1
+        with self._lock:
+            self.errors += 1
         start_str = datetime.fromtimestamp(start, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
         end_str = datetime.fromtimestamp(end, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
         timing = f"{end - start:.2f}s | {start_str} -> {end_str}"
@@ -606,6 +613,47 @@ def build_block_details_tasks(
 
 
 # ---------------------------------------------------------------------------
+# Task execution
+# ---------------------------------------------------------------------------
+
+
+def _run_task(task, backend_url, output_dir, request_timeout, rate_limit, dry_run, progress):
+    """Execute a single task and record progress. Thread-safe."""
+    url = build_url(backend_url, task["endpoint"], task["params"])
+    file_path = os.path.join(output_dir, task["filename"])
+    if dry_run:
+        progress.record_created(task["filename"], dry_run=True)
+    else:
+        start_ts, end_ts, ok = fetch_and_save(url, file_path, request_timeout)
+        if ok:
+            progress.record_created(task["filename"], dry_run=False, start=start_ts, end=end_ts)
+        else:
+            progress.record_error(task["filename"], start=start_ts, end=end_ts)
+    if rate_limit > 0 and not dry_run:
+        time.sleep(rate_limit)
+
+
+def _run_tasks(tasks, backend_url, output_dir, request_timeout, rate_limit, dry_run, progress, workers):
+    """Run tasks concurrently up to `workers` at a time."""
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                _run_task,
+                task,
+                backend_url,
+                output_dir,
+                request_timeout,
+                rate_limit,
+                dry_run,
+                progress,
+            ): task
+            for task in tasks
+        }
+        for future in as_completed(futures):
+            future.result()  # re-raises OSError from write failures
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -668,6 +716,13 @@ def main():
         "--block-details-only",
         action="store_true",
         help="Only generate block-details files (skip version and dayobs endpoints)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Maximum number of concurrent HTTP requests",
     )
     parser.add_argument(
         "--log-level",
@@ -772,36 +827,31 @@ def main():
             progress.skipped = skipped_count + version_skipped
 
             # --- Pass 1 ---
-            for task in version_tasks:
+            if version_tasks:
                 logger.info("\nVersion fetch")
-                url = build_url(args.backend_url, task["endpoint"], task["params"])
-                file_path = os.path.join(args.output_dir, task["filename"])
-                if args.dry_run:
-                    progress.record_created(task["filename"], dry_run=True)
-                else:
-                    start, end, ok = fetch_and_save(url, file_path, args.request_timeout)
-                    if ok:
-                        progress.record_created(task["filename"], dry_run=False, start=start, end=end)
-                    else:
-                        progress.record_error(task["filename"], start=start, end=end)
-                if args.rate_limit > 0 and not args.dry_run:
-                    time.sleep(args.rate_limit)
+                _run_tasks(
+                    version_tasks,
+                    args.backend_url,
+                    args.output_dir,
+                    args.request_timeout,
+                    args.rate_limit,
+                    args.dry_run,
+                    progress,
+                    args.workers,
+                )
 
             # --- Pass 2 ---
             logger.info("\nStarting dayobs %d fetches (%d files)", today, len(dayobs_tasks))
-            for task in dayobs_tasks:
-                url = build_url(args.backend_url, task["endpoint"], task["params"])
-                file_path = os.path.join(args.output_dir, task["filename"])
-                if args.dry_run:
-                    progress.record_created(task["filename"], dry_run=True)
-                else:
-                    start, end, ok = fetch_and_save(url, file_path, args.request_timeout)
-                    if ok:
-                        progress.record_created(task["filename"], dry_run=False, start=start, end=end)
-                    else:
-                        progress.record_error(task["filename"], start=start, end=end)
-                if args.rate_limit > 0 and not args.dry_run:
-                    time.sleep(args.rate_limit)
+            _run_tasks(
+                dayobs_tasks,
+                args.backend_url,
+                args.output_dir,
+                args.request_timeout,
+                args.rate_limit,
+                args.dry_run,
+                progress,
+                args.workers,
+            )
         else:
             # Block-only mode: initialize progress with 0 tasks
             progress = Progress(0)
@@ -822,19 +872,16 @@ def main():
         progress.skipped += block_skipped
 
         logger.info("\nStarting block-details fetches (%d files)", len(block_tasks))
-        for task in block_tasks:
-            url = build_url(args.backend_url, task["endpoint"], task["params"])
-            file_path = os.path.join(args.output_dir, task["filename"])
-            if args.dry_run:
-                progress.record_created(task["filename"], dry_run=True)
-            else:
-                start, end, ok = fetch_and_save(url, file_path, args.request_timeout)
-                if ok:
-                    progress.record_created(task["filename"], dry_run=False, start=start, end=end)
-                else:
-                    progress.record_error(task["filename"], start=start, end=end)
-            if args.rate_limit > 0 and not args.dry_run:
-                time.sleep(args.rate_limit)
+        _run_tasks(
+            block_tasks,
+            args.backend_url,
+            args.output_dir,
+            args.request_timeout,
+            args.rate_limit,
+            args.dry_run,
+            progress,
+            args.workers,
+        )
 
         progress.summary(batch_start)
 
