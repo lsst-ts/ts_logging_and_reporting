@@ -557,7 +557,7 @@ def build_block_details_tasks(
                 _record_keyset(frozenset(cf_keys), start, end)
         elif not dry_run:
             logger.warning(
-                "context-feed missing for %d-%d, skipping block key extraction",
+                "block-details: context-feed missing for %d-%d, skipping key extraction",
                 start,
                 end,
             )
@@ -574,7 +574,7 @@ def build_block_details_tasks(
                 if dl_keys:
                     _record_keyset(frozenset(dl_keys), start, end)
             elif not dry_run:
-                logger.warning("data-log missing for %d-%d %s", start, end, instrument)
+                logger.warning("block-details: data-log missing for %d-%d %s", start, end, instrument)
 
             exp_filename = build_filename(
                 "exposures",
@@ -586,7 +586,7 @@ def build_block_details_tasks(
                 if exp_keys:
                     _record_keyset(frozenset(exp_keys), start, end)
             elif not dry_run:
-                logger.warning("exposures missing for %d-%d %s", start, end, instrument)
+                logger.warning("block-details: exposures missing for %d-%d %s", start, end, instrument)
 
     tasks = []
     skipped = 0
