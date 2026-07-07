@@ -1555,10 +1555,127 @@ class TestRunTasks:
     @patch("generate_static_files.time.sleep")
     def test_propagates_os_error(self, mock_sleep, mock_fetch):
         mock_fetch.side_effect = OSError("disk full")
-        tasks = [{"filename": "f", "endpoint": "version", "params": {}, "start": 20260707, "end": 20260707}]
+        tasks = [
+            {
+                "filename": "f",
+                "endpoint": "version",
+                "params": {},
+                "start": 20260707,
+                "end": 20260707,
+            }
+        ]
         progress = gsf.Progress(1)
         with pytest.raises(OSError, match="disk full"):
             gsf._run_tasks(tasks, "http://host/api", "/output", 10, 0.0, False, progress, 1)
+
+    @patch("generate_static_files.time.sleep")
+    def test_tasks_run_concurrently(self, mock_sleep):
+        """Verify tasks actually execute in parallel, not serially."""
+        barrier = threading.Barrier(4, timeout=5)
+        peak_concurrent = {"value": 0}
+        active_count = {"value": 0}
+        lock = threading.Lock()
+
+        def mock_fetch(url, file_path, timeout):
+            with lock:
+                active_count["value"] += 1
+                if active_count["value"] > peak_concurrent["value"]:
+                    peak_concurrent["value"] = active_count["value"]
+            # All 4 tasks must arrive here before any proceeds
+            barrier.wait()
+            with lock:
+                active_count["value"] -= 1
+            t = time.time()
+            return (t, t + 0.01, True)
+
+        tasks = [
+            {
+                "filename": f"file{i}",
+                "endpoint": "version",
+                "params": {},
+                "start": 20260707,
+                "end": 20260707,
+            }
+            for i in range(4)
+        ]
+        progress = gsf.Progress(4)
+
+        with patch("generate_static_files.fetch_and_save", side_effect=mock_fetch):
+            gsf._run_tasks(tasks, "http://host/api", "/output", 10, 0.0, False, progress, 4)
+
+        assert progress.created == 4
+        # All 4 were running at the same time (barrier forced it)
+        assert peak_concurrent["value"] == 4
+
+    @patch("generate_static_files.time.sleep")
+    def test_worker_count_limits_concurrency(self, mock_sleep):
+        """Verify that workers param caps concurrent execution."""
+        peak_concurrent = {"value": 0}
+        active_count = {"value": 0}
+        lock = threading.Lock()
+
+        def mock_fetch(url, file_path, timeout):
+            with lock:
+                active_count["value"] += 1
+                if active_count["value"] > peak_concurrent["value"]:
+                    peak_concurrent["value"] = active_count["value"]
+            # Small sleep to keep tasks overlapping
+            time.sleep(0.05)
+            with lock:
+                active_count["value"] -= 1
+            t = time.time()
+            return (t, t + 0.01, True)
+
+        tasks = [
+            {
+                "filename": f"file{i}",
+                "endpoint": "version",
+                "params": {},
+                "start": 20260707,
+                "end": 20260707,
+            }
+            for i in range(8)
+        ]
+        progress = gsf.Progress(8)
+
+        with patch("generate_static_files.fetch_and_save", side_effect=mock_fetch):
+            gsf._run_tasks(tasks, "http://host/api", "/output", 10, 0.0, False, progress, 2)
+
+        assert progress.created == 8
+        # Should never exceed 2 concurrent tasks
+        assert peak_concurrent["value"] <= 2
+
+    @patch("generate_static_files.time.sleep")
+    def test_concurrent_progress_tracking(self, mock_sleep):
+        """Verify Progress counters are correct after concurrent execution."""
+        call_count = {"value": 0}
+        lock = threading.Lock()
+
+        def mock_fetch(url, file_path, timeout):
+            with lock:
+                call_count["value"] += 1
+                n = call_count["value"]
+            t = time.time()
+            # Alternate success and failure
+            return (t, t + 0.01, n % 2 == 1)
+
+        tasks = [
+            {
+                "filename": f"file{i}",
+                "endpoint": "version",
+                "params": {},
+                "start": 20260707,
+                "end": 20260707,
+            }
+            for i in range(10)
+        ]
+        progress = gsf.Progress(10)
+
+        with patch("generate_static_files.fetch_and_save", side_effect=mock_fetch):
+            gsf._run_tasks(tasks, "http://host/api", "/output", 10, 0.0, False, progress, 4)
+
+        assert progress.current == 10
+        assert progress.created + progress.errors == 10
 
 
 # ---------------------------------------------------------------------------
