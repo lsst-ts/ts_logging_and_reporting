@@ -170,4 +170,10 @@ cython_debug/
 .ruff.toml
 towncrier.toml
 python/lsst/ts/logging_and_reporting/web_app/data/*
+<<<<<<< HEAD
 .LICENSE.txt
+=======
+
+# Static file generator output
+static_output/
+>>>>>>> fefcb4a (Add static file generator script)
