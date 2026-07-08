@@ -712,6 +712,17 @@ class TestFetchAndSave:
         assert isinstance(end, float)
         assert before <= start <= end <= after
 
+    @patch("generate_static_files.time.sleep")
+    @patch("generate_static_files.requests.get")
+    def test_bare_filename_no_directory(self, mock_get, mock_sleep, monkeypatch, tmp_path):
+        """When file_path has no dir component, dirname is '' -> uses '.'."""
+        mock_get.return_value = _mock_response(text="content")
+        # Run from tmp_path so the bare filename writes there
+        monkeypatch.chdir(tmp_path)
+        start, end, ok = gsf.fetch_and_save("http://host/ep", "bare_file", timeout=10)
+        assert ok is True
+        assert os.path.exists(tmp_path / "bare_file")
+
 
 # ---------------------------------------------------------------------------
 # Group 5: Block Key Extraction
@@ -939,6 +950,24 @@ class TestProgress:
         t1 = t0 + 2.5
         p.record_created("file1", dry_run=False, start=t0, end=t1)
         assert p.created == 1
+
+    def test_record_created_start_only_no_end(self):
+        p = gsf.Progress(5)
+        t0 = time.time()
+        with patch("generate_static_files.logger") as mock_logger:
+            p.record_created("file1", dry_run=False, start=t0, end=None)
+        assert p.created == 1
+        # Should format with bracket style: " [{start_str}]"
+        log_str = str(mock_logger.info.call_args)
+        assert "[" in log_str
+
+    def test_record_skipped_custom_reason(self):
+        p = gsf.Progress(5)
+        with patch("generate_static_files.logger") as mock_logger:
+            p.record_skipped("file1", reason="historic")
+        assert p.skipped == 1
+        log_str = str(mock_logger.info.call_args)
+        assert "historic" in log_str
 
     def test_record_created_dry_run(self):
         p = gsf.Progress(5)
@@ -1204,6 +1233,25 @@ class TestBuildDayobsTasks:
         )
         assert skipped == 5
 
+    def test_multiple_combos(self, tmp_output_dir):
+        combos = [
+            (self.TODAY, self.TODAY),
+            (self.YESTERDAY, self.TODAY),
+            (self.YESTERDAY, self.YESTERDAY),
+        ]
+        tasks, skipped = gsf.build_dayobs_tasks(
+            combos,
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+            output_dir=str(tmp_output_dir),
+        )
+        # 22 tasks per combo * 3 combos = 66
+        assert len(tasks) == 66
+        assert skipped == 0
+
 
 # ---------------------------------------------------------------------------
 # Group 8: build_block_details_tasks
@@ -1457,6 +1505,65 @@ class TestBuildBlockDetailsTasks:
         block_warnings = [m for m in warning_messages if "block-details" in m]
         assert block_warnings == []
 
+    def test_source_files_with_no_block_keys(self, tmp_output_dir):
+        """Source files exist but contain no BLOCK keys -> no tasks."""
+        combos = [(self.TODAY, self.TODAY)]
+        # Context-feed with no category_index==10 rows
+        cf_filename = gsf.build_filename(
+            "context-feed",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY},
+        )
+        _write_json(
+            str(tmp_output_dir / cf_filename),
+            {
+                "columns": ["category_index", "name"],
+                "records": [[5, "NOT-A-BLOCK"]],
+            },
+        )
+        # Data-log with empty science_program
+        for inst in ["LATISS", "LSSTCam"]:
+            dl_filename = gsf.build_filename(
+                "data-log",
+                {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": inst},
+            )
+            _write_json(
+                str(tmp_output_dir / dl_filename),
+                {"data_log": [{"obs_id": 1}]},
+            )
+
+        tasks, skipped = gsf.build_block_details_tasks(
+            combos,
+            str(tmp_output_dir),
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+        )
+        assert tasks == []
+        assert skipped == 0
+
+    def test_missing_files_log_warnings(self, tmp_output_dir, caplog):
+        """Non-dry-run mode logs warnings for missing source files."""
+        import logging
+
+        combos = [(self.TODAY, self.TODAY)]
+        with caplog.at_level(logging.WARNING):
+            gsf.build_block_details_tasks(
+                combos,
+                str(tmp_output_dir),
+                self.TODAY,
+                self.YESTERDAY,
+                is_new_day=False,
+                force_refresh=False,
+                historic_mode=False,
+                dry_run=False,
+            )
+        warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        block_warnings = [m for m in warning_messages if "block-details" in m]
+        # Should warn about missing context-feed, data-log, exposures
+        assert len(block_warnings) >= 1
+
 
 # ---------------------------------------------------------------------------
 # Group 9: Task Execution
@@ -1529,6 +1636,29 @@ class TestRunTask:
         progress = gsf.Progress(1)
         gsf._run_task(task, "http://host/api", "/output", 10, 0.0, dry_run=False, progress=progress)
         mock_sleep.assert_not_called()
+
+    @patch("generate_static_files.fetch_and_save")
+    @patch("generate_static_files.time.sleep")
+    def test_url_construction(self, mock_sleep, mock_fetch):
+        t = time.time()
+        mock_fetch.return_value = (t, t + 1.0, True)
+        task = self._make_task()
+        progress = gsf.Progress(1)
+        gsf._run_task(
+            task,
+            "http://host/api",
+            "/output",
+            10,
+            0.0,
+            dry_run=False,
+            progress=progress,
+        )
+        expected_url = gsf.build_url("http://host/api", task["endpoint"], task["params"])
+        actual_url = mock_fetch.call_args[0][0]
+        assert actual_url == expected_url
+        expected_path = os.path.join("/output", task["filename"])
+        actual_path = mock_fetch.call_args[0][1]
+        assert actual_path == expected_path
 
 
 class TestRunTasks:
@@ -1867,5 +1997,48 @@ class TestMain:
                             gsf.main()
 
         # Should NOT log about first run
+        log_str = str(mock_logger.info.call_args_list)
+        assert "First run" not in log_str
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    def test_force_refresh_creates_version_task(self, mock_dayobs, mock_run, tmp_output_dir, monkeypatch):
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--force-refresh"]),
+        )
+        # Create a version file so it already exists
+        with open(str(tmp_output_dir / "version"), "w") as f:
+            f.write("{}")
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        gsf.main()
+
+        # First _run_tasks call should include a version task
+        first_call_tasks = mock_run.call_args_list[0][0][0]
+        version_tasks = [t for t in first_call_tasks if t.get("endpoint") == "version"]
+        assert len(version_tasks) == 1
+
+    @patch("generate_static_files._run_tasks")
+    def test_historic_mode_forces_is_new_day_false(self, mock_run, tmp_output_dir, monkeypatch):
+        """In historic mode, is_new_day is always False even
+        when the sentinel file is missing."""
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--dayobs-override", "20260707"]),
+        )
+        # Don't create sentinel — in normal mode this would trigger is_new_day
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        with patch("generate_static_files.logger") as mock_logger:
+                            gsf.main()
+
+        # Should NOT log "First run" because historic mode
         log_str = str(mock_logger.info.call_args_list)
         assert "First run" not in log_str
