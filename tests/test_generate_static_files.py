@@ -679,6 +679,27 @@ class TestFetchAndSave:
 
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
+    def test_connection_error_succeeds_on_final_retry(self, mock_get, mock_sleep, tmp_output_dir):
+        import requests as real_requests
+
+        mock_get.side_effect = [
+            real_requests.exceptions.ConnectionError("refused"),
+            real_requests.exceptions.ConnectionError("refused"),
+            _mock_response(text="ok"),
+        ]
+        fp = str(tmp_output_dir / "test_file")
+
+        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+
+        assert ok is True
+        assert mock_get.call_count == 3
+        assert os.path.exists(fp)
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(1)  # 2**0
+        mock_sleep.assert_any_call(2)  # 2**1
+
+    @patch("generate_static_files.time.sleep")
+    @patch("generate_static_files.requests.get")
     def test_connection_error_exhausted(self, mock_get, mock_sleep, tmp_output_dir):
         import requests as real_requests
 
@@ -865,90 +886,6 @@ class TestExtractBlockKeysFromExposures:
         fp = str(tmp_path / "exposures.json")
         _write_json(fp, {"exposures": [{"obs_id": 1}]})
         assert gsf.extract_block_keys_from_exposures(fp) == set()
-
-
-class TestExtractBlockKeysFromContextFeed:
-    def test_normal(self, tmp_path):
-        fp = str(tmp_path / "context-feed.json")
-        _write_json(
-            fp,
-            {
-                "columns": ["category_index", "name", "message"],
-                "records": [
-                    [10, "BLOCK-T328", "started"],
-                    [10, "BLOCK-T329", "ended"],
-                ],
-            },
-        )
-        assert gsf.extract_block_keys_from_context_feed(fp) == {"BLOCK-T328", "BLOCK-T329"}
-
-    def test_filters_non_block_name(self, tmp_path):
-        fp = str(tmp_path / "context-feed.json")
-        _write_json(
-            fp,
-            {
-                "columns": ["category_index", "name", "message"],
-                "records": [
-                    [10, "BLOCK-T328", "x"],
-                    [10, "LOVE-event", "x"],
-                ],
-            },
-        )
-        assert gsf.extract_block_keys_from_context_feed(fp) == {"BLOCK-T328"}
-
-    def test_filters_wrong_category(self, tmp_path):
-        fp = str(tmp_path / "context-feed.json")
-        _write_json(
-            fp,
-            {
-                "columns": ["category_index", "name", "message"],
-                "records": [
-                    [5, "BLOCK-T328", "x"],
-                ],
-            },
-        )
-        assert gsf.extract_block_keys_from_context_feed(fp) == set()
-
-    def test_empty_records(self, tmp_path):
-        fp = str(tmp_path / "context-feed.json")
-        _write_json(
-            fp,
-            {
-                "columns": ["category_index", "name"],
-                "records": [],
-            },
-        )
-        assert gsf.extract_block_keys_from_context_feed(fp) == set()
-
-    def test_missing_columns_key(self, tmp_path):
-        fp = str(tmp_path / "context-feed.json")
-        _write_json(fp, {"records": [[10, "BLOCK-T328"]]})
-        assert gsf.extract_block_keys_from_context_feed(fp) == set()
-
-    def test_column_name_absent(self, tmp_path):
-        fp = str(tmp_path / "context-feed.json")
-        _write_json(
-            fp,
-            {
-                "columns": ["other", "fields"],
-                "records": [[1, 2]],
-            },
-        )
-        assert gsf.extract_block_keys_from_context_feed(fp) == set()
-
-    def test_file_not_found(self):
-        assert gsf.extract_block_keys_from_context_feed("/nonexistent/path") == set()
-
-    def test_null_name(self, tmp_path):
-        fp = str(tmp_path / "context-feed.json")
-        _write_json(
-            fp,
-            {
-                "columns": ["category_index", "name"],
-                "records": [[10, None]],
-            },
-        )
-        assert gsf.extract_block_keys_from_context_feed(fp) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -1279,6 +1216,19 @@ class TestBuildDayobsTasks:
         assert len(tasks) == 27
         assert skipped == 0
 
+    def test_empty_combos(self, tmp_output_dir):
+        tasks, skipped = gsf.build_dayobs_tasks(
+            [],
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+            output_dir=str(tmp_output_dir),
+        )
+        assert tasks == []
+        assert skipped == 0
+
 
 # ---------------------------------------------------------------------------
 # Group 8: build_block_details_tasks
@@ -1302,30 +1252,6 @@ class TestBuildBlockDetailsTasks:
         )
         assert tasks == []
         assert skipped == 0
-
-    def test_from_context_feed(self, tmp_output_dir):
-        combos = [(self.TODAY, self.TODAY)]
-        cf_filename = gsf.build_filename("context-feed", {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY})
-        _write_json(
-            str(tmp_output_dir / cf_filename),
-            {
-                "columns": ["category_index", "name"],
-                "records": [[10, "BLOCK-T328"], [10, "BLOCK-T329"]],
-            },
-        )
-
-        tasks, skipped = gsf.build_block_details_tasks(
-            combos,
-            str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
-        )
-        assert len(tasks) == 1
-        assert tasks[0]["endpoint"] == "block-details"
-        assert tasks[0]["params"]["key"] == ["BLOCK-T328", "BLOCK-T329"]
 
     def test_from_data_log(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
@@ -1373,15 +1299,15 @@ class TestBuildBlockDetailsTasks:
         combo2 = (self.YESTERDAY, self.TODAY)
         combos = [combo1, combo2]
 
-        # Both combos' context-feed files have the same BLOCK key
+        # Both combos' data-log files have the same BLOCK key
         for start, end in combos:
-            cf_filename = gsf.build_filename("context-feed", {"dayObsStart": start, "dayObsEnd": end})
+            dl_filename = gsf.build_filename(
+                "data-log",
+                {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"},
+            )
             _write_json(
-                str(tmp_output_dir / cf_filename),
-                {
-                    "columns": ["category_index", "name"],
-                    "records": [[10, "BLOCK-T328"]],
-                },
+                str(tmp_output_dir / dl_filename),
+                {"data_log": [{"science_program": "BLOCK-T328"}]},
             )
 
         tasks, skipped = gsf.build_block_details_tasks(
@@ -1402,21 +1328,21 @@ class TestBuildBlockDetailsTasks:
         combos = [combo1, combo2]
 
         # combo1 has BLOCK-T328, combo2 has BLOCK-T329
-        cf1 = gsf.build_filename("context-feed", {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY})
-        _write_json(
-            str(tmp_output_dir / cf1),
-            {
-                "columns": ["category_index", "name"],
-                "records": [[10, "BLOCK-T328"]],
-            },
+        dl1 = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
         )
-        cf2 = gsf.build_filename("context-feed", {"dayObsStart": self.YESTERDAY, "dayObsEnd": self.YESTERDAY})
         _write_json(
-            str(tmp_output_dir / cf2),
-            {
-                "columns": ["category_index", "name"],
-                "records": [[10, "BLOCK-T329"]],
-            },
+            str(tmp_output_dir / dl1),
+            {"data_log": [{"science_program": "BLOCK-T328"}]},
+        )
+        dl2 = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.YESTERDAY, "dayObsEnd": self.YESTERDAY, "instrument": "LSSTCam"},
+        )
+        _write_json(
+            str(tmp_output_dir / dl2),
+            {"data_log": [{"science_program": "BLOCK-T329"}]},
         )
 
         tasks, skipped = gsf.build_block_details_tasks(
@@ -1432,12 +1358,18 @@ class TestBuildBlockDetailsTasks:
 
     def test_keys_sorted_alphabetically(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
-        cf_filename = gsf.build_filename("context-feed", {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY})
+        dl_filename = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+        )
         _write_json(
-            str(tmp_output_dir / cf_filename),
+            str(tmp_output_dir / dl_filename),
             {
-                "columns": ["category_index", "name"],
-                "records": [[10, "BLOCK-Z"], [10, "BLOCK-A"], [10, "BLOCK-M"]],
+                "data_log": [
+                    {"science_program": "BLOCK-Z"},
+                    {"science_program": "BLOCK-A"},
+                    {"science_program": "BLOCK-M"},
+                ]
             },
         )
 
@@ -1454,13 +1386,13 @@ class TestBuildBlockDetailsTasks:
 
     def test_touches_today_regenerates(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
-        cf_filename = gsf.build_filename("context-feed", {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY})
+        dl_filename = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+        )
         _write_json(
-            str(tmp_output_dir / cf_filename),
-            {
-                "columns": ["category_index", "name"],
-                "records": [[10, "BLOCK-T328"]],
-            },
+            str(tmp_output_dir / dl_filename),
+            {"data_log": [{"science_program": "BLOCK-T328"}]},
         )
 
         # Create the block-details file so it already exists
@@ -1483,13 +1415,13 @@ class TestBuildBlockDetailsTasks:
 
     def test_historic_mode_skips_existing(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
-        cf_filename = gsf.build_filename("context-feed", {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY})
+        dl_filename = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+        )
         _write_json(
-            str(tmp_output_dir / cf_filename),
-            {
-                "columns": ["category_index", "name"],
-                "records": [[10, "BLOCK-T328"]],
-            },
+            str(tmp_output_dir / dl_filename),
+            {"data_log": [{"science_program": "BLOCK-T328"}]},
         )
 
         # Create the block-details file
@@ -1533,28 +1465,15 @@ class TestBuildBlockDetailsTasks:
     def test_source_files_with_no_block_keys(self, tmp_output_dir):
         """Source files exist but contain no BLOCK keys -> no tasks."""
         combos = [(self.TODAY, self.TODAY)]
-        # Context-feed with no category_index==10 rows
-        cf_filename = gsf.build_filename(
-            "context-feed",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY},
+        # Data-log with no science_program
+        dl_filename = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
         )
         _write_json(
-            str(tmp_output_dir / cf_filename),
-            {
-                "columns": ["category_index", "name"],
-                "records": [[5, "NOT-A-BLOCK"]],
-            },
+            str(tmp_output_dir / dl_filename),
+            {"data_log": [{"obs_id": 1}]},
         )
-        # Data-log with empty science_program
-        for inst in ["LATISS", "LSSTCam"]:
-            dl_filename = gsf.build_filename(
-                "data-log",
-                {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": inst},
-            )
-            _write_json(
-                str(tmp_output_dir / dl_filename),
-                {"data_log": [{"obs_id": 1}]},
-            )
 
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
@@ -1586,8 +1505,85 @@ class TestBuildBlockDetailsTasks:
             )
         warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
         block_warnings = [m for m in warning_messages if "block-details" in m]
-        # Should warn about missing context-feed, data-log, exposures
+        # Should warn about missing data-log, exposures
         assert len(block_warnings) >= 1
+
+    def test_touches_yesterday_new_day_regenerates(self, tmp_output_dir):
+        """Combo spanning only yesterday with is_new_day=True
+        should regenerate existing block-details."""
+        combos = [(self.YESTERDAY, self.YESTERDAY)]
+        dl_filename = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.YESTERDAY, "dayObsEnd": self.YESTERDAY, "instrument": "LSSTCam"},
+        )
+        _write_json(
+            str(tmp_output_dir / dl_filename),
+            {"data_log": [{"science_program": "BLOCK-T328"}]},
+        )
+
+        # Create the block-details file so it already exists
+        bd_filename = gsf.build_filename("block-details", {"key": ["BLOCK-T328"]})
+        with open(str(tmp_output_dir / bd_filename), "w") as f:
+            f.write("{}")
+
+        tasks, skipped = gsf.build_block_details_tasks(
+            combos,
+            str(tmp_output_dir),
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=True,
+            force_refresh=False,
+            historic_mode=False,
+        )
+        assert len(tasks) == 1
+        assert skipped == 0
+
+    def test_multiple_sources_different_keys_same_combo(self, tmp_output_dir):
+        """data-log and exposures with different keys for the same
+        combo should produce separate block-details tasks."""
+        combos = [(self.TODAY, self.TODAY)]
+        dl_filename = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+        )
+        _write_json(
+            str(tmp_output_dir / dl_filename),
+            {"data_log": [{"science_program": "BLOCK-A"}]},
+        )
+        exp_filename = gsf.build_filename(
+            "exposures",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+        )
+        _write_json(
+            str(tmp_output_dir / exp_filename),
+            {"exposures": [{"science_program": "BLOCK-B"}]},
+        )
+
+        tasks, skipped = gsf.build_block_details_tasks(
+            combos,
+            str(tmp_output_dir),
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+        )
+        assert len(tasks) == 2
+        all_keys = {tuple(t["params"]["key"]) for t in tasks}
+        assert all_keys == {("BLOCK-A",), ("BLOCK-B",)}
+
+    def test_empty_combos(self, tmp_output_dir):
+        tasks, skipped = gsf.build_block_details_tasks(
+            [],
+            str(tmp_output_dir),
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+        )
+        assert tasks == []
+        assert skipped == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2067,3 +2063,52 @@ class TestMain:
         # Should NOT log "First run" because historic mode
         log_str = str(mock_logger.info.call_args_list)
         assert "First run" not in log_str
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    @patch("generate_static_files.generate_dayobs_combinations")
+    def test_max_combo_size_passed_through(
+        self, mock_combos, mock_dayobs, mock_run, tmp_output_dir, monkeypatch
+    ):
+        """--max-combo-size CLI arg is forwarded to
+        generate_dayobs_combinations."""
+        mock_combos.return_value = []
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--max-days", "14", "--max-combo-size", "3"]),
+        )
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        gsf.main()
+
+        mock_combos.assert_called_once_with(20260707, 14, 3)
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    def test_version_skip_counting(self, mock_dayobs, mock_run, tmp_output_dir, monkeypatch):
+        """When version file exists and no --force-refresh,
+        version_skipped should be counted."""
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir),
+        )
+        # Create the version file so it gets skipped
+        with open(str(tmp_output_dir / "version"), "w") as f:
+            f.write("{}")
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        with patch("generate_static_files.logger") as mock_logger:
+                            gsf.main()
+
+        # Find the summary log call
+        summary_calls = [c for c in mock_logger.info.call_args_list if c[0][0] and "skipped" in str(c[0][0])]
+        assert len(summary_calls) == 1
+        # args are (created, skipped, errors); version should be counted
+        skipped_count = summary_calls[0][0][2]
+        assert skipped_count >= 1
