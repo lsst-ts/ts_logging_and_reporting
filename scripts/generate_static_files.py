@@ -29,15 +29,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather"]
-OBS_STATUS_CONTEXT_FEED_METRICS = [
-    "daytime",
-    "operational",
-    "fault",
-    "weather",
-    "downtime",
-    "idle",
-    "unknown",
-]
 
 
 # ---------------------------------------------------------------------------
@@ -316,35 +307,6 @@ def extract_block_keys_from_exposures(file_path: str) -> set:
         return set()
 
 
-def extract_block_keys_from_context_feed(file_path: str) -> set:
-    """Read a saved context-feed file and extract BLOCK keys.
-
-    category_index == 10 is "AUTOLOG (Simonyi)" — automated log entries from
-    the Simonyi telescope. BLOCK execution events are recorded here with the
-    BLOCK identifier (e.g. BLOCK-123) in the name field.
-    """
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            data = json.load(f)
-        records = data.get("records", [])
-        # records is a list of lists; need column names for indices
-        columns = data.get("columns", [])
-        if not columns or not records:
-            return set()
-        try:
-            cat_idx = columns.index("category_index")
-            name_idx = columns.index("name")
-        except ValueError:
-            return set()
-        return {
-            row[name_idx]
-            for row in records
-            if row[cat_idx] == 10 and row[name_idx] and row[name_idx].startswith("BLOCK")
-        }
-    except (OSError, json.JSONDecodeError, KeyError, IndexError):
-        return set()
-
-
 # ---------------------------------------------------------------------------
 # Progress counter helper
 # ---------------------------------------------------------------------------
@@ -518,13 +480,13 @@ def build_block_details_tasks(
 ) -> tuple:
     """Derive block-details tasks from saved files.
 
-    Reads data-log, exposure, and context-feed files. For each unique
-    set of BLOCK keys across all combos, produce one task
-    (deduplicated by key set). Returns (tasks, skipped_count).
+    Reads data-log and exposure files. For each unique set of BLOCK
+    keys across all combos, produce one task (deduplicated by key set).
+    Returns (tasks, skipped_count).
     """
-    # Each source (context-feed, per-instrument data-log,
-    # per-instrument exposures) contributes its key set independently
-    # so generated filenames match each frontend page's requests.
+    # Each source (data-log, exposures) contributes its key set
+    # independently so generated filenames match each frontend
+    # page's requests.
     #
     # keyset_touches maps frozenset -> date-adjacency flags.
     # frozenset is used because sets are unhashable; this
@@ -540,21 +502,6 @@ def build_block_details_tasks(
             keyset_touches[frozen]["yesterday"] = True
 
     for start, end in combos:
-        # Context-feed keys (independent of instrument)
-        cf_filename = build_filename("context-feed", {"dayObsStart": start, "dayObsEnd": end})
-        cf_path = os.path.join(output_dir, cf_filename)
-        if os.path.exists(cf_path):
-            cf_keys = extract_block_keys_from_context_feed(cf_path)
-            if cf_keys:
-                _record_keyset(frozenset(cf_keys), start, end)
-        elif not dry_run:
-            logger.warning(
-                "block-details: context-feed missing for %d-%d, skipping key extraction",
-                start,
-                end,
-            )
-
-        # Data-log and exposures keys (LSSTCam only)
         dl_filename = build_filename(
             "data-log",
             {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"},
