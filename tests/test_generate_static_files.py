@@ -135,20 +135,20 @@ class TestGenerateDayobsCombinations:
     def test_max1(self):
         result = gsf.generate_dayobs_combinations(20260707, 1)
         assert result == [
-            (20260706, 20260707),
-            (20260706, 20260706),
             (20260707, 20260707),
+            (20260706, 20260706),
+            (20260706, 20260707),
         ]
 
     def test_max2(self):
         result = gsf.generate_dayobs_combinations(20260707, 2)
         assert result == [
-            (20260705, 20260707),
-            (20260705, 20260706),
-            (20260706, 20260707),
-            (20260705, 20260705),
-            (20260706, 20260706),
             (20260707, 20260707),
+            (20260706, 20260706),
+            (20260705, 20260705),
+            (20260706, 20260707),
+            (20260705, 20260706),
+            (20260705, 20260707),
         ]
 
     def test_max7_count(self):

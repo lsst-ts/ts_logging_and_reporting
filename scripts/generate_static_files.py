@@ -66,16 +66,17 @@ def generate_dayobs_combinations(today: int, max_days_ago: int, max_combo_size: 
     Generates every sub-range of [today - max_days_ago, today] with
     span capped at max_combo_size. When max_combo_size < max_days_ago,
     rolling windows of up to max_combo_size are generated across the
-    full lookback window. Ordered largest span to smallest.
+    full lookback window. Ordered smallest span first (single-day),
+    newest dates first within each span size.
     """
     if max_combo_size is None:
         max_combo_size = max_days_ago
     max_span = min(max_days_ago, max_combo_size)
     combos = []
     # span = number of days between start and end (0 = single day)
-    for span in range(max_span, -1, -1):
-        # slide the window: start_offset goes from -max_days_ago up to -span
-        for start_offset in range(-max_days_ago, -span + 1):
+    for span in range(0, max_span + 1):
+        # slide the window: newest (closest to today) first
+        for start_offset in range(-span, -max_days_ago - 1, -1):
             end_offset = start_offset + span
             start = dayobs_add_days(today, start_offset)
             end = dayobs_add_days(today, end_offset)
