@@ -1043,7 +1043,7 @@ class TestBuildDayobsTasks:
             historic_mode=False,
             output_dir=str(tmp_output_dir),
         )
-        assert len(tasks) == 22
+        assert len(tasks) == 9
         assert skipped == 0
 
     def test_task_structure(self, tmp_output_dir):
@@ -1073,11 +1073,11 @@ class TestBuildDayobsTasks:
             historic_mode=False,
             output_dir=str(tmp_output_dir),
         )
-        group_b = {"expected-exposures", "almanac", "night-reports", "context-feed"}
+        group_b = {"expected-exposures", "almanac"}
         found = {t["endpoint"] for t in tasks if t["endpoint"] in group_b}
         assert found == group_b
 
-    def test_group_c_obs_status_variants(self, tmp_output_dir):
+    def test_group_c_obs_status_variant(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
         tasks, _ = gsf.build_dayobs_tasks(
             combos,
@@ -1089,29 +1089,12 @@ class TestBuildDayobsTasks:
             output_dir=str(tmp_output_dir),
         )
         obs_tasks = [t for t in tasks if t["endpoint"] == "obs-status"]
-        assert len(obs_tasks) == 2
+        assert len(obs_tasks) == 1
+        assert obs_tasks[0]["params"]["metric"] == ["fault_loss", "weather"]
+        assert obs_tasks[0]["params"]["nightOnlyMetrics"] is True
+        assert obs_tasks[0]["params"]["includeIntervals"] is True
 
-        # Find digest variant (includeIntervals=True)
-        digest = [t for t in obs_tasks if t["params"].get("includeIntervals") is True]
-        assert len(digest) == 1
-        assert digest[0]["params"]["metric"] == ["fault_loss", "weather"]
-        assert digest[0]["params"]["nightOnlyMetrics"] is True
-
-        # Find context-feed variant (includeIntervals=False)
-        cf = [t for t in obs_tasks if t["params"].get("includeIntervals") is False]
-        assert len(cf) == 1
-        assert cf[0]["params"]["metric"] == [
-            "daytime",
-            "operational",
-            "fault",
-            "weather",
-            "downtime",
-            "idle",
-            "unknown",
-        ]
-        assert cf[0]["params"]["nightOnlyMetrics"] is False
-
-    def test_group_a_both_instruments(self, tmp_output_dir):
+    def test_group_a_single_instrument(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
         tasks, _ = gsf.build_dayobs_tasks(
             combos,
@@ -1123,8 +1106,8 @@ class TestBuildDayobsTasks:
             output_dir=str(tmp_output_dir),
         )
         exp_tasks = [t for t in tasks if t["endpoint"] == "exposures"]
-        instruments = {t["params"]["instrument"] for t in exp_tasks}
-        assert instruments == {"LATISS", "LSSTCam"}
+        assert len(exp_tasks) == 1
+        assert exp_tasks[0]["params"]["instrument"] == "LSSTCam"
 
     def test_multi_night_visit_maps_applet_mode(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
@@ -1138,9 +1121,8 @@ class TestBuildDayobsTasks:
             output_dir=str(tmp_output_dir),
         )
         mnvm_tasks = [t for t in tasks if t["endpoint"] == "multi-night-visit-maps"]
-        assert len(mnvm_tasks) == 2  # one per instrument
-        for t in mnvm_tasks:
-            assert t["params"]["appletMode"] is False
+        assert len(mnvm_tasks) == 1
+        assert mnvm_tasks[0]["params"]["appletMode"] is False
 
     def test_skips_existing_old_files(self, tmp_output_dir):
         old_combo = (20260701, 20260701)
@@ -1203,21 +1185,21 @@ class TestBuildDayobsTasks:
         almanac_tasks = [t for t in tasks if t["endpoint"] == "almanac"]
         assert len(almanac_tasks) == 0
         assert skipped == 1
-        # remaining 21 tasks should be present (files missing)
-        assert len(tasks) == 21
+        # remaining 8 tasks should be present (files missing)
+        assert len(tasks) == 8
 
     def test_skipped_count_accurate(self, tmp_output_dir):
         old_combo = (20260701, 20260701)
         combos = [old_combo]
         base_params = {"dayObsStart": 20260701, "dayObsEnd": 20260701}
 
-        # Create 5 files for old combo
-        for ep in ["almanac", "night-reports", "context-feed", "expected-exposures"]:
+        # Create files for old combo
+        for ep in ["almanac", "expected-exposures"]:
             filename = gsf.build_filename(ep, base_params)
             with open(str(tmp_output_dir / filename), "w") as f:
                 f.write("{}")
         # One instrument-specific
-        inst_params = {**base_params, "instrument": "LATISS"}
+        inst_params = {**base_params, "instrument": "LSSTCam"}
         filename = gsf.build_filename("exposures", inst_params)
         with open(str(tmp_output_dir / filename), "w") as f:
             f.write("{}")
@@ -1231,7 +1213,7 @@ class TestBuildDayobsTasks:
             historic_mode=False,
             output_dir=str(tmp_output_dir),
         )
-        assert skipped == 5
+        assert skipped == 3
 
     def test_multiple_combos(self, tmp_output_dir):
         combos = [
@@ -1248,8 +1230,8 @@ class TestBuildDayobsTasks:
             historic_mode=False,
             output_dir=str(tmp_output_dir),
         )
-        # 22 tasks per combo * 3 combos = 66
-        assert len(tasks) == 66
+        # 9 tasks per combo * 3 combos = 27
+        assert len(tasks) == 27
         assert skipped == 0
 
 
@@ -1302,13 +1284,12 @@ class TestBuildBlockDetailsTasks:
 
     def test_from_data_log(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
-        # Write data-log files for both instruments with the same key
-        for inst in ["LATISS", "LSSTCam"]:
-            dl_filename = gsf.build_filename(
-                "data-log",
-                {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": inst},
-            )
-            _write_json(str(tmp_output_dir / dl_filename), {"data_log": [{"science_program": "BLOCK-T400"}]})
+        # Write data-log file for LSSTCam only
+        dl_filename = gsf.build_filename(
+            "data-log",
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+        )
+        _write_json(str(tmp_output_dir / dl_filename), {"data_log": [{"science_program": "BLOCK-T400"}]})
 
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
@@ -1319,7 +1300,6 @@ class TestBuildBlockDetailsTasks:
             force_refresh=True,
             historic_mode=False,
         )
-        # Same key set from both instruments -> deduplicated to 1
         assert len(tasks) == 1
         assert tasks[0]["params"]["key"] == ["BLOCK-T400"]
 

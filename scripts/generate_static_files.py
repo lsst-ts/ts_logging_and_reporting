@@ -28,8 +28,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-INSTRUMENTS = ["LATISS", "LSSTCam"]
-
 OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather"]
 OBS_STATUS_CONTEXT_FEED_METRICS = [
     "daytime",
@@ -457,7 +455,7 @@ def build_dayobs_tasks(
         base_params = {"dayObsStart": start, "dayObsEnd": end}
 
         # Group B: dayobs-only endpoints
-        for endpoint in ["expected-exposures", "almanac", "night-reports", "context-feed"]:
+        for endpoint in ["expected-exposures", "almanac"]:
             _check(endpoint, base_params, start, end)
 
         # Group C: obs-status variant 1 (Digest)
@@ -475,48 +473,30 @@ def build_dayobs_tasks(
             end,
         )
 
-        # Group C: obs-status variant 2 (ContextFeed)
+        # Group A: dayobs + instrument endpoints (LSSTCam only)
+        inst_params = {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"}
+
+        for endpoint in [
+            "exposures",
+            "data-log",
+            "exposure-flags",
+            "exposure-entries",
+            "static-visit-map",
+        ]:
+            _check(endpoint, inst_params, start, end)
+
+        # multi-night-visit-maps has an extra appletMode param
         _check(
-            "obs-status",
+            "multi-night-visit-maps",
             {
                 "dayObsStart": start,
                 "dayObsEnd": end,
-                "includeEntries": True,
-                "includeIntervals": False,
-                "nightOnlyMetrics": False,
-                "metric": OBS_STATUS_CONTEXT_FEED_METRICS,
+                "instrument": "LSSTCam",
+                "appletMode": False,
             },
             start,
             end,
         )
-
-        # Group A: dayobs + instrument endpoints
-        for instrument in INSTRUMENTS:
-            inst_params = {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument}
-
-            for endpoint in [
-                "exposures",
-                "data-log",
-                "jira-tickets",
-                "narrative-log",
-                "exposure-flags",
-                "exposure-entries",
-                "static-visit-map",
-            ]:
-                _check(endpoint, inst_params, start, end)
-
-            # multi-night-visit-maps has an extra appletMode param
-            _check(
-                "multi-night-visit-maps",
-                {
-                    "dayObsStart": start,
-                    "dayObsEnd": end,
-                    "instrument": instrument,
-                    "appletMode": False,
-                },
-                start,
-                end,
-            )
 
     return tasks, skipped
 
@@ -569,31 +549,30 @@ def build_block_details_tasks(
                 end,
             )
 
-        # Data-log and exposures keys per instrument
-        for instrument in INSTRUMENTS:
-            dl_filename = build_filename(
-                "data-log",
-                {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument},
-            )
-            dl_path = os.path.join(output_dir, dl_filename)
-            if os.path.exists(dl_path):
-                dl_keys = extract_block_keys_from_data_log(dl_path)
-                if dl_keys:
-                    _record_keyset(frozenset(dl_keys), start, end)
-            elif not dry_run:
-                logger.warning("block-details: data-log missing for %d-%d %s", start, end, instrument)
+        # Data-log and exposures keys (LSSTCam only)
+        dl_filename = build_filename(
+            "data-log",
+            {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"},
+        )
+        dl_path = os.path.join(output_dir, dl_filename)
+        if os.path.exists(dl_path):
+            dl_keys = extract_block_keys_from_data_log(dl_path)
+            if dl_keys:
+                _record_keyset(frozenset(dl_keys), start, end)
+        elif not dry_run:
+            logger.warning("block-details: data-log missing for %d-%d %s", start, end, "LSSTCam")
 
-            exp_filename = build_filename(
-                "exposures",
-                {"dayObsStart": start, "dayObsEnd": end, "instrument": instrument},
-            )
-            exp_path = os.path.join(output_dir, exp_filename)
-            if os.path.exists(exp_path):
-                exp_keys = extract_block_keys_from_exposures(exp_path)
-                if exp_keys:
-                    _record_keyset(frozenset(exp_keys), start, end)
-            elif not dry_run:
-                logger.warning("block-details: exposures missing for %d-%d %s", start, end, instrument)
+        exp_filename = build_filename(
+            "exposures",
+            {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"},
+        )
+        exp_path = os.path.join(output_dir, exp_filename)
+        if os.path.exists(exp_path):
+            exp_keys = extract_block_keys_from_exposures(exp_path)
+            if exp_keys:
+                _record_keyset(frozenset(exp_keys), start, end)
+        elif not dry_run:
+            logger.warning("block-details: exposures missing for %d-%d %s", start, end, "LSSTCam")
 
     tasks = []
     skipped = 0
