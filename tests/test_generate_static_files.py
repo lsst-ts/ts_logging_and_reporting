@@ -1229,6 +1229,65 @@ class TestBuildDayobsTasks:
         assert tasks == []
         assert skipped == 0
 
+    def test_endpoint_filter_single(self, tmp_output_dir):
+        combos = [(self.TODAY, self.TODAY)]
+        tasks, _ = gsf.build_dayobs_tasks(
+            combos,
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+            output_dir=str(tmp_output_dir),
+            endpoint_filter={"exposure-flags"},
+        )
+        assert len(tasks) == 1
+        assert tasks[0]["endpoint"] == "exposure-flags"
+
+    def test_endpoint_filter_multiple(self, tmp_output_dir):
+        combos = [(self.TODAY, self.TODAY)]
+        tasks, _ = gsf.build_dayobs_tasks(
+            combos,
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+            output_dir=str(tmp_output_dir),
+            endpoint_filter={"exposure-flags", "exposure-entries"},
+        )
+        endpoints = {t["endpoint"] for t in tasks}
+        assert endpoints == {"exposure-flags", "exposure-entries"}
+        assert len(tasks) == 2
+
+    def test_endpoint_filter_none_returns_all(self, tmp_output_dir):
+        combos = [(self.TODAY, self.TODAY)]
+        tasks, _ = gsf.build_dayobs_tasks(
+            combos,
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+            output_dir=str(tmp_output_dir),
+            endpoint_filter=None,
+        )
+        assert len(tasks) == 9
+
+    def test_endpoint_filter_empty_set(self, tmp_output_dir):
+        combos = [(self.TODAY, self.TODAY)]
+        tasks, _ = gsf.build_dayobs_tasks(
+            combos,
+            self.TODAY,
+            self.YESTERDAY,
+            is_new_day=False,
+            force_refresh=True,
+            historic_mode=False,
+            output_dir=str(tmp_output_dir),
+            endpoint_filter=set(),
+        )
+        assert tasks == []
+
 
 # ---------------------------------------------------------------------------
 # Group 8: build_block_details_tasks
@@ -2112,3 +2171,108 @@ class TestMain:
         # args are (created, skipped, errors); version should be counted
         skipped_count = summary_calls[0][0][2]
         assert skipped_count >= 1
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    def test_exposure_flags_only(self, mock_dayobs, mock_run, tmp_output_dir, monkeypatch):
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--exposure-flags-only"]),
+        )
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        gsf.main()
+
+        # One _run_tasks call (dayobs only, no version, no blocks)
+        assert mock_run.call_count == 1
+        tasks = mock_run.call_args_list[0][0][0]
+        endpoints = {t["endpoint"] for t in tasks}
+        assert endpoints == {"exposure-flags"}
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    def test_exposure_entries_only(self, mock_dayobs, mock_run, tmp_output_dir, monkeypatch):
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--exposure-entries-only"]),
+        )
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        gsf.main()
+
+        assert mock_run.call_count == 1
+        tasks = mock_run.call_args_list[0][0][0]
+        endpoints = {t["endpoint"] for t in tasks}
+        assert endpoints == {"exposure-entries"}
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    @patch("generate_static_files.build_block_details_tasks", return_value=([], 0))
+    def test_mutable_only(self, mock_blocks, mock_dayobs, mock_run, tmp_output_dir, monkeypatch):
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--mutable-only"]),
+        )
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        gsf.main()
+
+        # Two _run_tasks calls: dayobs (flags+entries) and block-details
+        assert mock_run.call_count == 2
+        dayobs_tasks = mock_run.call_args_list[0][0][0]
+        endpoints = {t["endpoint"] for t in dayobs_tasks}
+        assert endpoints == {"exposure-flags", "exposure-entries"}
+        # build_block_details_tasks was called
+        mock_blocks.assert_called_once()
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    @patch("generate_static_files.build_block_details_tasks", return_value=([], 0))
+    def test_only_flags_additive(self, mock_blocks, mock_dayobs, mock_run, tmp_output_dir, monkeypatch):
+        """--exposure-flags-only and --block-details-only are additive."""
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--exposure-flags-only", "--block-details-only"]),
+        )
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        gsf.main()
+
+        # Two _run_tasks calls: dayobs (flags only) and block-details
+        assert mock_run.call_count == 2
+        dayobs_tasks = mock_run.call_args_list[0][0][0]
+        endpoints = {t["endpoint"] for t in dayobs_tasks}
+        assert endpoints == {"exposure-flags"}
+        mock_blocks.assert_called_once()
+
+    @patch("generate_static_files._run_tasks")
+    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
+    @patch("generate_static_files.build_dayobs_tasks", return_value=([], 0))
+    def test_block_details_only_skips_dayobs(
+        self, mock_build, mock_dayobs, mock_run, tmp_output_dir, monkeypatch
+    ):
+        """--block-details-only alone should not call build_dayobs_tasks."""
+        monkeypatch.setattr(
+            "generate_static_files.sys.argv",
+            self._base_argv(tmp_output_dir, ["--block-details-only"]),
+        )
+
+        with patch("generate_static_files.os.open", return_value=99):
+            with patch("generate_static_files.os.write"):
+                with patch("generate_static_files.os.close"):
+                    with patch("generate_static_files.os.unlink"):
+                        gsf.main()
+
+        mock_build.assert_not_called()
