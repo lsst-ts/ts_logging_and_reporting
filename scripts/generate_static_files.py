@@ -383,18 +383,24 @@ def build_dayobs_tasks(
     force_refresh: bool,
     historic_mode: bool,
     output_dir: str,
+    endpoint_filter: set | None = None,
 ) -> tuple:
     """Build the full list of tasks for Groups A-C and count skipped files.
 
     Returns (tasks, skipped_count) where tasks is a list of dicts
     with keys: filename, endpoint, params, start, end — only for
     files needing regeneration.
+
+    If *endpoint_filter* is given, only endpoints whose name is in
+    the set are included.
     """
     tasks = []
     skipped = 0
 
     def _check(endpoint, params, start, end):
         nonlocal skipped
+        if endpoint_filter is not None and endpoint not in endpoint_filter:
+            return
         filename = build_filename(endpoint, params)
         file_path = os.path.join(output_dir, filename)
         if should_regenerate(
@@ -657,7 +663,22 @@ def main():
     parser.add_argument(
         "--block-details-only",
         action="store_true",
-        help="Only generate block-details files (skip version and dayobs endpoints)",
+        help="Only refresh block-details files (additive with other --*-only flags)",
+    )
+    parser.add_argument(
+        "--exposure-flags-only",
+        action="store_true",
+        help="Only refresh exposure-flags files (additive with other --*-only flags)",
+    )
+    parser.add_argument(
+        "--exposure-entries-only",
+        action="store_true",
+        help="Only refresh exposure-entries files (additive with other --*-only flags)",
+    )
+    parser.add_argument(
+        "--mutable-only",
+        action="store_true",
+        help="Refresh all mutable endpoints: exposure-flags, exposure-entries, and block-details",
     )
     parser.add_argument(
         "--workers",
@@ -740,35 +761,42 @@ def main():
         # Generate all dayobs combinations
         combos = generate_dayobs_combinations(today, args.max_days, args.max_combo_size)
 
-        if not args.block_details_only:
+        # Resolve --*-only flags (additive; --mutable-only enables all three)
+        want_flags = args.exposure_flags_only or args.mutable_only
+        want_entries = args.exposure_entries_only or args.mutable_only
+        want_blocks = args.block_details_only or args.mutable_only
+        selective_mode = want_flags or want_entries or want_blocks
+
+        # Build endpoint filter for dayobs tasks (None = all endpoints)
+        endpoint_filter = None
+        run_dayobs = True
+        run_version = True
+        run_blocks = True
+        if selective_mode:
+            run_version = False
+            endpoint_filter = set()
+            if want_flags:
+                endpoint_filter.add("exposure-flags")
+            if want_entries:
+                endpoint_filter.add("exposure-entries")
+            run_dayobs = len(endpoint_filter) > 0
+            run_blocks = want_blocks
+
+        progress = Progress(0)
+
+        if run_version:
             # --- Pass 1: Group D — version (no dayobs) ---
             version_filename = "version"
             version_file_path = os.path.join(args.output_dir, version_filename)
 
-            # version: only regenerated if missing or force-refresh
             version_tasks = []
             if args.force_refresh or not os.path.exists(version_file_path):
                 version_tasks = [{"filename": version_filename, "endpoint": "version", "params": {}}]
 
-            # --- Pass 2: Groups A, B, C — dayobs endpoints ---
-            dayobs_tasks, skipped_count = build_dayobs_tasks(
-                combos,
-                today,
-                yesterday,
-                is_new_day,
-                args.force_refresh,
-                historic_mode,
-                args.output_dir,
-            )
-
-            # version skipped count
             version_skipped = 1 if (not version_tasks and os.path.exists(version_file_path)) else 0
+            progress.total += len(version_tasks)
+            progress.skipped += version_skipped
 
-            # Total updated after pass 3 planning
-            progress = Progress(len(version_tasks) + len(dayobs_tasks))
-            progress.skipped = skipped_count + version_skipped
-
-            # --- Pass 1 ---
             if version_tasks:
                 logger.info("\nVersion fetch")
                 _run_tasks(
@@ -782,7 +810,22 @@ def main():
                     args.workers,
                 )
 
-            # --- Pass 2 ---
+        if run_dayobs:
+            # --- Pass 2: Groups A, B, C — dayobs endpoints ---
+            dayobs_tasks, skipped_count = build_dayobs_tasks(
+                combos,
+                today,
+                yesterday,
+                is_new_day,
+                args.force_refresh,
+                historic_mode,
+                args.output_dir,
+                endpoint_filter=endpoint_filter,
+            )
+
+            progress.total += len(dayobs_tasks)
+            progress.skipped += skipped_count
+
             logger.info("\nStarting dayobs %d fetches (%d files)", today, len(dayobs_tasks))
             _run_tasks(
                 dayobs_tasks,
@@ -794,36 +837,34 @@ def main():
                 progress,
                 args.workers,
             )
-        else:
-            # Block-only mode: initialize progress with 0 tasks
-            progress = Progress(0)
 
-        # --- Pass 3: Group E — block-details (derived) ---
-        block_tasks, block_skipped = build_block_details_tasks(
-            combos,
-            args.output_dir,
-            today,
-            yesterday,
-            is_new_day,
-            args.force_refresh,
-            historic_mode,
-            dry_run=args.dry_run,
-        )
+        if run_blocks:
+            # --- Pass 3: Group E — block-details (derived) ---
+            block_tasks, block_skipped = build_block_details_tasks(
+                combos,
+                args.output_dir,
+                today,
+                yesterday,
+                is_new_day,
+                args.force_refresh,
+                historic_mode,
+                dry_run=args.dry_run,
+            )
 
-        progress.total += len(block_tasks)
-        progress.skipped += block_skipped
+            progress.total += len(block_tasks)
+            progress.skipped += block_skipped
 
-        logger.info("\nStarting block-details fetches (%d files)", len(block_tasks))
-        _run_tasks(
-            block_tasks,
-            args.backend_url,
-            args.output_dir,
-            args.request_timeout,
-            args.rate_limit,
-            args.dry_run,
-            progress,
-            args.workers,
-        )
+            logger.info("\nStarting block-details fetches (%d files)", len(block_tasks))
+            _run_tasks(
+                block_tasks,
+                args.backend_url,
+                args.output_dir,
+                args.request_timeout,
+                args.rate_limit,
+                args.dry_run,
+                progress,
+                args.workers,
+            )
 
         progress.summary(batch_start)
 
