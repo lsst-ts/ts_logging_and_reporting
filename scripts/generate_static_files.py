@@ -69,15 +69,20 @@ def dayobs_add_days(dayobs: int, days: int) -> int:
     return int(d.strftime("%Y%m%d"))
 
 
-def generate_dayobs_combinations(today: int, max_days_ago: int) -> list:
+def generate_dayobs_combinations(today: int, max_days_ago: int, max_combo_size: int | None = None) -> list:
     """Return all contiguous (start, end) dayobs pairs.
 
-    Generates every sub-range of [today - max_days_ago, today],
-    ordered largest span to smallest.
+    Generates every sub-range of [today - max_days_ago, today] with
+    span capped at max_combo_size. When max_combo_size < max_days_ago,
+    rolling windows of up to max_combo_size are generated across the
+    full lookback window. Ordered largest span to smallest.
     """
+    if max_combo_size is None:
+        max_combo_size = max_days_ago
+    max_span = min(max_days_ago, max_combo_size)
     combos = []
     # span = number of days between start and end (0 = single day)
-    for span in range(max_days_ago, -1, -1):
+    for span in range(max_span, -1, -1):
         # slide the window: start_offset goes from -max_days_ago up to -span
         for start_offset in range(-max_days_ago, -span + 1):
             end_offset = start_offset + span
@@ -663,7 +668,17 @@ def main():
         "--max-days",
         type=int,
         default=7,
-        help="How many days back to generate (generates all sub-ranges within the window)",
+        help="How many days back from today to include in the lookback window",
+    )
+    parser.add_argument(
+        "--max-combo-size",
+        type=int,
+        default=7,
+        help=(
+            "Maximum span (in days) for any single date-range combo. "
+            "Capped at --max-days if smaller. Allows generating a wider "
+            "lookback window with rolling combos instead of one giant range."
+        ),
     )
     parser.add_argument(
         "--request-timeout",
@@ -775,7 +790,7 @@ def main():
         logger.info("Batch started at %s UTC", start_utc)
 
         # Generate all dayobs combinations
-        combos = generate_dayobs_combinations(today, args.max_days)
+        combos = generate_dayobs_combinations(today, args.max_days, args.max_combo_size)
 
         if not args.block_details_only:
             # --- Pass 1: Group D — version (no dayobs) ---
