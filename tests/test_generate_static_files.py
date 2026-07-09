@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import pytest
@@ -163,6 +163,51 @@ class TestGenerateDayobsCombinations:
     def test_no_duplicates(self):
         result = gsf.generate_dayobs_combinations(20260707, 7)
         assert len(result) == len(set(result))
+
+    def test_max_combo_size_same_as_max_days(self):
+        """Explicit max_combo_size == max_days_ago should equal the default."""
+        default = gsf.generate_dayobs_combinations(20260707, 7)
+        explicit = gsf.generate_dayobs_combinations(20260707, 7, max_combo_size=7)
+        assert explicit == default
+
+    def test_max_combo_size_smaller_than_max_days(self):
+        """Rolling combos: 14-day window but max combo span of 2."""
+        result = gsf.generate_dayobs_combinations(20260707, 14, max_combo_size=2)
+        # No combo should span more than 2 days
+        for start, end in result:
+            diff = (gsf.dayobs_to_date(end) - gsf.dayobs_to_date(start)).days
+            assert diff <= 2, f"span {diff} exceeds max_combo_size=2: ({start}, {end})"
+        # Should cover the full 14-day lookback (15 individual days)
+        all_days = set()
+        for start, end in result:
+            d = gsf.dayobs_to_date(start)
+            while d <= gsf.dayobs_to_date(end):
+                all_days.add(int(d.strftime("%Y%m%d")))
+                d += timedelta(days=1)
+        expected_days = {int((date(2026, 7, 7) - timedelta(days=i)).strftime("%Y%m%d")) for i in range(15)}
+        assert all_days == expected_days
+
+    def test_max_combo_size_larger_than_max_days(self):
+        """max_combo_size > max_days_ago is capped."""
+        capped = gsf.generate_dayobs_combinations(20260707, 3, max_combo_size=10)
+        default = gsf.generate_dayobs_combinations(20260707, 3)
+        assert capped == default
+
+    def test_max_combo_size_1(self):
+        """max_combo_size=1 gives single-day and adjacent pairs."""
+        result = gsf.generate_dayobs_combinations(20260707, 3, max_combo_size=1)
+        for start, end in result:
+            diff = (gsf.dayobs_to_date(end) - gsf.dayobs_to_date(start)).days
+            assert diff <= 1
+        # 4 individual days + 3 adjacent pairs = 7 combos
+        assert len(result) == 7
+
+    def test_max_combo_size_0(self):
+        """max_combo_size=0 produces only single-day entries."""
+        result = gsf.generate_dayobs_combinations(20260707, 3, max_combo_size=0)
+        for start, end in result:
+            assert start == end
+        assert len(result) == 4  # today and 3 days back
 
 
 # ---------------------------------------------------------------------------
