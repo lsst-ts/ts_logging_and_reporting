@@ -30,6 +30,17 @@ _TODAY_MAX_AGE = 300
 # Long TTL for fully historical responses
 _HISTORICAL_MAX_AGE = 86400
 
+# Endpoints that always receive the short TTL because they contain mutable
+# data regardless of which dayobs is requested.
+_ALWAYS_SHORT_PATHS = frozenset(
+    {
+        "/exposure-flags",
+        "/block-details",
+        "/exposure-entries",
+        "/narrative-log",
+    }
+)
+
 
 def _today_dayobs() -> int:
     """Return the current astronomical dayobs as an integer YYYYMMDD.
@@ -53,8 +64,12 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     - ``86400`` (long) for fully historical requests whose data will not
       change.
 
-    Endpoints without dayobs parameters (``/version``, ``/health``,
-    ``/block-details``) are left untouched.
+    Endpoints without dayobs parameters (``/version``, ``/health``)
+    are left untouched.
+
+    Some endpoints (``/exposure-flags``, ``/block-details``,
+    ``/exposure-entries``, ``/narrative-log``) always receive the short
+    TTL because they contain mutable data regardless of dayobs.
 
     Query parameter names handled:
 
@@ -64,6 +79,13 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
+
+        path = request.url.path.rstrip("/")
+
+        # Mutable-data endpoints always get the short TTL.
+        if path in _ALWAYS_SHORT_PATHS:
+            response.headers["Cache-Control"] = f"public, max-age={_TODAY_MAX_AGE}"
+            return response
 
         params = request.query_params
 
