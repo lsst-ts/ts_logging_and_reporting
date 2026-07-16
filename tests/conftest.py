@@ -85,6 +85,11 @@ class FakeRedis:
                 self._purge(key)
             return list(self._data)
 
+    def flushdb(self):
+        with self._mutex:
+            self._data.clear()
+            return True
+
 
 @pytest.fixture
 def fake_redis():

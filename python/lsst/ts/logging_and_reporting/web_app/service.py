@@ -32,9 +32,35 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+from fastapi import HTTPException
+
 from .base_adapter import CachedAdapter
 
 logger = logging.getLogger(__name__)
+
+
+def flatten_sorted(data: dict[int, list[dict]], sort_field: str, descending: bool = True) -> list[dict]:
+    """Flatten per-dayobs records into one list sorted by a field.
+
+    Parameters
+    ----------
+    data : `dict` [`int`, `list` [`dict`]]
+        Records partitioned by dayobs.
+    sort_field : `str`
+        Record field to sort the flattened list by. Records missing
+        the field sort as empty strings.
+    descending : `bool`, optional
+        Sort order; descending by default (newest first for timestamp
+        fields).
+
+    Returns
+    -------
+    `list` [`dict`]
+        All records in one sorted list.
+    """
+    records = [record for dayobs in sorted(data) for record in data[dayobs]]
+    records.sort(key=lambda record: record.get(sort_field) or "", reverse=descending)
+    return records
 
 
 class Service(ABC):
@@ -66,6 +92,16 @@ class Service(ABC):
         adapter(s), merge, and return ``collate_response(merged)``.
         """
         raise NotImplementedError
+
+    def handle(self, *args: Any, **kwargs: Any) -> dict:
+        """Call `handle_request`, converting unexpected errors to 500s."""
+        try:
+            return self.handle_request(*args, **kwargs)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"{type(self).__name__} request failed")
+            raise HTTPException(status_code=500, detail=str(e))
 
     def fetch_all(self, start_dayobs: int, end_dayobs: int) -> dict[int, dict[str, Any]]:
         """Fetch the range from every adapter and merge per dayobs.

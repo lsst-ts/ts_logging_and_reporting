@@ -143,18 +143,27 @@ class RefreshWorker:
 
     def _refresh_cycle(self) -> None:
         """One pass: if leader, finalise the previous dayobs on
-        rollover, then refresh today on every adapter."""
-        if not self._acquire_leadership():
-            logger.debug("RefreshWorker: not leader this cycle, skipping")
-            return
-        today = current_dayobs_utc(dt.datetime.now(dt.timezone.utc))
-        if self._last_today is not None and today != self._last_today:
-            logger.info(
-                f"RefreshWorker: dayobs rollover {self._last_today} -> {today}; finalising {self._last_today}"
-            )
-            self._refresh_all(self._last_today)
-        self._refresh_all(today)
-        self._last_today = today
+        rollover, then refresh today on every adapter.
+
+        Never raises — a failure here (e.g. transient Redis
+        connectivity in the leadership check) is logged and the cycle
+        retried at the next interval, so the worker thread cannot die.
+        """
+        try:
+            if not self._acquire_leadership():
+                logger.debug("RefreshWorker: not leader this cycle, skipping")
+                return
+            today = current_dayobs_utc(dt.datetime.now(dt.timezone.utc))
+            if self._last_today is not None and today != self._last_today:
+                logger.info(
+                    f"RefreshWorker: dayobs rollover {self._last_today} -> {today}; "
+                    f"finalising {self._last_today}"
+                )
+                self._refresh_all(self._last_today)
+            self._refresh_all(today)
+            self._last_today = today
+        except Exception:
+            logger.exception("RefreshWorker: refresh cycle failed")
 
     def _refresh_all(self, dayobs: int) -> None:
         for adapter in self._adapters:
