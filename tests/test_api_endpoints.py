@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
+from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     JIRA_BLOCK_BASE_URL,
@@ -718,6 +719,12 @@ def mock_requests_post():
     patcher.stop()
 
 
+@pytest.fixture
+def exposurelog_cache(fake_redis, monkeypatch):
+    monkeypatch.setattr(get_exposurelog_adapter(), "_redis", fake_redis)
+    return fake_redis
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -766,15 +773,15 @@ def test_nightreport_endpoint(mock_requests_get, monkeypatch):
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-def test_exposure_entries_endpoint(mock_requests_get, monkeypatch):
-    endpoint = "/exposure-entries?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    _test_endpoint_authentication(endpoint, monkeypatch)
+def test_exposure_entries_endpoint(mock_requests_get, monkeypatch, exposurelog_cache):
+    monkeypatch.setenv("ACCESS_TOKEN", "env-token")
+    endpoint = "/exposure-entries?dayObsStart=20250730&dayObsEnd=20250731&instrument=LSSTCam"
 
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.json()
     assert "exposure_entries" in data
+    assert len(data["exposure_entries"]) == 1
     expected_entry_params = [
         "id",
         "instrument",
@@ -796,7 +803,29 @@ def test_exposure_entries_endpoint(mock_requests_get, monkeypatch):
     for entry in data["exposure_entries"]:
         for param in expected_entry_params:
             assert param in entry, f"Missing {param} in exposure entry: {entry}"
-    app.dependency_overrides.pop(rsp_auth, None)
+
+    # Second identical request is served from the cache
+    mock_requests_get.reset_mock()
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    mock_requests_get.assert_not_called()
+
+    # A cold fetch with no token source available fails auth
+    exposurelog_cache.flushdb()
+    monkeypatch.delenv("ACCESS_TOKEN")
+    response = client.get(endpoint)
+    assert response.status_code == 401
+
+
+def test_exposure_flags_endpoint(mock_requests_get, monkeypatch, exposurelog_cache):
+    monkeypatch.setenv("ACCESS_TOKEN", "env-token")
+    endpoint = "/exposure-flags?dayObsStart=20250730&dayObsEnd=20250731&instrument=LSSTCam"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    assert response.json() == {
+        "exposure_flags": [{"obs_id": "MC_O_20250730_000001", "exposure_flag": "junk"}]
+    }
 
 
 def test_exposures_endpoint_returns_updated_fields(monkeypatch):
