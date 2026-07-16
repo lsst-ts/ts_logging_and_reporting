@@ -35,10 +35,20 @@ extend `CachedAdapter`. For adapters whose external calls are cheap, the TTL and
 is negligible; the consistency of the pattern is worth more than the optimisation of skipping it.
 
 **Services are thin, singleton instances injected via `Depends()`**
-Each `Service` subclass is instantiated once at startup with its adapters wired in. FastAPI's
-`Depends()` injects the singleton into each endpoint. The service's `handle_request` calls
-adapter(s), merges per-dayobs results, and returns via `collate_response`. No Redis interaction
-occurs in the service layer.
+Each `Service` subclass is instantiated once per process, with its adapters wired in, by a
+`functools.cache` getter in its own module (adapters likewise expose `get_<name>_adapter()`
+getters — one natural owner even when several services share an adapter). FastAPI's `Depends()`
+injects the singleton into each endpoint. The service's `handle_request` calls adapter(s),
+merges per-dayobs results, and returns via `collate_response`. No Redis interaction occurs in
+the service layer.
+
+**Watch the `dayObsEnd` convention per endpoint**
+The cache loop enumerates dayobs inclusively, but the HTTP contract is not uniform:
+`/exposure-entries` and `/exposure-flags` receive an exclusive `dayObsEnd` (the frontend treats
+the user's end date as inclusive and sends end + 1 day), so their services convert with
+`fetch(start, end − 1 day)`. Other endpoints may or may not follow this convention — verify
+each one's actual frontend usage as its chunk is migrated, and put the conversion (if any) in
+the service so cache keys stay per-dayobs.
 
 **Dict of adapters per Service**
 Each `Service` holds a `dict[str, CachedAdapter]`. In the common case this has one entry, but
@@ -226,16 +236,20 @@ CachedAdapter (ABC)
 │              cache with a short sleep (~100 ms) until the entry appears. If
 │              the lock expires with no entry appearing (the other fetch failed
 │              or its holder died), retry acquisition from step 5.
-│       6. Call _fetch_from_source(won_dayobs) as a single batch. Any upstream
-│          error propagates immediately and the entire request fails — partial
-│          data is never returned. Won locks are released (DEL) in a finally
-│          block, success or failure, so waiters are unblocked promptly.
+│       6. Double-check the cache for each won lock — another request may have
+│          stored the entry (and released its lock) between our cache check and
+│          the lock win. Hits are served and their locks released; only the
+│          still-missing dayobs proceed to the fetch.
+│       7. Call _fetch_from_source(still_missing) as a single batch. Any
+│          upstream error propagates immediately and the entire request fails —
+│          partial data is never returned. Won locks are released (DEL) in a
+│          finally block, success or failure, so waiters are unblocked promptly.
 │          (Unconditional DEL suffices: if a lock expired mid-fetch and was
 │          re-acquired, deleting the new holder's lock costs at worst one
 │          redundant upstream fetch. A per-request token with compare-on-delete
 │          would close even that — not worth the complexity here.)
-│       7. Store each result via _store(dayobs, data).
-│       8. Return the complete dict[int, Any] for the full range.
+│       8. Store each result via _store(dayobs, data).
+│       9. Return the complete dict[int, Any] for the full range.
 │
 ├── _fetch_from_source(dayobs_list: list[int]) -> dict[int, Any]
 │     Abstract. Called with only the cache-missing dayobs, which may be
@@ -328,9 +342,16 @@ Service (ABC)
 │
 ├── handle_request(...) -> dict
 │     Abstract. Each subclass defines its own typed signature. Implementation:
-│       1. Call each adapter's fetch(start_dayobs, end_dayobs).
-│       2. Merge per-dayobs results across adapters into dict[int, dict[str, Any]].
-│       3. Return collate_response(merged).
+│       1. Convert the endpoint's exclusive dayObsEnd to the inclusive range
+│          the cache loop uses (the frontend sends end + 1 day).
+│       2. Call each adapter's fetch(start_dayobs, end_dayobs).
+│       3. Merge per-dayobs results across adapters into dict[int, dict[str, Any]].
+│       4. Return collate_response(merged).
+│
+├── handle(*args) -> dict
+│     Concrete. Calls handle_request, letting HTTPException pass through and
+│     converting any other exception into a logged HTTP 500. Endpoints call
+│     this rather than handle_request.
 │
 └── collate_response(data: dict[int, Any]) -> dict
       Abstract (for now — a concrete default may be extracted once the first
@@ -338,6 +359,16 @@ Service (ABC)
       into the final response payload. Visualisation services (e.g.
       VisitMapsService) build multi-night figures from the per-night data.
 ```
+
+`service.py` also provides `flatten_sorted(data, sort_field, descending=True)` — flattens
+per-dayobs record lists into one list ordered by a record field.
+
+**Singletons via cached getters:** each adapter module exposes a `functools.cache` getter
+(e.g. `get_exposurelog_adapter()`) built on the shared `get_redis_client()`, and each service
+module likewise (`get_exposure_entries_service()`). Endpoints inject services with
+`Depends(get_..._service)`, and `main.py` imports the adapter getters to register the
+`RefreshWorker` — composition is distributed to the modules rather than centralised in
+`main.py`, so adapters shared by several services have one natural owner.
 
 ---
 
@@ -372,6 +403,9 @@ RefreshWorker
            with the long historical TTL).
         3. Call refresh(today) on each adapter, logging failures per-adapter
            without aborting the loop.
+      A cycle never raises — failures (e.g. transient Redis connectivity in
+      the leadership check) are logged and the cycle retried next interval,
+      so the worker thread cannot die.
 ```
 
 ---
@@ -379,28 +413,26 @@ RefreshWorker
 ### How They Work Together
 
 ```
-Startup:
-  redis = Redis(...)
-  exposurelog_adapter = ExposurelogCachedAdapter(redis)
-  exposure_entries_service = ExposureEntriesService(
-      adapters={"exposurelog": exposurelog_adapter}
-  )
+Startup (singletons come from functools.cache getters in their own modules):
+  refresh_worker = RefreshWorker([get_exposurelog_adapter(), ...], get_redis_client())
+  # started/stopped by the FastAPI lifespan; the immediate first cycle
+  # warms today's entries
 
-  worker = RefreshWorker([exposurelog_adapter, ...], redis, interval_seconds=300)
-  worker.start()  # immediate first cycle warms today's entries
-
-Request: GET /exposure-entries?dayObsStart=20250101&dayObsEnd=20250107&instrument=LSSTCam
+Request: GET /exposure-entries?dayObsStart=20250101&dayObsEnd=20250108&instrument=LSSTCam
   1. DayobsValidationMiddleware validates params
-  2. FastAPI resolves Depends(get_exposure_entries_service) → exposure_entries_service
-  3. Endpoint calls exposure_entries_service.handle_request(20250101, 20250107, "LSSTCam")
-  4. handle_request calls exposurelog_adapter.fetch(20250101, 20250107)
+  2. FastAPI resolves Depends(get_exposure_entries_service)
+  3. Endpoint calls service.handle(20250101, 20250108, "LSSTCam")
+  4. handle_request converts the exclusive dayObsEnd and calls
+     exposurelog_adapter.fetch(20250101, 20250107)
   5. Inside fetch() cache loop:
        - 20250101–20250106: cache hits, returned immediately
        - 20250107: cache miss → single-flight lock acquired →
-         _fetch_from_source([20250107]) called
+         _fetch_from_source([20250107]) called (service-account token,
+         all instruments)
        - Result stored in Redis with short TTL (today)
        - Returns {20250101: ..., ..., 20250107: ...}
-  6. handle_request passes the full dict to collate_response and returns
+  6. handle_request filters to the requested instrument (the cache holds all
+     instruments per dayobs) and returns collate_response(filtered)
   7. CacheControlMiddleware adds "Cache-Control: public, max-age=300"
      (/exposure-entries is an always-short path; other endpoints get max-age=300
      only when today is in the requested range, max-age=86400 otherwise)
@@ -480,37 +512,23 @@ pattern in the codebase.
 
 ### Authentication
 
-> **This is unresolved and needs input before implementation begins.**
+**Resolved: service-level credentials.**
 
-The current code passes the user's RSP token through to upstream API calls (exposurelog,
-narrativelog, Jira, etc.). With singleton adapters and a shared cache this is problematic: the
-cache is keyed by `(adapter, dayobs)`, not by user, so whoever triggers a cache miss donates
-their token to populate an entry shared by all users.
+The pre-refactor code passed the user's RSP token through to upstream API calls, which clashes
+with singleton adapters and a shared cache: the cache is keyed by `(adapter, dayobs)`, not by
+user, so whoever triggered a cache miss would donate their token to populate an entry shared by
+all users.
 
-The resolution depends on whether upstream APIs support service account tokens:
+Instead, adapters resolve a service-account token per fetch from the source configured by their
+`auth_source` (`AUTH_SOURCES` in `utils.py`: environment variable such as `ACCESS_TOKEN`, or RSP
+notebook utilities) — implemented in `RestCachedAdapter._get_token()`. Resolving at fetch time
+rather than startup means token rotation needs no restart. No token is passed at request time,
+and endpoints on the new pattern no longer read per-request `Authorization` headers; user
+authentication is enforced upstream by the RSP gateway (internal) or nginx/ingress (public).
 
-**Option A — Service-level credentials (preferred)**
-Each adapter is configured at startup with a service account token (from a k8s secret or env
-var) for its upstream API. No token is passed at request time. The RSP gateway (internal) or
-nginx/ingress (public) handles user authentication before requests reach this application. The
-public deployment works identically — same service account model, different auth enforcement
-point.
-
-This fits cleanly with the singleton adapter model and requires no changes to adapter method
-signatures.
-
-**Option B — Per-request token pass-through (fallback)**
-If upstream APIs require per-user RSP tokens, the token must be threaded through the call chain:
-`handle_request(..., token=token)` → `adapter.fetch(..., token=token)` →
-`_fetch_from_source(dayobs_list, token=token)`. The adapter uses whichever token triggered a
-cache miss for the external call; subsequent requests for the same dayobs are served from cache
-with no token needed.
-
-This works but complicates adapter signatures and means the user who triggers a cold cache miss
-is the one whose token is used for the upstream fetch.
-
-**Action required**: confirm with the RSP/services team whether upstream APIs support service
-account tokens, or require per-user tokens.
+The rejected alternative — threading per-request tokens through
+`handle_request → fetch → _fetch_from_source` — would have complicated every adapter signature
+and still meant one user's token populating a shared cache entry.
 
 ---
 
@@ -532,13 +550,12 @@ HTTP layer without touching the adapter or service code.
    requests. Mutable-data endpoints (`/exposure-flags`, `/block-details`, `/exposure-entries`,
    `/narrative-log`) always receive the short value regardless of the requested range.
 
-2. ⬜ **To do** — configure the nginx reverse proxy (frontend repo) to cache responses that
-   carry a `Cache-Control` header with a positive `max-age`. Key directives:
-   `proxy_cache_path`, `proxy_cache_valid`, `proxy_cache_use_stale`, and `proxy_cache_lock`
-   (collapses concurrent identical requests so only one is forwarded to the backend while the
-   rest wait for the cached response — the HTTP-layer half of the stampede protection). The
-   cache should be keyed on the full request URL so that different dayobs ranges are cached
-   independently.
+2. ✅ **Done (dev stack)** — the frontend repo's `docker/nginx.conf` configures the proxy
+   cache: `proxy_cache_path`, `Cache-Control` pass-through, full-URL cache key,
+   `proxy_cache_use_stale`, and `proxy_cache_lock` (collapses concurrent identical requests
+   so only one is forwarded to the backend while the rest wait for the cached response — the
+   HTTP-layer half of the stampede protection), plus an `X-Cache-Status` debug header.
+   Production ingress must be configured to match.
 
 **Why first:**
 
@@ -558,11 +575,12 @@ HTTP layer without touching the adapter or service code.
 | `web_app/middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
 | `web_app/middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
 | `web_app/middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
-| `web_app/base_adapter.py` | `BaseAdapter` ABC, `CachedAdapter` ABC, `IdBasedAdapter` ABC, and the `dayobs_range` / `contiguous_runs` helpers |
-| `web_app/service.py` | `Service` ABC |
-| `web_app/refresh_worker.py` | `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
-| `adapters/http.py` | Shared HTTP helpers (`protected_get`, `protected_post`) extracted from `source_adapters.py` |
-| `adapters/exposurelog.py` | `ExposurelogCachedAdapter` (moved from `source_adapters.py`) |
+| `web_app/base_adapter.py` | ✅ `BaseAdapter` ABC, `CachedAdapter` ABC, `IdBasedAdapter` ABC, and the `dayobs_range` / `contiguous_runs` helpers |
+| `web_app/service.py` | ✅ `Service` ABC (with the `handle()` error wrapper) and the `flatten_sorted()` collation helper |
+| `web_app/refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
+| `web_app/redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
+| `adapters/http.py` | ✅ `RestCachedAdapter` ABC — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GETs that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers) |
+| `adapters/exposurelog.py` | ✅ `ExposurelogCachedAdapter` (rewritten from `exposure_log.py`, which becomes deletable) — caches all instruments together per dayobs key; services filter by instrument at collation |
 | `adapters/narrativelog.py` | `NarrativelogCachedAdapter` (moved from `source_adapters.py`) |
 | `adapters/nightreport.py` | `NightReportCachedAdapter` (moved from `source_adapters.py`) |
 | `adapters/consdb.py` | `ConsdbCachedAdapter` (moved from `consdb.py`) |
@@ -574,27 +592,38 @@ HTTP layer without touching the adapter or service code.
 | `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_visits.py` | `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/expected_exposures.py` | `ExpectedExposuresCachedAdapter` (split from `scheduler_service.py`) |
-| `adapters/__init__.py` | Exports all adapter classes |
+| `adapters/__init__.py` | ✅ Exists — exports adapter classes |
 | `web_app/services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
 | `web_app/services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
 | `web_app/services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py` / `scheduler_service.py`) |
 
 ### Modified Files
 
-**`docker-compose.yml`** (frontend repo)
+**`docker/docker-compose.yaml`** (frontend repo) — ✅ done
 
-- Add a `redis` service with the recommended configuration (`maxmemory`, `maxmemory-policy allkeys-lru`, persistence disabled)
+- `redis` service added with the recommended cache configuration (`maxmemory` via
+  `REDIS_MAX_MEMORY`, default 512mb; `allkeys-lru`; RDB and AOF persistence disabled), a
+  healthcheck, and the port published for host-side `redis-cli` / `scripts/perf_test.py`
+- `backend` service gets `REDIS_HOST`/`REDIS_PORT` env vars and depends on redis being healthy
 
-**`nginx.conf`** (frontend repo)
+**`docker/nginx.conf`** (frontend repo) — ✅ already configured
 
-- Add proxy cache configuration (`proxy_cache_path`, `proxy_cache_valid`, `proxy_cache_use_stale`, `proxy_cache_lock`) so the nginx proxy caches responses that carry a positive `Cache-Control: max-age` header and collapses concurrent identical requests
+- Proxy cache with `Cache-Control` pass-through, full-URL key, `proxy_cache_use_stale`, and
+  `proxy_cache_lock` (request collapsing)
 
 **`source_adapters.py`** → **deleted**
 
-- `NightReportAdapter`, `NarrativelogAdapter`, and `ExposurelogAdapter` each move to their own
-  file (see new files below)
-- `SourceAdapter` ABC is removed entirely (replaced by `BaseAdapter` / `CachedAdapter`)
-- HTTP helpers (`protected_get`, `protected_post`) move to a shared `adapters/http.py` utility
+- `NightReportAdapter` and `NarrativelogAdapter` are superseded by their `adapters/` rewrites
+- `SourceAdapter` ABC is removed entirely (replaced by `BaseAdapter` / `CachedAdapter` /
+  `RestCachedAdapter`)
+- The `protected_get` / `protected_post` helpers are superseded by
+  `RestCachedAdapter._get_json`, which raises on failure instead of returning
+  `(ok, result, code)` tuples
+
+**`exposure_log.py`** → **deleted** — ✅ superseded
+
+- `ExposurelogAdapter` is superseded by `adapters/exposurelog.py`; the file can be removed once
+  no notebook/report code imports it (cleanup step)
 
 **`consdb.py`** → **deleted**, moved to `adapters/consdb.py`
 
@@ -614,22 +643,29 @@ HTTP layer without touching the adapter or service code.
   - `JiraBlockAdapter(IdBasedAdapter)` — implements `fetch_by_ids(ids)` wrapping
     `fetch_block_ticket_summaries()`; held by `BlockDetailsService`
 
-**`web_app/main.py`**
+**`web_app/main.py`** — partially done
 
-- Register all four middleware classes (error handling first, then public access, then dayobs
-  validation, then cache control)
-- Replace each data endpoint body with a single `Depends()`-injected service call
-- Add `startup` and `shutdown` event handlers to start/stop `RefreshWorker`
-- Add module-level singleton instantiation of all `Service` subclasses, their adapters, and the
-  `RefreshWorker`
+- ✅ `RefreshWorker` started/stopped via the FastAPI lifespan
+- ✅ Logging configured once via `logging.basicConfig` from the `LOG_LEVEL` env var (default
+  INFO), format including the logger name; new modules use `logging.getLogger(__name__)`
+- ✅ `/exposure-flags` and `/exposure-entries` switched: plain `def` endpoints (FastAPI's
+  threadpool handles the blocking fetch) that inject their service via
+  `Depends(get_..._service)` and delegate to `service.handle(...)`
+- ⬜ Remaining data endpoints switch to the same pattern as their chunks land
+- ⬜ Register the remaining middleware classes (error handling first, then public access, then
+  dayobs validation, then cache control)
+- Singleton instantiation lives in the adapter/service modules as cached getters, not in
+  `main.py`; main only imports getters
 - Endpoints without a `Service` (`/version`, `/health`, `/mock-exposures`) remain as simple
   route functions
 
-**`web_app/services/exposurelog_service.py`**
+**`web_app/services/exposurelog_service.py`** — ✅ done
 
-- Replace `get_exposure_flags()` and `get_exposurelog_entries()` with
-  `ExposureFlagsService(Service)` and `ExposureEntriesService(Service)`, both using a shared
-  `ExposurelogCachedAdapter` instance
+- `get_exposure_flags()` and `get_exposurelog_entries()` replaced by
+  `ExposureFlagsService(Service)` and `ExposureEntriesService(Service)`, sharing the cached
+  adapter via `get_exposurelog_adapter()`
+- Services convert the exclusive `dayObsEnd` to the inclusive cache range and filter by
+  instrument (and flag values) at collation time
 
 **`web_app/services/consdb_service.py`**
 
@@ -722,7 +758,8 @@ HTTP layer without touching the adapter or service code.
 
 | Item | Reason |
 |---|---|
-| `source_adapters.py` | Split into `adapters/exposurelog.py`, `adapters/narrativelog.py`, `adapters/nightreport.py`; `SourceAdapter` ABC replaced by `BaseAdapter` / `CachedAdapter` |
+| `source_adapters.py` | Superseded by `adapters/narrativelog.py`, `adapters/nightreport.py`, and `RestCachedAdapter`; `SourceAdapter` ABC replaced by `BaseAdapter` / `CachedAdapter` |
+| `exposure_log.py` | Superseded by `adapters/exposurelog.py` |
 | `consdb.py` | Moved to `adapters/consdb.py` |
 | `almanac.py` | Moved to `adapters/almanac.py` |
 | `jira.py` | Moved to `adapters/jira.py` |
@@ -735,10 +772,11 @@ HTTP layer without touching the adapter or service code.
 After Step 0 (cache-control middleware + nginx), the main refactor should proceed in this order
 to validate the pattern on simpler cases before tackling the riskiest parts:
 
-1. **`base_adapter.py` and `service.py` ABCs** — lay the foundation everything else builds on
-2. **Simple REST adapters** — `ExposurelogCachedAdapter`, `NarrativelogCachedAdapter`,
-   `NightReportCachedAdapter`, `AlmanacCachedAdapter`, `JiraObsCachedAdapter` — well-understood,
-   fast to implement, validate the caching pattern end-to-end
+1. ✅ **`base_adapter.py` and `service.py` ABCs** — lay the foundation everything else builds on
+2. **Simple REST adapters** — ✅ `ExposurelogCachedAdapter` (the pattern-validating vertical
+   slice: adapter + services + endpoint switch, done end-to-end); remaining:
+   `NarrativelogCachedAdapter`, `NightReportCachedAdapter`, `AlmanacCachedAdapter`,
+   `JiraObsCachedAdapter`
 3. **Service layer refactor** — once adapters exist the services are thin and quick; do all of
    them together
 4. **`BlockDetailsService` + ID-based adapters** — `JiraBlockAdapter` and `ZephyrAdapter`
