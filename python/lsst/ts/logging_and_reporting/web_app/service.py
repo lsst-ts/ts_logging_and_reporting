@@ -34,7 +34,7 @@ from typing import Any
 
 from .base_adapter import CachedAdapter
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger(__name__)
 
 
 class Service(ABC):
