@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.web_app.service import Service
 
@@ -46,3 +47,34 @@ class TestService:
         )
         response = service.handle_request(20250101, 20250102)
         assert response == {"results": [{"one": "earlier"}, {"one": "later"}]}
+
+
+class FailingService(Service):
+    def __init__(self, error):
+        super().__init__(adapters={})
+        self.error = error
+
+    def handle_request(self):
+        raise self.error
+
+    def collate_response(self, data):
+        return {}
+
+
+class TestHandle:
+    def test_unexpected_error_becomes_500(self):
+        service = FailingService(ValueError("upstream exploded"))
+        with pytest.raises(HTTPException) as exc_info:
+            service.handle()
+        assert exc_info.value.status_code == 500
+        assert "upstream exploded" in exc_info.value.detail
+
+    def test_http_exception_passes_through(self):
+        service = FailingService(HTTPException(status_code=401, detail="no token"))
+        with pytest.raises(HTTPException) as exc_info:
+            service.handle()
+        assert exc_info.value.status_code == 401
+
+    def test_success_returns_response(self):
+        service = PassthroughService(adapters={"one": StubAdapter("one", {20250101: "x"})})
+        assert service.handle(20250101, 20250101) == {"results": [{"one": "x"}]}

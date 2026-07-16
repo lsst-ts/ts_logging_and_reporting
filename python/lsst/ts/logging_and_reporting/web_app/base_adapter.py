@@ -213,10 +213,21 @@ class _SingleFlightCache:
         while pending:
             won = [key for key in pending if self._acquire_lock(key)]
             lost = [key for key in pending if key not in won]
-            if won:
+            # Double-check won keys: another request may have stored
+            # the entry (and released its lock) between our cache
+            # check and winning the lock.
+            to_fetch = []
+            for key in won:
+                hit, value = self._check_cache(key)
+                if hit:
+                    results[key] = value
+                    self._release_lock(key)
+                else:
+                    to_fetch.append(key)
+            if to_fetch:
                 try:
-                    fetched = self._fetch_from_source(won)
-                    for key in won:
+                    fetched = self._fetch_from_source(to_fetch)
+                    for key in to_fetch:
                         if key not in fetched:
                             raise KeyError(
                                 f"{type(self).__name__}._fetch_from_source did not "
@@ -226,7 +237,7 @@ class _SingleFlightCache:
                         self._store(key, fetched[key])
                         results[key] = fetched[key]
                 finally:
-                    for key in won:
+                    for key in to_fetch:
                         self._release_lock(key)
             pending = []
             for key in lost:
