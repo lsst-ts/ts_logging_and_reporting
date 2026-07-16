@@ -22,7 +22,9 @@
 
 import base64
 import logging
+import os
 import re
+from contextlib import asynccontextmanager
 from typing import Any, List
 
 import pandas as pd
@@ -33,6 +35,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
@@ -44,13 +47,15 @@ from lsst.ts.logging_and_reporting.utils import (
 
 from .. import __version__
 from .middleware import CacheControlMiddleware
+from .redis_client import get_redis_client
+from .refresh_worker import RefreshWorker
 from .services.almanac_service import get_almanac
 from .services.consdb_service import (
     get_data_log,
     get_exposures,
     get_mock_exposures,
 )
-from .services.exposurelog_service import get_exposure_flags, get_exposurelog_entries
+from .services.exposurelog_service import get_exposure_entries_service, get_exposure_flags_service
 from .services.jira_service import get_block_ticket_summaries, get_jira_tickets
 from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
@@ -74,11 +79,29 @@ rsp_auth = get_access_token()
 jira_auth = get_access_token("jira")
 zephyr_auth = get_access_token("zephyr")
 
-logger = logging.getLogger("uvicorn.error")
-logger.setLevel(logging.DEBUG)
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+refresh_worker = RefreshWorker([get_exposurelog_adapter()], get_redis_client())
 
 
-app = FastAPI(root_path="/nightlydigest/api", docs_url="/docs", openapi_url="/openapi.json", redoc_url=None)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    refresh_worker.start()
+    yield
+    refresh_worker.stop()
+
+
+app = FastAPI(
+    root_path="/nightlydigest/api",
+    docs_url="/docs",
+    openapi_url="/openapi.json",
+    redoc_url=None,
+    lifespan=lifespan,
+)
 
 origins = [
     "http://localhost:5173",  # Vite
@@ -326,47 +349,31 @@ async def read_narrative_log(
 
 
 @app.get("/exposure-flags")
-async def read_exposure_flags(
-    request: Request,
+def read_exposure_flags(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(get_exposure_flags_service),
 ):
     logger.info(
         f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
-    try:
-        flags = get_exposure_flags(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        return {
-            "exposure_flags": flags,
-        }
-    except Exception as e:
-        logger.error(f"Error in /exposure-flags: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.handle(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/exposure-entries")
-async def read_exposure_entries(
-    request: Request,
+def read_exposure_entries(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(get_exposure_entries_service),
 ):
     logger.info(
         f"Getting Exposure Log entries for dayObsStart: {dayObsStart}, "
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
-    try:
-        entries = get_exposurelog_entries(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        return {
-            "exposure_entries": entries,
-        }
-    except Exception as e:
-        logger.error(f"Error in /exposure-entries: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.handle(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/night-reports")
