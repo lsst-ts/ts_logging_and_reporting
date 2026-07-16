@@ -22,7 +22,7 @@
 
 """Service base class for the adapter-backed endpoint architecture.
 
-See BACKEND_REFACTOR_PLAN.md section 2. Services are thin collators:
+Services are thin collators:
 each subclass calls its adapter(s), merges the per-dayobs results, and
 returns via ``collate_response``. All caching lives in the adapter
 layer; no Redis interaction occurs here.

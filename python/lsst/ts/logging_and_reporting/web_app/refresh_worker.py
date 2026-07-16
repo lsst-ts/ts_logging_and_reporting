@@ -22,7 +22,7 @@
 
 """Background worker that keeps today's cache entries warm.
 
-See BACKEND_REFACTOR_PLAN.md section 2. The worker's fetch-then-
+The worker's fetch-then-
 overwrite cycle (via ``CachedAdapter.refresh``) means today's entry —
 the stampede-prone hot key — never misses under normal operation, and
 user requests for today never trigger an external fetch directly.
