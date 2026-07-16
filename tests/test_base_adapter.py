@@ -208,6 +208,22 @@ class TestSingleFlight:
         adapter.fetch(20250101, 20250101)
         assert fake_redis.exists("lock:adapter:recording:20250101") == 0
 
+    def test_lock_winner_rechecks_cache_before_fetching(self, fake_redis):
+        adapter = RecordingAdapter(fake_redis)
+        real_acquire = adapter._acquire_lock
+
+        def acquire_after_other_request_stored(key):
+            # Another request stores the entry and releases its lock
+            # in the window between our cache check and lock win.
+            fake_redis.set(adapter._cache_key(key), '"other-result"', ex=60)
+            return real_acquire(key)
+
+        adapter._acquire_lock = acquire_after_other_request_stored
+        result = adapter.fetch(20250101, 20250101)
+        assert result == {20250101: "other-result"}
+        assert adapter.calls == []
+        assert fake_redis.exists("lock:adapter:recording:20250101") == 0
+
 
 class TestIdBasedAdapter:
     def test_cold_and_hot_by_id(self, fake_redis):

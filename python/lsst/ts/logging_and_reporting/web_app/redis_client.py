@@ -37,6 +37,7 @@ below only bound how long a request can hang if that assumption
 breaks.
 """
 
+import functools
 import logging
 import os
 
@@ -75,3 +76,8 @@ def create_redis_client() -> redis.Redis:
         socket_connect_timeout=5,
         socket_timeout=5,
     )
+
+
+@functools.cache
+def get_redis_client() -> redis.Redis:
+    return create_redis_client()
