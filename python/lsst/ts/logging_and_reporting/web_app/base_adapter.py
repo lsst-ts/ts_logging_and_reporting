@@ -22,7 +22,7 @@
 
 """Adapter base classes for the Redis-backed caching architecture.
 
-See BACKEND_REFACTOR_PLAN.md section 2 for the design. Adapters own
+Adapters own
 data fetching and caching; the service layer only collates. The cache
 loop (including single-flight stampede protection) lives here, and
 cache keys are derived from each adapter's ``name``, so concrete

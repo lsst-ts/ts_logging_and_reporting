@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """Before/after performance measurement for the backend refactor.
 
-See BACKEND_REFACTOR_PLAN.md section 6 ("Performance Testing") for the
-methodology this script implements.
-
 Running the backend under test
 ------------------------------
 Start the API server with the package's console script (serves uvicorn
