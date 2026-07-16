@@ -38,7 +38,7 @@ from typing import Any
 
 from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger(__name__)
 
 SECONDS_PER_DAY = 86400
 
