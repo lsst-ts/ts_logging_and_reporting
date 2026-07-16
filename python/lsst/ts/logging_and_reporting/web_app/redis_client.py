@@ -42,7 +42,7 @@ import os
 
 import redis
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger(__name__)
 
 
 def create_redis_client() -> redis.Redis:

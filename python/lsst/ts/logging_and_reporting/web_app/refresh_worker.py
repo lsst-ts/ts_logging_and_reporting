@@ -63,7 +63,7 @@ from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
 
 from .base_adapter import CachedAdapter
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger(__name__)
 
 LEADER_LOCK_KEY = "lock:refresh_worker:leader"
 
