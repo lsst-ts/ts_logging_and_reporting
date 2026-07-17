@@ -365,10 +365,12 @@ per-dayobs record lists into one list ordered by a record field.
 
 **Singletons via cached getters:** each adapter module exposes a `functools.cache` getter
 (e.g. `get_exposurelog_adapter()`) built on the shared `get_redis_client()`, and each service
-module likewise (`get_exposure_entries_service()`). Endpoints inject services with
-`Depends(get_..._service)`, and `main.py` imports the adapter getters to register the
-`RefreshWorker` — composition is distributed to the modules rather than centralised in
-`main.py`, so adapters shared by several services have one natural owner.
+module likewise (`get_exposure_entries_service()`). The `adapters` and `web_app/services`
+package `__init__`s re-export the getters (getters only, not the classes), so `main.py`
+imports the two namespaces rather than individual modules: endpoints inject services with
+`Depends(services.get_..._service)`, and the `RefreshWorker` list is built from
+`adapters.get_..._adapter()` calls — composition is distributed to the modules rather than
+centralised in `main.py`, so adapters shared by several services have one natural owner.
 
 ---
 
@@ -581,10 +583,10 @@ HTTP layer without touching the adapter or service code.
 | `web_app/redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
 | `adapters/http.py` | ✅ `RestCachedAdapter` ABC — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GETs that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers) |
 | `adapters/exposurelog.py` | ✅ `ExposurelogCachedAdapter` (rewritten from `exposure_log.py`, which becomes deletable) — caches all instruments together per dayobs key; services filter by instrument at collation |
-| `adapters/narrativelog.py` | `NarrativelogCachedAdapter` (moved from `source_adapters.py`) |
-| `adapters/nightreport.py` | `NightReportCachedAdapter` (moved from `source_adapters.py`) |
+| `adapters/narrativelog.py` | ✅ `NarrativelogCachedAdapter` (rewritten from `source_adapters.py`) — queries the upstream `date_begin` window noon-to-noon per contiguous run, partitions by `date_begin` dayobs, derives `instrument` from the telescope component; always-short TTL |
+| `adapters/nightreport.py` | ✅ `NightReportCachedAdapter` (rewritten from `source_adapters.py`) — dayobs-range API with exclusive `max_day_obs`; default TTL policy |
 | `adapters/consdb.py` | `ConsdbCachedAdapter` (moved from `consdb.py`) |
-| `adapters/almanac.py` | `AlmanacCachedAdapter` (moved from `almanac.py`) |
+| `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
 | `adapters/jira.py` | `JiraObsCachedAdapter` (OBS tickets per dayobs), `JiraBlockAdapter(IdBasedAdapter)` (BLOCK ticket summaries by key, moved from `jira.py`) |
 | `adapters/zephyr.py` | `ZephyrAdapter(IdBasedAdapter)` (test-case lookups by key, moved from `zephyr_service.py`) |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
@@ -592,7 +594,9 @@ HTTP layer without touching the adapter or service code.
 | `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_visits.py` | `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/expected_exposures.py` | `ExpectedExposuresCachedAdapter` (split from `scheduler_service.py`) |
-| `adapters/__init__.py` | ✅ Exists — exports adapter classes |
+| `adapters/__init__.py` | ✅ Exists — re-exports the adapter singleton getters (getters only) |
+| `web_app/services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
+| `web_app/services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
 | `web_app/services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
 | `web_app/services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
 | `web_app/services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py` / `scheduler_service.py`) |
@@ -613,7 +617,8 @@ HTTP layer without touching the adapter or service code.
 
 **`source_adapters.py`** → **deleted**
 
-- `NightReportAdapter` and `NarrativelogAdapter` are superseded by their `adapters/` rewrites
+- ✅ `NightReportAdapter` and `NarrativelogAdapter` are superseded by their `adapters/`
+  rewrites; the file itself goes in the cleanup step
 - `SourceAdapter` ABC is removed entirely (replaced by `BaseAdapter` / `CachedAdapter` /
   `RestCachedAdapter`)
 - The `protected_get` / `protected_post` helpers are superseded by
@@ -630,10 +635,13 @@ HTTP layer without touching the adapter or service code.
 - `ConsdbCachedAdapter` extends `CachedAdapter`; implements `_fetch_from_source(dayobs_list)`
   and `_cache_key(dayobs)`; retains `query()` as an internal helper
 
-**`almanac.py`** → **deleted**, moved to `adapters/almanac.py`
+**`almanac.py`** → **deleted** (with `almanac_service.py`, in the `rubin_nights` step)
 
-- `AlmanacCachedAdapter` extends `CachedAdapter`; `_fetch_from_source` internally iterates over
-  the dayobs list and computes almanac data per dayobs using `astroplan`
+- ✅ `AlmanacCachedAdapter` exists in `adapters/almanac.py`: extends `CachedAdapter`;
+  `_fetch_from_source` iterates the dayobs list and computes each night locally with
+  `astroplan`
+- The legacy `Almanac` class stays until `almanac_service.py`'s `get_almanac()` goes (see
+  below) — it is that function's only remaining consumer
 
 **`jira.py`** → **deleted**, moved to `adapters/jira.py`
 
@@ -683,18 +691,25 @@ HTTP layer without touching the adapter or service code.
   this at the query boundary so cache keys stay per-dayobs
 - `get_mock_exposures()` remains as a plain function
 
-**`web_app/services/almanac_service.py`**
+**`web_app/services/almanac_service.py`** → **deleted** (in the `rubin_nights` step)
 
-- Replace `get_almanac()` with `AlmanacService(Service)` using `AlmanacCachedAdapter`
+- ✅ The `/almanac` endpoint is served by `AlmanacService` in the new
+  `web_app/services/almanac.py`
+- `almanac_service.py` survives only for `get_almanac()`, which `rubin_nights_service.py`
+  calls in two places (`get_time_accounting` and `get_obs_status` night-only metrics). When
+  those become adapter-backed services, they take `AlmanacCachedAdapter` into their adapter
+  sets like any other multi-adapter service (they only read the 12-degree twilight fields),
+  and `almanac_service.py` + `almanac.py` are deleted
 
-**`web_app/services/narrativelog_service.py`**
+**`web_app/services/narrativelog_service.py`** — ✅ done
 
-- Replace `get_messages()` with `NarrativeLogService(Service)` using
-  `NarrativelogCachedAdapter`
+- `get_messages()` replaced with `NarrativeLogService(Service)` using
+  `NarrativelogCachedAdapter`; the time-lost sums moved from the endpoint into
+  `collate_response`
 
-**`web_app/services/nightreport_service.py`**
+**`web_app/services/nightreport_service.py`** — ✅ done
 
-- Replace `get_night_reports()` with `NightReportService(Service)` using
+- `get_night_reports()` replaced with `NightReportService(Service)` using
   `NightReportCachedAdapter`
 
 **`web_app/services/jira_service.py`**
@@ -723,9 +738,10 @@ HTTP layer without touching the adapter or service code.
   - `RubinNightsVisitsAdapter(CachedAdapter)` — visit data
 - Service classes move to three new files:
   - `web_app/services/obs_status_service.py` — `ObsStatusService(Service)` using
-    `RubinNightsEFDAdapter`; the status/interval helper functions (`decode_states`,
-    `contains_*`, `sum_interval_overlap`, `get_availability`, etc.) move with it as
-    module-level utilities
+    `RubinNightsEFDAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
+    intervals, replacing its `get_almanac()` call); the status/interval helper functions
+    (`decode_states`, `contains_*`, `sum_interval_overlap`, `get_availability`, etc.) move
+    with it as module-level utilities
   - `web_app/services/context_feed_service.py` — `ContextFeedService(Service)` using
     `RubinNightsContextAdapter`
   - `web_app/services/visit_maps_service.py` — `VisitMapsService(Service)` and
@@ -735,7 +751,9 @@ HTTP layer without touching the adapter or service code.
 - The dome and time-accounting logic (`get_open_close_dome`, `_compute_closed_hours`,
   `get_time_accounting` and its twilight helpers) is consumed by `/exposures`: dome fetching
   becomes `RubinNightsDomeAdapter`, and the pure computation helpers move to a utility module
-  called from `ExposuresService.collate_response`
+  called from `ExposuresService.collate_response`; the twilight windows come from
+  `AlmanacCachedAdapter` in the service's adapter set (replacing the `get_almanac()` call),
+  after which `almanac_service.py` and the legacy `almanac.py` are deleted
 - `get_visits` passes an `augment` flag through to the rubin_nights ConsDB client
   (`/multi-night-visit-maps` uses the default `augment=True`, `/static-visit-map` passes
   `augment=False`); `RubinNightsVisitsAdapter` must either include the flag in its cache key
@@ -761,7 +779,8 @@ HTTP layer without touching the adapter or service code.
 | `source_adapters.py` | Superseded by `adapters/narrativelog.py`, `adapters/nightreport.py`, and `RestCachedAdapter`; `SourceAdapter` ABC replaced by `BaseAdapter` / `CachedAdapter` |
 | `exposure_log.py` | Superseded by `adapters/exposurelog.py` |
 | `consdb.py` | Moved to `adapters/consdb.py` |
-| `almanac.py` | Moved to `adapters/almanac.py` |
+| `almanac.py` | Superseded by `adapters/almanac.py`; deleted with `almanac_service.py` once `rubin_nights_service.py` stops calling `get_almanac()` |
+| `web_app/services/almanac_service.py` | Superseded by `web_app/services/almanac.py`; survives only for `get_almanac()` until the `rubin_nights` services use `AlmanacCachedAdapter` directly |
 | `jira.py` | Moved to `adapters/jira.py` |
 | Standalone service functions in each `services/*.py` | Replaced by `Service` subclasses |
 
@@ -774,9 +793,9 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
 
 1. ✅ **`base_adapter.py` and `service.py` ABCs** — lay the foundation everything else builds on
 2. **Simple REST adapters** — ✅ `ExposurelogCachedAdapter` (the pattern-validating vertical
-   slice: adapter + services + endpoint switch, done end-to-end); remaining:
-   `NarrativelogCachedAdapter`, `NightReportCachedAdapter`, `AlmanacCachedAdapter`,
-   `JiraObsCachedAdapter`
+   slice: adapter + services + endpoint switch, done end-to-end),
+   ✅ `NarrativelogCachedAdapter`, ✅ `NightReportCachedAdapter`, ✅ `AlmanacCachedAdapter`;
+   remaining: `JiraObsCachedAdapter`
 3. **Service layer refactor** — once adapters exist the services are thin and quick; do all of
    them together
 4. **`BlockDetailsService` + ID-based adapters** — `JiraBlockAdapter` and `ZephyrAdapter`

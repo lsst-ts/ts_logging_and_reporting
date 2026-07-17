@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
+from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
 from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
 from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
 from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
@@ -783,6 +784,12 @@ def nightreport_cache(fake_redis, monkeypatch):
     return fake_redis
 
 
+@pytest.fixture
+def almanac_cache(fake_redis, monkeypatch):
+    monkeypatch.setattr(get_almanac_adapter(), "_redis", fake_redis)
+    return fake_redis
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -1194,25 +1201,32 @@ def test_jira_tickets_endpoint(mock_requests_get, monkeypatch):
     app.dependency_overrides.pop(get_jira_hostname, None)
 
 
-def test_almanac_endpoint(monkeypatch):
-    mock_almanac = [
-        {
-            "dayobs": 20240102,
+def test_almanac_endpoint(monkeypatch, almanac_cache):
+    compute_night = Mock(
+        side_effect=lambda dayobs: {
+            "dayobs": dayobs,
             "night_hours": 9.5,
-            "elapsed_twilight_hours": 3.25,
             "twilight_evening_12deg": "2024-01-01 23:00:00",
             "twilight_morning_12deg": "2024-01-02 08:30:00",
         }
-    ]
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_almanac",
-        lambda dayObsStart, dayObsEnd: mock_almanac,
     )
+    monkeypatch.setattr(get_almanac_adapter(), "_compute_night", compute_night)
+
     response = client.get("/almanac?dayObsStart=20240101&dayObsEnd=20240102")
     assert response.status_code == 200
     data = response.json()
-    assert "almanac_info" in data
-    assert data["almanac_info"] == mock_almanac
+    # Records are labeled by the morning-boundary dayobs
+    assert [r["dayobs"] for r in data["almanac_info"]] == [20240102]
+    record = data["almanac_info"][0]
+    assert record["night_hours"] == 9.5
+    # The 2024 night is long finished, so the full night counts
+    assert record["elapsed_twilight_hours"] == pytest.approx(9.5)
+
+    # Second identical request is served from the cache
+    compute_night.reset_mock()
+    response = client.get("/almanac?dayObsStart=20240101&dayObsEnd=20240102")
+    assert response.status_code == 200
+    compute_night.assert_not_called()
 
 
 def test_context_feed_endpoint(monkeypatch):
