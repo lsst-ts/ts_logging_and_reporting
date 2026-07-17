@@ -36,7 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from lsst.ts.logging_and_reporting import adapters
-from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
+from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
     current_dayobs_utc,
@@ -55,7 +55,7 @@ from .services.consdb_service import (
     get_exposures,
     get_mock_exposures,
 )
-from .services.jira_service import get_block_ticket_summaries, get_jira_tickets
+from .services.jira_service import get_block_ticket_summaries
 from .services.rubin_nights_service import (
     _compute_closed_hours,
     get_context_feed,
@@ -85,6 +85,7 @@ logger = logging.getLogger(__name__)
 refresh_worker = RefreshWorker(
     [
         adapters.get_exposurelog_adapter(),
+        adapters.get_jira_obs_adapter(),
         adapters.get_narrativelog_adapter(),
         adapters.get_nightreport_adapter(),
     ],
@@ -293,26 +294,16 @@ async def read_data_log(
 
 
 @app.get("/jira-tickets")
-async def read_jira_tickets(
-    request: Request,
+def read_jira_tickets(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(jira_auth),
-    jira_hostname: str = Depends(get_jira_hostname),
+    service=Depends(services.get_jira_tickets_service),
 ):
     logger.info(
         f"Getting jira tickets for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}"
     )
-    try:
-        tickets = get_jira_tickets(dayObsStart, dayObsEnd, instrument, auth_token, jira_hostname)
-        return {"issues": tickets}
-    except BaseLogrepError as ble:
-        logger.error(f"Jira API error in /jira-tickets: {ble}")
-        raise HTTPException(status_code=502, detail="Jira API query failed")
-    except Exception as e:
-        logger.error(f"Error in /jira-tickets: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.handle(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/almanac")

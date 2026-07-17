@@ -349,9 +349,13 @@ Service (ABC)
 │       4. Return collate_response(merged).
 │
 ├── handle(*args) -> dict
-│     Concrete. Calls handle_request, letting HTTPException pass through and
-│     converting any other exception into a logged HTTP 500. Endpoints call
-│     this rather than handle_request.
+│     Concrete. Calls handle_request, letting HTTPException pass through,
+│     converting upstream requests failures into a logged HTTP 502 and any
+│     other exception into a logged HTTP 500. Endpoints call this rather
+│     than handle_request. (All REST adapters raise requests exceptions via
+│     _get_json, so the 502 mapping covers every upstream uniformly; future
+│     non-requests upstreams — Zephyr, rubin_nights clients, ConsDB's
+│     ConsdbQueryError — need translating when their chunks land.)
 │
 └── collate_response(data: dict[int, Any]) -> dict
       Abstract (for now — a concrete default may be extracted once the first
@@ -587,7 +591,7 @@ HTTP layer without touching the adapter or service code.
 | `adapters/nightreport.py` | ✅ `NightReportCachedAdapter` (rewritten from `source_adapters.py`) — dayobs-range API with exclusive `max_day_obs`; default TTL policy |
 | `adapters/consdb.py` | `ConsdbCachedAdapter` (moved from `consdb.py`) |
 | `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
-| `adapters/jira.py` | `JiraObsCachedAdapter` (OBS tickets per dayobs), `JiraBlockAdapter(IdBasedAdapter)` (BLOCK ticket summaries by key, moved from `jira.py`) |
+| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; always-short TTL. Still to add: `JiraBlockAdapter(IdBasedAdapter)` (BLOCK ticket summaries by key, moved from `jira.py`) |
 | `adapters/zephyr.py` | `ZephyrAdapter(IdBasedAdapter)` (test-case lookups by key, moved from `zephyr_service.py`) |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
@@ -597,6 +601,7 @@ HTTP layer without touching the adapter or service code.
 | `adapters/__init__.py` | ✅ Exists — re-exports the adapter singleton getters (getters only) |
 | `web_app/services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
 | `web_app/services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
+| `web_app/services/jira.py` | ✅ `JiraTicketsService` + `get_jira_tickets_service()`; dedupes multi-bucket tickets, derives the range-dependent `isNew` at collation, and holds the instrument include/exclude filters |
 | `web_app/services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
 | `web_app/services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
 | `web_app/services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py` / `scheduler_service.py`) |
@@ -646,10 +651,12 @@ HTTP layer without touching the adapter or service code.
 **`jira.py`** → **deleted**, moved to `adapters/jira.py`
 
 - Split into two classes:
-  - `JiraObsCachedAdapter(CachedAdapter)` — `_fetch_from_source` fetches and caches OBS tickets
-    per dayobs only; used by `JiraTicketsService`
+  - ✅ `JiraObsCachedAdapter` — fetches and caches OBS tickets per dayobs; used by
+    `JiraTicketsService`
   - `JiraBlockAdapter(IdBasedAdapter)` — implements `fetch_by_ids(ids)` wrapping
     `fetch_block_ticket_summaries()`; held by `BlockDetailsService`
+- The legacy `JiraAdapter` stays until the BLOCK side migrates
+  (`get_block_ticket_summaries()` still uses it)
 
 **`web_app/main.py`** — partially done
 
@@ -714,7 +721,10 @@ HTTP layer without touching the adapter or service code.
 
 **`web_app/services/jira_service.py`**
 
-- Replace `get_jira_tickets()` with `JiraTicketsService(Service)` using `JiraObsCachedAdapter`
+- ✅ `/jira-tickets` is served by `JiraTicketsService` in the new `web_app/services/jira.py`
+  (deduplication, service-derived `isNew`, and the instrument include/exclude filters,
+  which were copied there); `jira_service.py` itself is untouched until the BLOCK side
+  migrates — `get_jira_tickets()` is now unused and goes with that cleanup
 - Replace the key-splitting/merging logic currently inline in the `/block-details` endpoint
   with `BlockDetailsService`, holding `JiraBlockAdapter` and `ZephyrAdapter` (both
   `IdBasedAdapter`); `handle_request(keys)` deduplicates, splits by key pattern, calls
@@ -794,8 +804,8 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
 1. ✅ **`base_adapter.py` and `service.py` ABCs** — lay the foundation everything else builds on
 2. **Simple REST adapters** — ✅ `ExposurelogCachedAdapter` (the pattern-validating vertical
    slice: adapter + services + endpoint switch, done end-to-end),
-   ✅ `NarrativelogCachedAdapter`, ✅ `NightReportCachedAdapter`, ✅ `AlmanacCachedAdapter`;
-   remaining: `JiraObsCachedAdapter`
+   ✅ `NarrativelogCachedAdapter`, ✅ `NightReportCachedAdapter`, ✅ `AlmanacCachedAdapter`,
+   ✅ `JiraObsCachedAdapter` — **all done**
 3. **Service layer refactor** — once adapters exist the services are thin and quick; do all of
    them together
 4. **`BlockDetailsService` + ID-based adapters** — `JiraBlockAdapter` and `ZephyrAdapter`

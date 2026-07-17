@@ -32,6 +32,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+import requests
 from fastapi import HTTPException
 
 from .base_adapter import CachedAdapter
@@ -94,11 +95,18 @@ class Service(ABC):
         raise NotImplementedError
 
     def handle(self, *args: Any, **kwargs: Any) -> dict:
-        """Call `handle_request`, converting unexpected errors to 500s."""
+        """Call `handle_request`, converting errors to HTTP responses.
+
+        Upstream request failures map to 502 Bad Gateway; anything
+        else unexpected maps to 500.
+        """
         try:
             return self.handle_request(*args, **kwargs)
         except HTTPException:
             raise
+        except requests.RequestException as e:
+            logger.exception(f"{type(self).__name__} upstream request failed")
+            raise HTTPException(status_code=502, detail=f"Upstream query failed: {e}")
         except Exception as e:
             logger.exception(f"{type(self).__name__} request failed")
             raise HTTPException(status_code=500, detail=str(e))
