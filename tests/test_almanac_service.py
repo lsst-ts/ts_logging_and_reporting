@@ -2,7 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from lsst.ts.logging_and_reporting.web_app.services.almanac_service import (
+from lsst.ts.logging_and_reporting.web_app.services.almanac import (
+    AlmanacService,
     _compute_elapsed_twilight_hours,
 )
 
@@ -47,3 +48,51 @@ class TestComputeElapsedTwilightHours:
             MORNING_TWILIGHT,
             now_utc,
         ) == pytest.approx(2.0)
+
+
+class StubAdapter:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    def fetch(self, start_dayobs, end_dayobs):
+        self.calls.append((start_dayobs, end_dayobs))
+        return self.payload
+
+
+def make_record(dayobs):
+    return {
+        "dayobs": dayobs,
+        "night_hours": 11.0,
+        "twilight_evening_12deg": "2024-01-01 23:00:00",
+        "twilight_morning_12deg": "2024-01-02 10:00:00",
+    }
+
+
+def make_service(payload):
+    adapter = StubAdapter(payload)
+    return AlmanacService(adapters={"almanac": adapter}), adapter
+
+
+class TestAlmanacService:
+    def test_fetch_range_shifted_to_morning_boundary_labels(self):
+        service, adapter = make_service({})
+        service.handle_request(20250101, 20250103)
+        assert adapter.calls == [(20250102, 20250103)]
+
+    def test_records_sorted_ascending_by_dayobs(self):
+        payload = {20250103: make_record(20250103), 20250102: make_record(20250102)}
+        service, _ = make_service(payload)
+        response = service.handle_request(20250101, 20250103)
+        assert [r["dayobs"] for r in response["almanac_info"]] == [20250102, 20250103]
+
+    def test_elapsed_twilight_hours_added_to_each_record(self):
+        service, _ = make_service({20240102: make_record(20240102)})
+        response = service.handle_request(20240101, 20240102)
+        record = response["almanac_info"][0]
+        # The 2024 night is long finished, so the full night counts.
+        assert record["elapsed_twilight_hours"] == pytest.approx(11.0)
+
+    def test_empty_range_returns_empty_records(self):
+        service, _ = make_service({})
+        assert service.handle_request(20250101, 20250101) == {"almanac_info": []}

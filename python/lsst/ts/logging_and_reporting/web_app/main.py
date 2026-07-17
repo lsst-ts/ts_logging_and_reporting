@@ -50,7 +50,6 @@ from . import services
 from .middleware import CacheControlMiddleware
 from .redis_client import get_redis_client
 from .refresh_worker import RefreshWorker
-from .services.almanac_service import get_almanac
 from .services.consdb_service import (
     get_data_log,
     get_exposures,
@@ -317,14 +316,13 @@ async def read_jira_tickets(
 
 
 @app.get("/almanac")
-async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
+def read_almanac(
+    dayObsStart: int,
+    dayObsEnd: int,
+    service=Depends(services.get_almanac_service),
+):
     logger.info(f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
-    try:
-        almanac_info = get_almanac(dayObsStart, dayObsEnd)
-        return {"almanac_info": almanac_info}
-    except Exception as e:
-        logger.error(f"Error in /almanac: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.handle(dayObsStart, dayObsEnd)
 
 
 @app.get("/narrative-log")
