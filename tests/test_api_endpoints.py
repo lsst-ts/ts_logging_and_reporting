@@ -33,6 +33,7 @@ import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
 from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
 from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
+from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     JIRA_BLOCK_BASE_URL,
@@ -776,6 +777,12 @@ def narrativelog_cache(fake_redis, monkeypatch):
     return fake_redis
 
 
+@pytest.fixture
+def nightreport_cache(fake_redis, monkeypatch):
+    monkeypatch.setattr(get_nightreport_adapter(), "_redis", fake_redis)
+    return fake_redis
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -790,11 +797,10 @@ def test_version_endpoint():
     assert data["version"] == __version__
 
 
-def test_nightreport_endpoint(mock_requests_get, monkeypatch):
+def test_nightreport_endpoint(mock_requests_get, monkeypatch, nightreport_cache):
+    monkeypatch.setenv("ACCESS_TOKEN", "env-token")
     endpoint = "/night-reports?dayObsStart=20250730&dayObsEnd=20250731"
-    _test_endpoint_authentication(endpoint, monkeypatch)
 
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.json()
@@ -821,7 +827,18 @@ def test_nightreport_endpoint(mock_requests_get, monkeypatch):
     ]
     for param in expected_params:
         assert param in report, f"Missing {param} in night report: {report}"
-    app.dependency_overrides.pop(rsp_auth, None)
+
+    # Second identical request is served from the cache
+    mock_requests_get.reset_mock()
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    mock_requests_get.assert_not_called()
+
+    # A cold fetch with no token source available fails auth
+    nightreport_cache.flushdb()
+    monkeypatch.delenv("ACCESS_TOKEN")
+    response = client.get(endpoint)
+    assert response.status_code == 401
 
 
 def test_narrative_log_endpoint(mock_requests_get, monkeypatch, narrativelog_cache):

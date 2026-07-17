@@ -24,9 +24,11 @@
 
 from .exposurelog_service import get_exposure_entries_service, get_exposure_flags_service
 from .narrativelog_service import get_narrative_log_service
+from .nightreport_service import get_night_report_service
 
 __all__ = [
     "get_exposure_entries_service",
     "get_exposure_flags_service",
     "get_narrative_log_service",
+    "get_night_report_service",
 ]
