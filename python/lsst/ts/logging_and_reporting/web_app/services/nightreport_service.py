@@ -1,22 +1,68 @@
-import logging
+#
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import lsst.ts.logging_and_reporting.utils as nd_utils
-from lsst.ts.logging_and_reporting.source_adapters import NightReportAdapter
+"""Service for the /night-reports endpoint."""
+
+import functools
+import logging
+from typing import Any
+
+from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
+from lsst.ts.logging_and_reporting.web_app.service import Service, flatten_sorted
 
 logger = logging.getLogger(__name__)
 
 
-def get_night_reports(dayobs_start: int, dayobs_end: int, auth_token: str = None) -> list:
-    """Get nightreport records for a given time range."""
-    logger.info(f"Getting night reports for start: {dayobs_start}, end: {dayobs_end}")
-    nightreport = NightReportAdapter(
-        server_url=nd_utils.Server.get_url(),
-        max_dayobs=dayobs_end,
-        min_dayobs=dayobs_start,
-        auth_token=auth_token,
-    )
-    status = nightreport.get_records()
-    logger.debug(f"status: {status}")
-    if status.get("error") is not None:
-        raise Exception(f"Error getting nightreport records from {status.endpoint_url}: {status.error}")
-    return nightreport.records
+class NightReportService(Service):
+    """Collates Night Report records for /night-reports."""
+
+    def handle_request(self, day_obs_start: int, day_obs_end: int) -> dict:
+        """Return night reports for the dayobs range.
+
+        Parameters
+        ----------
+        day_obs_start : `int`
+            Inclusive lower bound of the dayobs range.
+        day_obs_end : `int`
+            Exclusive upper bound of the dayobs range (the API
+            contract — the frontend sends end + 1 day).
+        """
+        per_day = self.adapters["nightreport"].fetch(
+            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
+        )
+        if not any(per_day.values()):
+            logger.debug(f"No reports for dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end}")
+        response = self.collate_response(per_day)
+        logger.debug(
+            f"Fetched {len(response['reports'])} Night Report records "
+            f"for dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end}"
+        )
+        return response
+
+    def collate_response(self, data: dict[int, Any]) -> dict:
+        return {"reports": flatten_sorted(data, "day_obs")}
+
+
+@functools.cache
+def get_night_report_service() -> NightReportService:
+    return NightReportService(adapters={"nightreport": get_nightreport_adapter()})

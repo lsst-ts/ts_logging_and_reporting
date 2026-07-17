@@ -57,7 +57,6 @@ from .services.consdb_service import (
     get_mock_exposures,
 )
 from .services.jira_service import get_block_ticket_summaries, get_jira_tickets
-from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
     _compute_closed_hours,
     get_context_feed,
@@ -85,7 +84,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 refresh_worker = RefreshWorker(
-    [adapters.get_exposurelog_adapter(), adapters.get_narrativelog_adapter()],
+    [
+        adapters.get_exposurelog_adapter(),
+        adapters.get_narrativelog_adapter(),
+        adapters.get_nightreport_adapter(),
+    ],
     get_redis_client(),
 )
 
@@ -367,20 +370,13 @@ def read_exposure_entries(
 
 
 @app.get("/night-reports")
-async def read_nightreport(
-    request: Request,
+def read_nightreport(
     dayObsStart: int,
     dayObsEnd: int,
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(services.get_night_report_service),
 ):
-    try:
-        records = get_night_reports(dayObsStart, dayObsEnd, auth_token=auth_token)
-        return {
-            "reports": records,
-        }
-    except Exception as e:
-        logger.error(f"Error in /night-reports: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    logger.info(f"Getting Night Report records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    return service.handle(dayObsStart, dayObsEnd)
 
 
 @app.get("/context-feed")
