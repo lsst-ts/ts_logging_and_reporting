@@ -20,8 +20,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Cached adapters for the web application's upstream data sources."""
+"""Singleton getters for the cached upstream-source adapters."""
 
-from .exposurelog import ExposurelogCachedAdapter
+from .exposurelog import get_exposurelog_adapter
+from .narrativelog import get_narrativelog_adapter
 
-__all__ = ["ExposurelogCachedAdapter"]
+__all__ = ["get_exposurelog_adapter", "get_narrativelog_adapter"]

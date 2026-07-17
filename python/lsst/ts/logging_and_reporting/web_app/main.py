@@ -35,7 +35,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
+from lsst.ts.logging_and_reporting import adapters
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
@@ -46,6 +46,7 @@ from lsst.ts.logging_and_reporting.utils import (
 )
 
 from .. import __version__
+from . import services
 from .middleware import CacheControlMiddleware
 from .redis_client import get_redis_client
 from .refresh_worker import RefreshWorker
@@ -55,9 +56,7 @@ from .services.consdb_service import (
     get_exposures,
     get_mock_exposures,
 )
-from .services.exposurelog_service import get_exposure_entries_service, get_exposure_flags_service
 from .services.jira_service import get_block_ticket_summaries, get_jira_tickets
-from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
     _compute_closed_hours,
@@ -85,7 +84,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-refresh_worker = RefreshWorker([get_exposurelog_adapter()], get_redis_client())
+refresh_worker = RefreshWorker(
+    [adapters.get_exposurelog_adapter(), adapters.get_narrativelog_adapter()],
+    get_redis_client(),
+)
 
 
 @asynccontextmanager
@@ -323,29 +325,17 @@ async def read_almanac(request: Request, dayObsStart: int, dayObsEnd: int):
 
 
 @app.get("/narrative-log")
-async def read_narrative_log(
-    request: Request,
+def read_narrative_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(services.get_narrative_log_service),
 ):
     logger.info(
         f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
-    try:
-        records = get_messages(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-        time_lost_to_weather = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == "weather")
-        time_lost_to_faults = sum(msg["time_lost"] for msg in records if msg["time_lost_type"] == "fault")
-        return {
-            "narrative_log": records,
-            "time_lost_to_weather": time_lost_to_weather,
-            "time_lost_to_faults": time_lost_to_faults,
-        }
-    except Exception as e:
-        logger.error(f"Error in /narrative-log: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.handle(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/exposure-flags")
@@ -353,7 +343,7 @@ def read_exposure_flags(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    service=Depends(get_exposure_flags_service),
+    service=Depends(services.get_exposure_flags_service),
 ):
     logger.info(
         f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
@@ -367,7 +357,7 @@ def read_exposure_entries(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    service=Depends(get_exposure_entries_service),
+    service=Depends(services.get_exposure_entries_service),
 ):
     logger.info(
         f"Getting Exposure Log entries for dayObsStart: {dayObsStart}, "

@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
 from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
+from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     JIRA_BLOCK_BASE_URL,
@@ -96,6 +97,50 @@ SERVICE_ENDPOINT_MOCK_RESPONSES = {
             "date_added": "2025-07-30T22:14:23.266086",
             "date_invalidated": None,
             "parent_id": None,
+        },
+    ],
+    "/narrativelog/messages": [
+        {
+            "id": "8a1a3ea6-9c1a-4a52-b587-4b135b7b46d9",
+            "site_id": "summit",
+            "message_text": "M2 hexapod strut fault during filter change",
+            "level": 100,
+            "tags": [],
+            "urls": [],
+            "time_lost": 1.5,
+            "date_begin": "2025-07-30T22:00:00",
+            "user_id": "test@localhost",
+            "user_agent": "narrativelog-service",
+            "is_human": True,
+            "is_valid": True,
+            "date_added": "2025-07-31T01:00:00",
+            "date_invalidated": None,
+            "parent_id": None,
+            "date_end": "2025-07-30T23:00:00",
+            "components_json": {"name": "Simonyi"},
+            "category": "fault",
+            "time_lost_type": "fault",
+        },
+        {
+            "id": "0273cd7a-8c53-40a1-9c15-2f3e1d4f0f61",
+            "site_id": "summit",
+            "message_text": "Clouds covered the sky for 30 minutes",
+            "level": 100,
+            "tags": [],
+            "urls": [],
+            "time_lost": 0.5,
+            "date_begin": "2025-07-31T02:00:00",
+            "user_id": "test@localhost",
+            "user_agent": "narrativelog-service",
+            "is_human": True,
+            "is_valid": True,
+            "date_added": "2025-07-31T02:30:00",
+            "date_invalidated": None,
+            "parent_id": None,
+            "date_end": "2025-07-31T02:30:00",
+            "components_json": {"name": "Simonyi"},
+            "category": "weather",
+            "time_lost_type": "weather",
         },
     ],
     "/nightreport/reports": [
@@ -725,6 +770,12 @@ def exposurelog_cache(fake_redis, monkeypatch):
     return fake_redis
 
 
+@pytest.fixture
+def narrativelog_cache(fake_redis, monkeypatch):
+    monkeypatch.setattr(get_narrativelog_adapter(), "_redis", fake_redis)
+    return fake_redis
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -771,6 +822,35 @@ def test_nightreport_endpoint(mock_requests_get, monkeypatch):
     for param in expected_params:
         assert param in report, f"Missing {param} in night report: {report}"
     app.dependency_overrides.pop(rsp_auth, None)
+
+
+def test_narrative_log_endpoint(mock_requests_get, monkeypatch, narrativelog_cache):
+    monkeypatch.setenv("ACCESS_TOKEN", "env-token")
+    endpoint = "/narrative-log?dayObsStart=20250730&dayObsEnd=20250731&instrument=LSSTCam"
+
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["narrative_log"]) == 2
+    assert [m["date_begin"] for m in data["narrative_log"]] == [
+        "2025-07-31T02:00:00",
+        "2025-07-30T22:00:00",
+    ]
+    assert all(m["instrument"] == "LSSTCam" for m in data["narrative_log"])
+    assert data["time_lost_to_weather"] == 0.5
+    assert data["time_lost_to_faults"] == 1.5
+
+    # Second identical request is served from the cache
+    mock_requests_get.reset_mock()
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    mock_requests_get.assert_not_called()
+
+    # A cold fetch with no token source available fails auth
+    narrativelog_cache.flushdb()
+    monkeypatch.delenv("ACCESS_TOKEN")
+    response = client.get(endpoint)
+    assert response.status_code == 401
 
 
 def test_exposure_entries_endpoint(mock_requests_get, monkeypatch, exposurelog_cache):
