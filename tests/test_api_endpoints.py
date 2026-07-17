@@ -33,6 +33,7 @@ import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
 from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
 from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
+from lsst.ts.logging_and_reporting.adapters.jira import get_jira_obs_adapter
 from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
 from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
@@ -790,6 +791,12 @@ def almanac_cache(fake_redis, monkeypatch):
     return fake_redis
 
 
+@pytest.fixture
+def jira_obs_cache(fake_redis, monkeypatch):
+    monkeypatch.setattr(get_jira_obs_adapter(), "_redis", fake_redis)
+    return fake_redis
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -1144,61 +1151,60 @@ def test_exposures_endpoint_no_exposures_returns_zeroed_time_accounting(monkeypa
         assert data["time_accounting_error"] is None
 
 
-def test_jira_endpoint_authentication(monkeypatch):
-    endpoint = "/jira-tickets?dayObsStart=1&dayObsEnd=2&instrument=LATISS"
-
-    # Mock service
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_jira_tickets",
-        lambda *args, **kwargs: [],
-    )
-
-    monkeypatch.setenv("JIRA_API_HOSTNAME", "https://fake-jira-host")
-
-    # Header auth
-    response = client.get(endpoint, headers={"Authorization": "Bearer test"})
-    assert response.status_code == 200
-
-    # Env auth
+def test_jira_tickets_endpoint(monkeypatch, jira_obs_cache):
     monkeypatch.setenv("JIRA_API_TOKEN", "env-token")
-    response = client.get(endpoint)
-    assert response.status_code == 200
-
-    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
-    monkeypatch.delenv("JIRA_API_HOSTNAME", raising=False)
-
-    # No auth --> 401
-    response = client.get(endpoint)
-    assert response.status_code == 401
-
-
-def test_jira_tickets_endpoint(mock_requests_get, monkeypatch):
+    monkeypatch.setenv("JIRA_API_HOSTNAME", "jira.test")
     endpoint = "/jira-tickets?dayObsStart=20250730&dayObsEnd=20250731&instrument=LATISS"
 
-    # Mock service layer
-    mock_tickets = [{"key": "OBS-1", "summary": "Test ticket"}]
+    issue = {
+        "key": "OBS-1",
+        "fields": {
+            "summary": "Test ticket",
+            "created": "2025-07-30T20:00:00.000+0000",
+            "updated": "2025-07-30T22:00:00.000+0000",
+            "status": {"name": "In Progress"},
+            "customfield_10476": [{"name": "AuxTel"}],
+            "customfield_10106": 1.5,
+        },
+    }
 
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_jira_tickets",
-        lambda *args, **kwargs: mock_tickets,
-    )
+    def respond(url, **kwargs):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        if url.endswith("/myself"):
+            response.json.return_value = {"timeZone": "UTC"}
+        else:
+            response.json.return_value = {"issues": [issue]}
+        return response
 
-    # Override dependencies
-    app.dependency_overrides[jira_auth] = lambda: "dummy-token"
-    app.dependency_overrides[get_jira_hostname] = lambda: "mock-host"
+    with patch("requests.get", side_effect=respond) as mock_get:
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["issues"]) == 1
+        ticket = data["issues"][0]
+        assert ticket["key"] == "OBS-1"
+        assert ticket["system"] == ["AuxTel"]
+        assert ticket["url"] == "https://jira.test/browse/OBS-1"
+        assert ticket["isNew"] is True
+        assert "created_utc" not in ticket
 
+        # Second identical request is served from the cache
+        mock_get.reset_mock()
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        mock_get.assert_not_called()
+
+    # An upstream Jira failure maps to 502
+    jira_obs_cache.flushdb()
+    with patch("requests.get", side_effect=requests.ConnectionError("jira down")):
+        response = client.get(endpoint)
+        assert response.status_code == 502
+
+    # A cold fetch with no token source available fails auth
+    monkeypatch.delenv("JIRA_API_TOKEN")
     response = client.get(endpoint)
-
-    assert response.status_code == 200
-    data = response.json()
-
-    assert "issues" in data
-    assert data["issues"] == mock_tickets
-    assert isinstance(data["issues"], list)
-
-    # Cleanup
-    app.dependency_overrides.pop(jira_auth, None)
-    app.dependency_overrides.pop(get_jira_hostname, None)
+    assert response.status_code == 401
 
 
 def test_almanac_endpoint(monkeypatch, almanac_cache):

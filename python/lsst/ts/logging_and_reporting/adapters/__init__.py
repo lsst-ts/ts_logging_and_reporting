@@ -24,12 +24,14 @@
 
 from .almanac import get_almanac_adapter
 from .exposurelog import get_exposurelog_adapter
+from .jira import get_jira_obs_adapter
 from .narrativelog import get_narrativelog_adapter
 from .nightreport import get_nightreport_adapter
 
 __all__ = [
     "get_almanac_adapter",
     "get_exposurelog_adapter",
+    "get_jira_obs_adapter",
     "get_narrativelog_adapter",
     "get_nightreport_adapter",
 ]
