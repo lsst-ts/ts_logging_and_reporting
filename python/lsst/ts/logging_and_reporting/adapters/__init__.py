@@ -24,5 +24,6 @@
 
 from .exposurelog import get_exposurelog_adapter
 from .narrativelog import get_narrativelog_adapter
+from .nightreport import get_nightreport_adapter
 
-__all__ = ["get_exposurelog_adapter", "get_narrativelog_adapter"]
+__all__ = ["get_exposurelog_adapter", "get_narrativelog_adapter", "get_nightreport_adapter"]

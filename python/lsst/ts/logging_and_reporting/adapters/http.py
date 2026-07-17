@@ -60,6 +60,9 @@ class RestCachedAdapter(CachedAdapter, ABC):
     READ_TIMEOUT = 20
     """Read timeout in seconds."""
 
+    MAX_RECORDS = 9000
+    """Upper bound on records fetched by one paged request."""
+
     def __init__(self, redis: Any, server_url: str | None = None):
         super().__init__(redis)
         self.server = server_url or Server.get_url()
@@ -93,3 +96,36 @@ class RestCachedAdapter(CachedAdapter, ABC):
         )
         response.raise_for_status()
         return response.json()
+
+    def _get_json_paged(self, url: str, params: dict, page_limit: int) -> list:
+        """GET all pages of a record-list endpoint.
+
+        Requests ``url`` repeatedly with ``limit``/``offset`` paging
+        until a page comes back shorter than ``page_limit``, and
+        returns the concatenated records. Fetching stops with a
+        warning if ``MAX_RECORDS`` is reached.
+
+        Parameters
+        ----------
+        url : `str`
+            Full URL of the API endpoint.
+        params : `dict`
+            Query parameters; ``limit`` and ``offset`` are managed
+            here and must not be present.
+        page_limit : `int`
+            Number of records requested per page.
+        """
+        params = dict(params, limit=page_limit, offset=0)
+        records: list = []
+        while True:
+            page = self._get_json(url, params=dict(params))
+            records.extend(page)
+            if len(page) < page_limit:
+                return records
+            if len(records) >= self.MAX_RECORDS:
+                logger.warning(
+                    f"Fetch from {url} with params {params} hit the "
+                    f"{self.MAX_RECORDS}-record cap; results truncated"
+                )
+                return records
+            params["offset"] += len(page)

@@ -63,9 +63,6 @@ class NarrativelogCachedAdapter(RestCachedAdapter):
 
     name = "narrativelog"
 
-    MAX_RECORDS = 9000
-    """Upper bound on messages fetched per contiguous run."""
-
     def __init__(self, redis: Any, server_url: str | None = None, page_limit: int = 1000):
         super().__init__(redis, server_url=server_url)
         self._page_limit = page_limit
@@ -91,28 +88,17 @@ class NarrativelogCachedAdapter(RestCachedAdapter):
         return results
 
     def _fetch_run(self, run_start: int, run_end: int) -> list[dict]:
-        params = {
-            "is_human": "either",
-            "is_valid": "true",
-            "order_by": "-date_begin",
-            "min_date_begin": _noon_utc(run_start),
-            "max_date_begin": _noon_utc(add_or_subtract_dayobs_days(run_end, 1)),
-            "limit": self._page_limit,
-            "offset": 0,
-        }
-        messages: list[dict] = []
-        while True:
-            page = self._get_json(f"{self.server}/narrativelog/messages", params=dict(params))
-            messages.extend(page)
-            if len(page) < self._page_limit:
-                return messages
-            if len(messages) >= self.MAX_RECORDS:
-                logger.warning(
-                    f"Narrative Log fetch for dayobs {run_start}..{run_end} hit the "
-                    f"{self.MAX_RECORDS}-record cap; results truncated"
-                )
-                return messages
-            params["offset"] += len(page)
+        return self._get_json_paged(
+            f"{self.server}/narrativelog/messages",
+            params={
+                "is_human": "either",
+                "is_valid": "true",
+                "order_by": "-date_begin",
+                "min_date_begin": _noon_utc(run_start),
+                "max_date_begin": _noon_utc(add_or_subtract_dayobs_days(run_end, 1)),
+            },
+            page_limit=self._page_limit,
+        )
 
     @staticmethod
     def _add_instrument(message: dict) -> None:
