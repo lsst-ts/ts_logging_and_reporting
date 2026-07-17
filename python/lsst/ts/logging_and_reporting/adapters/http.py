@@ -65,10 +65,17 @@ class RestCachedAdapter(CachedAdapter, ABC):
 
     def __init__(self, redis: Any, server_url: str | None = None):
         super().__init__(redis)
-        self.server = server_url or Server.get_url()
+        self._server_url = server_url
+
+    @property
+    def server(self) -> str:
+        return self._server_url or Server.get_url()
 
     def _get_token(self) -> str:
         return retrieve_access_token(AUTH_SOURCES[self.auth_source])
+
+    def _request_headers(self) -> dict:
+        return get_auth_header(self._get_token())
 
     def _get_json(self, url: str, params: dict | None = None) -> Any:
         """GET ``url`` and return the decoded JSON body.
@@ -91,7 +98,7 @@ class RestCachedAdapter(CachedAdapter, ABC):
         response = requests.get(
             url,
             params={key: value for key, value in (params or {}).items() if value is not None},
-            headers=get_auth_header(self._get_token()),
+            headers=self._request_headers(),
             timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
         )
         response.raise_for_status()

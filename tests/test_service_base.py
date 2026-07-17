@@ -1,4 +1,5 @@
 import pytest
+import requests
 from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.web_app.service import Service
@@ -74,6 +75,13 @@ class TestHandle:
         with pytest.raises(HTTPException) as exc_info:
             service.handle()
         assert exc_info.value.status_code == 401
+
+    def test_upstream_request_failure_becomes_502(self):
+        service = FailingService(requests.ConnectionError("upstream unreachable"))
+        with pytest.raises(HTTPException) as exc_info:
+            service.handle()
+        assert exc_info.value.status_code == 502
+        assert "upstream unreachable" in exc_info.value.detail
 
     def test_success_returns_response(self):
         service = PassthroughService(adapters={"one": StubAdapter("one", {20250101: "x"})})
