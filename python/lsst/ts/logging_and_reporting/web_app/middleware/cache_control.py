@@ -20,13 +20,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+
 import logging
-from datetime import datetime, timezone
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
+
+from lsst.ts.logging_and_reporting.utils import current_dayobs
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -108,7 +109,7 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         start = start if start is not None else end
         end = end if end is not None else start
 
-        today = current_dayobs_utc(datetime.now(timezone.utc))
+        today = current_dayobs()
         max_age = _TODAY_MAX_AGE if start <= today <= end else _HISTORICAL_MAX_AGE
 
         response.headers["Cache-Control"] = f"public, max-age={max_age}"

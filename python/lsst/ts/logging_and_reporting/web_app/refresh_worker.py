@@ -53,13 +53,12 @@ Three deployment/rollover behaviours matter here:
   within a cycle.
 """
 
-import datetime as dt
 import logging
 import threading
 import uuid
 from typing import Any
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
+from lsst.ts.logging_and_reporting.utils import current_dayobs
 
 from .base_adapter import CachedAdapter
 
@@ -153,7 +152,7 @@ class RefreshWorker:
             if not self._acquire_leadership():
                 logger.debug("RefreshWorker: not leader this cycle, skipping")
                 return
-            today = current_dayobs_utc(dt.datetime.now(dt.timezone.utc))
+            today = current_dayobs()
             if self._last_today is not None and today != self._last_today:
                 logger.info(
                     f"RefreshWorker: dayobs rollover {self._last_today} -> {today}; "

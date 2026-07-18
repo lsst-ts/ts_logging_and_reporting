@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
+from lsst.ts.logging_and_reporting.utils import dayobs_at
 from lsst.ts.logging_and_reporting.web_app.services.rubin_nights_service import (
     _compute_closed_hours,
     get_open_close_dome,
@@ -71,35 +71,35 @@ def make_raw_dome_df(*sessions: dict) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# current_dayobs_utc
+# dayobs_at
 # ---------------------------------------------------------------------------
 
 
-class TestCurrentDayobsUtc:
+class TestDayobsAt:
     def test_after_noon_utc_returns_same_date(self):
         now = pd.Timestamp("2026-04-09 15:00:00", tz="UTC")
-        assert current_dayobs_utc(now) == 20260409
+        assert dayobs_at(now) == 20260409
 
     def test_before_noon_utc_returns_previous_date(self):
         # 03:00 UTC April 10 is still dayobs 20260409
         now = pd.Timestamp("2026-04-10 03:00:00", tz="UTC")
-        assert current_dayobs_utc(now) == 20260409
+        assert dayobs_at(now) == 20260409
 
     def test_exactly_at_noon_utc_returns_same_date(self):
         now = pd.Timestamp("2026-04-09 12:00:00", tz="UTC")
-        assert current_dayobs_utc(now) == 20260409
+        assert dayobs_at(now) == 20260409
 
     def test_one_second_before_noon_returns_previous_date(self):
         now = pd.Timestamp("2026-04-09 11:59:59", tz="UTC")
-        assert current_dayobs_utc(now) == 20260408
+        assert dayobs_at(now) == 20260408
 
     def test_month_boundary(self):
         now = pd.Timestamp("2026-05-01 03:00:00", tz="UTC")
-        assert current_dayobs_utc(now) == 20260430
+        assert dayobs_at(now) == 20260430
 
     def test_year_boundary(self):
         now = pd.Timestamp("2027-01-01 03:00:00", tz="UTC")
-        assert current_dayobs_utc(now) == 20261231
+        assert dayobs_at(now) == 20261231
 
 
 # ---------------------------------------------------------------------------

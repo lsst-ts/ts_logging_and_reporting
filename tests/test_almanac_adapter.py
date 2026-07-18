@@ -4,9 +4,9 @@ from unittest.mock import Mock
 import pytest
 
 from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter
-from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
+from lsst.ts.logging_and_reporting.utils import current_dayobs
 
-TODAY = current_dayobs_utc(dt.datetime.now(dt.timezone.utc))
+TODAY = current_dayobs()
 
 
 @pytest.fixture
