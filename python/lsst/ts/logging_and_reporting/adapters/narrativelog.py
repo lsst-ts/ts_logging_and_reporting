@@ -28,7 +28,7 @@ import logging
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, current_dayobs_utc
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, dayobs_at
 from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
@@ -82,7 +82,7 @@ class NarrativelogCachedAdapter(RestCachedAdapter):
             logger.debug(f"Fetching Narrative Log messages for dayobs {run_start}..{run_end}")
             for message in self._fetch_run(run_start, run_end):
                 self._add_instrument(message)
-                dayobs = current_dayobs_utc(dt.datetime.fromisoformat(message["date_begin"]))
+                dayobs = dayobs_at(dt.datetime.fromisoformat(message["date_begin"]))
                 if dayobs in results:
                     results[dayobs].append(message)
         return results

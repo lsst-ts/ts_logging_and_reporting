@@ -36,7 +36,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
+from lsst.ts.logging_and_reporting.utils import current_dayobs
 
 logger = logging.getLogger(__name__)
 
@@ -351,12 +351,7 @@ class CachedAdapter(_SingleFlightCache, BaseAdapter, ABC):
         dayobs, mirroring the always-short endpoint list in
         `CacheControlMiddleware`.
         """
-        return self.SHORT_TTL if dayobs == self._current_dayobs() else self.LONG_TTL
-
-    @staticmethod
-    def _current_dayobs() -> int:
-        """The current astronomical dayobs (noon-to-noon UTC)."""
-        return current_dayobs_utc(dt.datetime.now(dt.timezone.utc))
+        return self.SHORT_TTL if dayobs == current_dayobs() else self.LONG_TTL
 
     def refresh(self, dayobs: int) -> None:
         """Refresh one dayobs' cache entry, fetch-then-overwrite.
@@ -385,7 +380,7 @@ class CachedAdapter(_SingleFlightCache, BaseAdapter, ABC):
 
     def refresh_today(self) -> None:
         """Refresh today's cache entry (see `refresh`)."""
-        self.refresh(self._current_dayobs())
+        self.refresh(current_dayobs())
 
 
 class IdBasedAdapter(_SingleFlightCache, ABC):

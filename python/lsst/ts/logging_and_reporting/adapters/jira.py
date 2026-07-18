@@ -36,7 +36,7 @@ from pytz import timezone
 from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter, RestClient
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
-    current_dayobs_utc,
+    dayobs_at,
     get_jira_hostname,
     get_utc_datetime_from_dayobs_str,
 )
@@ -151,8 +151,8 @@ class JiraObsCachedAdapter(JiraApiMixin, RestCachedAdapter):
                 created = dt.datetime.strptime(issue["fields"]["created"], TIMESTAMP_INPUT_FORMAT)
                 updated = dt.datetime.strptime(issue["fields"]["updated"], TIMESTAMP_INPUT_FORMAT)
                 buckets = {
-                    current_dayobs_utc(created.astimezone(dt.timezone.utc)),
-                    current_dayobs_utc(updated.astimezone(dt.timezone.utc)),
+                    dayobs_at(created.astimezone(dt.timezone.utc)),
+                    dayobs_at(updated.astimezone(dt.timezone.utc)),
                 }
                 for dayobs in buckets:
                     if dayobs in results:

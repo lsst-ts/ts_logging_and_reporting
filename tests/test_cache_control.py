@@ -80,7 +80,7 @@ def _cache_header(response):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_historical_range_gets_long_ttl(mock_today, client):
@@ -89,7 +89,7 @@ def test_historical_range_gets_long_ttl(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_range_including_today_gets_short_ttl(mock_today, client):
@@ -101,7 +101,7 @@ def test_range_including_today_gets_short_ttl(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_single_dayobs_today_gets_short_ttl(mock_today, client):
@@ -110,7 +110,7 @@ def test_single_dayobs_today_gets_short_ttl(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_single_dayobs_historical_gets_long_ttl(mock_today, client):
@@ -131,7 +131,7 @@ def test_no_dayobs_params_no_cache_header(client):
 
 @pytest.mark.parametrize("path", sorted(_ALWAYS_SHORT_PATHS))
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_always_short_paths_get_short_ttl(mock_today, path, client):
@@ -154,7 +154,7 @@ def test_invalid_dayobs_no_cache_header(client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_only_start_param(mock_today, client):
@@ -163,7 +163,7 @@ def test_only_start_param(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_only_end_param(mock_today, client):
