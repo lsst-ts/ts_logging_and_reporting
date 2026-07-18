@@ -605,6 +605,7 @@ HTTP layer without touching the adapter or service code.
 | `web_app/services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
 | `web_app/services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
 | `web_app/services/jira.py` | ✅ `JiraTicketsService` + `get_jira_tickets_service()`; dedupes multi-bucket tickets, derives the range-dependent `isNew` at collation, and holds the instrument include/exclude filters |
+| `web_app/services/block_details.py` | ✅ `BlockDetailsService` + `get_block_details_service()`; splits keys by pattern across the two ID-based adapters, reports per-source failures in the response's `errors` field (both failing → 500), and decorates records with source and URL (built lazily from `get_jira_hostname()`) |
 | `web_app/services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
 | `web_app/services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
 | `web_app/services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py` / `scheduler_service.py`) |
@@ -726,14 +727,16 @@ HTTP layer without touching the adapter or service code.
 
 - ✅ `/jira-tickets` is served by `JiraTicketsService` in the new `web_app/services/jira.py`
   (deduplication, service-derived `isNew`, and the instrument include/exclude filters,
-  which were copied there); `jira_service.py` itself is untouched until the BLOCK side
-  migrates — `get_jira_tickets()` is now unused and goes with that cleanup
-- Replace the key-splitting/merging logic currently inline in the `/block-details` endpoint
-  with `BlockDetailsService`, holding `JiraBlockAdapter` and `ZephyrAdapter` (both
-  `IdBasedAdapter`); `handle_request(keys)` deduplicates, splits by key pattern, calls
-  `fetch_by_ids` on each, and preserves the per-source error reporting
-- `get_block_ticket_summaries()` logic moves into `JiraBlockAdapter`
-- Retain filter helpers (`filter_tickets_with_instrument_match` etc.) as module-level utilities
+  which were copied there)
+- ✅ `/block-details` is served by `BlockDetailsService` in the new
+  `web_app/services/block_details.py`, holding `JiraBlockAdapter` and `ZephyrAdapter`
+  (both `IdBasedAdapter`); `handle_request(keys)` deduplicates, splits by key pattern,
+  calls `fetch_by_ids` on each, and preserves the per-source error reporting (with one
+  change: auth failures raise 401 for the whole request, as the endpoint's `Depends` did)
+- ✅ `get_block_ticket_summaries()` logic moved into `JiraBlockAdapter`
+- `jira_service.py` is now entirely unused (`get_jira_tickets()`, the filter helpers'
+  copies, and `get_block_ticket_summaries()`) and dies in the final cleanup stage
+  (implementation-order step 8), along with the legacy `jira.py` and `zephyr_service.py`
 
 **`web_app/services/zephyr_service.py`**
 
@@ -745,7 +748,7 @@ HTTP layer without touching the adapter or service code.
   its cache by parent. A 404 caches `null`; other errors raise, so a bad token surfaces as
   a Zephyr-side error instead of the legacy behaviour of silently returning no blocks
 - No `Service` subclass needed; `ZephyrAdapter` is held by `BlockDetailsService`; the
-  legacy file dies with the endpoint switch (chunk-4 cleanup)
+  legacy file dies in the final cleanup stage (implementation-order step 8)
 
 **`web_app/services/rubin_nights_service.py`** → **deleted**, replaced by:
 
@@ -816,14 +819,23 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
    ✅ `JiraObsCachedAdapter` — **all done**
 3. **Service layer refactor** — once adapters exist the services are thin and quick; do all of
    them together
-4. **`BlockDetailsService` + ID-based adapters** — `JiraBlockAdapter` and `ZephyrAdapter`
-   with their ID-keyed cache loop; validates the `IdBasedAdapter` variant of the pattern
+4. ✅ **`BlockDetailsService` + ID-based adapters** — `JiraBlockAdapter` and `ZephyrAdapter`
+   with their ID-keyed cache loop; validates the `IdBasedAdapter` variant of the pattern.
+   Legacy `jira.py`, `jira_service.py`, and `zephyr_service.py` are now dead code awaiting
+   the final cleanup stage (step 8)
 5. **ConsDB adapter** — SQL-based, more complex than the REST adapters but self-contained
    (mind the exclusive upper bound in its queries)
 6. **Scheduler adapter** — `ExpectedExposuresCachedAdapter`
 7. **`rubin_nights` split** — largest and riskiest; leave last so the pattern is well-established
    before touching the most complex code. Includes the `/exposures` collation
    (dome + time accounting) and both visit-map services
+8. **Final cleanup** — delete the old adapters and services superseded along the way
+   (`jira.py`, `jira_service.py`, `zephyr_service.py`, `almanac.py`/`almanac_service.py`,
+   `exposure_log.py`, `consdb.py`, `source_adapters.py`, `rubin_nights_service.py`,
+   `scheduler_service.py` remnants) and remove **all** now-unused code they leave behind:
+   helper functions (`build_block_response`, the `ZEPHYR_BLOCK_BASE_URL`/
+   `JIRA_BLOCK_BASE_URL` constants), dead tests, and — being thorough — every import that
+   is no longer used anywhere, in both `python/` and `tests/`
 
 ### Testing
 
