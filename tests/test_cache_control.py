@@ -26,10 +26,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
 from lsst.ts.logging_and_reporting.web_app.middleware.cache_control import (
-    _ALWAYS_SHORT_PATHS,
-    _HISTORICAL_MAX_AGE,
-    _TODAY_MAX_AGE,
+    _MUTABLE_PATHS,
     CacheControlMiddleware,
 )
 
@@ -86,7 +85,7 @@ def _cache_header(response):
 )
 def test_historical_range_gets_long_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsStart": 20250101, "dayObsEnd": 20250131})
-    assert _cache_header(resp) == f"public, max-age={_HISTORICAL_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
 
 
 @patch(
@@ -98,7 +97,7 @@ def test_range_including_today_gets_short_ttl(mock_today, client):
         "/some-endpoint",
         params={"dayObsStart": 20251201, "dayObsEnd": 20260201},
     )
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
 
 
 @patch(
@@ -107,7 +106,7 @@ def test_range_including_today_gets_short_ttl(mock_today, client):
 )
 def test_single_dayobs_today_gets_short_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObs": MOCK_TODAY})
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
 
 
 @patch(
@@ -116,7 +115,7 @@ def test_single_dayobs_today_gets_short_ttl(mock_today, client):
 )
 def test_single_dayobs_historical_gets_long_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObs": 20250601})
-    assert _cache_header(resp) == f"public, max-age={_HISTORICAL_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
 
 
 # -- no dayobs params → no header --
@@ -127,23 +126,33 @@ def test_no_dayobs_params_no_cache_header(client):
     assert _cache_header(resp) is None
 
 
-# -- always-short-path endpoints --
+# -- mutable-path endpoints --
 
 
-@pytest.mark.parametrize("path", sorted(_ALWAYS_SHORT_PATHS))
+@pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
 @patch(
     "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
-def test_always_short_paths_get_short_ttl(mock_today, path, client):
+def test_mutable_paths_get_mutable_ttl_for_historical_range(mock_today, path, client):
     resp = client.get(path, params={"dayObsStart": 20250101, "dayObsEnd": 20250131})
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL}"
 
 
-@pytest.mark.parametrize("path", sorted(_ALWAYS_SHORT_PATHS))
-def test_always_short_paths_without_dayobs(path, client):
+@pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
+@patch(
+    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_mutable_paths_get_today_ttl_when_range_includes_today(mock_today, path, client):
+    resp = client.get(path, params={"dayObsStart": 20251201, "dayObsEnd": 20260201})
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
+
+
+@pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
+def test_mutable_paths_without_dayobs(path, client):
     resp = client.get(path)
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL}"
 
 
 # -- edge cases --
@@ -160,7 +169,7 @@ def test_invalid_dayobs_no_cache_header(client):
 )
 def test_only_start_param(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsStart": 20250601})
-    assert _cache_header(resp) == f"public, max-age={_HISTORICAL_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
 
 
 @patch(
@@ -169,4 +178,4 @@ def test_only_start_param(mock_today, client):
 )
 def test_only_end_param(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsEnd": MOCK_TODAY})
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"

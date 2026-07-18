@@ -20,7 +20,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 import logging
 
 from fastapi import Request, Response
@@ -28,18 +27,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 
 from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.getLogger(__name__)
 
-# Short TTL for responses that include today
-# Matches RefreshWorker interval - see doc/BACKEND_REFACTOR_PLAN.md
-_TODAY_MAX_AGE = 300
-# Long TTL for fully historical responses
-_HISTORICAL_MAX_AGE = 86400
-
-# Endpoints that always receive the short TTL because they contain mutable
-# data regardless of which dayobs is requested.
-_ALWAYS_SHORT_PATHS = frozenset(
+# Endpoints whose data is mutable regardless of which dayobs is
+# requested.
+_MUTABLE_PATHS = frozenset(
     {
         "/exposure-flags",
         "/block-details",
@@ -56,17 +50,19 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     Endpoints that accept dayobs query parameters receive a
     ``Cache-Control: max-age=<N>`` header.  The value of ``max-age`` is:
 
-    - ``300`` (short) if the response includes today's astronomical dayobs,
-      so proxy and browser caches never serve data more stale than one
-      ``RefreshWorker`` cycle.
-    - ``86400`` (long) for fully historical requests whose data will not
-      change.
+    - `TODAY_TTL` if the response includes today's astronomical
+      dayobs, so proxy and browser caches never serve data more stale
+      than one ``RefreshWorker`` cycle.
+    - `MUTABLE_TTL` for historical requests to the mutable endpoints
+      (``/exposure-flags``, ``/block-details``, ``/exposure-entries``,
+      ``/narrative-log``), whose data can change on any dayobs.
+    - `HISTORIC_TTL` for other fully historical requests, whose data
+      will not change.
 
     Endpoints without dayobs parameters (``/version``, ``/health``)
-    are left untouched.
-
-    Some endpoints (see _ALWAYS_SHORT_PATHS) always receive the short
-    TTL because they contain mutable data regardless of dayobs.
+    are left untouched, except mutable endpoints, which get
+    `MUTABLE_TTL` (``/block-details`` is keyed by BLOCK id, not
+    dayobs).
 
     Query parameter names handled:
 
@@ -78,11 +74,7 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         path = request.url.path.rstrip("/")
-
-        # Mutable-data endpoints always get the short TTL.
-        if path in _ALWAYS_SHORT_PATHS:
-            response.headers["Cache-Control"] = f"public, max-age={_TODAY_MAX_AGE}"
-            return response
+        mutable = path in _MUTABLE_PATHS
 
         params = request.query_params
 
@@ -96,21 +88,27 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             end_raw = day_obs_raw
 
         if not (start_raw or end_raw):
+            if mutable:
+                response.headers["Cache-Control"] = f"public, max-age={MUTABLE_TTL}"
             return response
 
         try:
             start = int(start_raw) if start_raw else None
             end = int(end_raw) if end_raw else None
         except (ValueError, TypeError):
-            logger.error("There's an error getting start/end dayobs")
+            logger.warning(f"Uncacheable non-integer dayobs range for {path}: {start_raw}..{end_raw}")
             return response
 
         # If only one bound is present, treat it as both
         start = start if start is not None else end
         end = end if end is not None else start
 
-        today = current_dayobs()
-        max_age = _TODAY_MAX_AGE if start <= today <= end else _HISTORICAL_MAX_AGE
+        if start <= current_dayobs() <= end:
+            max_age = TODAY_TTL
+        elif mutable:
+            max_age = MUTABLE_TTL
+        else:
+            max_age = HISTORIC_TTL
 
         response.headers["Cache-Control"] = f"public, max-age={max_age}"
         return response
