@@ -595,7 +595,7 @@ HTTP layer without touching the adapter or service code.
 | `adapters/consdb.py` | `ConsdbCachedAdapter` (moved from `consdb.py`) |
 | `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
 | `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; mutable TTL policy (`MutableDataMixin`). ✅ `JiraBlockAdapter` (`JiraApiMixin + MutableDataMixin + RestClient + IdBasedAdapter`) — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
-| `adapters/zephyr.py` | `ZephyrAdapter(IdBasedAdapter)` (test-case lookups by key, moved from `zephyr_service.py`) |
+| `adapters/zephyr.py` | ✅ `ZephyrAdapter` (`MutableDataMixin + RestClient + IdBasedAdapter`) — test-case names by BLOCK key, queried directly from the Zephyr Scale REST API (drops the async `ZephyrInterface` dependency: our one call path was a single raw GET); cache keyed by **parent** key so every `_x` suffix variant shares one entry; 404s cached as `null` |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
@@ -737,10 +737,15 @@ HTTP layer without touching the adapter or service code.
 
 **`web_app/services/zephyr_service.py`**
 
-- Convert the async `get_test_cases()` wrapper around `ZephyrInterface` into
-  `ZephyrAdapter(IdBasedAdapter)` implementing `fetch_by_ids(ids)` (synchronous, per the
-  sync-adapters decision; keeps the `_x`-suffix → parent-key mapping)
-- No `Service` subclass needed; `ZephyrAdapter` is held by `BlockDetailsService`
+- ✅ Replaced by `adapters/zephyr.py`: `ZephyrAdapter` implements `fetch_by_ids(ids)`
+  synchronously against the Zephyr Scale REST API directly (the legacy path's only call,
+  `get_test_case(parse="raw")`, was a single GET — wrapping the async `ZephyrInterface`
+  would have meant `asyncio.run`, aiohttp error types outside the 502 mapping, and no
+  timeouts). The `_x`-suffix → parent-key mapping moved into the adapter, which also keys
+  its cache by parent. A 404 caches `null`; other errors raise, so a bad token surfaces as
+  a Zephyr-side error instead of the legacy behaviour of silently returning no blocks
+- No `Service` subclass needed; `ZephyrAdapter` is held by `BlockDetailsService`; the
+  legacy file dies with the endpoint switch (chunk-4 cleanup)
 
 **`web_app/services/rubin_nights_service.py`** → **deleted**, replaced by:
 
