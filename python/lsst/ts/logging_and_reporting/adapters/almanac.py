@@ -33,6 +33,7 @@ from astroplan import Observer
 from astropy.time import Time
 
 from lsst.ts.logging_and_reporting.web_app.base_adapter import CachedAdapter
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -67,8 +68,9 @@ class AlmanacCachedAdapter(CachedAdapter):
             return Observer(location, timezone="Chile/Continental")
 
     def _ttl(self, dayobs: int) -> int:
-        """Always the long TTL — ephemeris data never changes."""
-        return self.LONG_TTL
+        """Always the historic TTL — ephemeris data never changes,
+        even for today's entry."""
+        return HISTORIC_TTL_REDIS
 
     def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, dict]:
         return {dayobs: self._compute_night(dayobs) for dayobs in dayobs_list}

@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from lsst.ts.logging_and_reporting.adapters.nightreport import NightReportCachedAdapter
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS
 
 SERVER = "https://test.example"
 
@@ -96,8 +97,8 @@ class TestFetchFromSource:
 
 
 class TestTtl:
-    def test_historical_dayobs_gets_long_ttl(self, adapter, fake_redis):
+    def test_historical_dayobs_gets_historic_ttl(self, adapter, fake_redis):
         payload = [make_report(20200101)]
         with patch("requests.get", return_value=mock_response(payload)):
             adapter.fetch(20200101, 20200101)
-        assert fake_redis.ttls["adapter:nightreport:20200101"] == adapter.LONG_TTL
+        assert fake_redis.ttls["adapter:nightreport:20200101"] == HISTORIC_TTL_REDIS

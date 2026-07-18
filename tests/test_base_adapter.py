@@ -7,8 +7,14 @@ from lsst.ts.logging_and_reporting.utils import current_dayobs
 from lsst.ts.logging_and_reporting.web_app.base_adapter import (
     CachedAdapter,
     IdBasedAdapter,
+    MutableDataMixin,
     contiguous_runs,
     dayobs_range,
+)
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
+    HISTORIC_TTL_REDIS,
+    MUTABLE_TTL_REDIS,
+    TODAY_TTL_REDIS,
 )
 
 TODAY = current_dayobs()
@@ -136,24 +142,31 @@ class TestCacheLoop:
 
 
 class TestTtlPolicy:
-    def test_historical_gets_long_ttl(self, fake_redis):
+    def test_historical_gets_historic_ttl(self, fake_redis):
         adapter = RecordingAdapter(fake_redis)
         adapter.fetch(20200101, 20200101)
-        assert fake_redis.ttls["adapter:recording:20200101"] == CachedAdapter.LONG_TTL
+        assert fake_redis.ttls["adapter:recording:20200101"] == HISTORIC_TTL_REDIS
 
-    def test_today_gets_short_ttl(self, fake_redis):
+    def test_today_gets_today_ttl(self, fake_redis):
         adapter = RecordingAdapter(fake_redis)
         adapter.fetch(TODAY, TODAY)
-        assert fake_redis.ttls[f"adapter:recording:{TODAY}"] == CachedAdapter.SHORT_TTL
+        assert fake_redis.ttls[f"adapter:recording:{TODAY}"] == TODAY_TTL_REDIS
 
-    def test_mutable_adapter_can_force_short_ttl(self, fake_redis):
-        class MutableAdapter(RecordingAdapter):
-            def _ttl(self, dayobs):
-                return self.SHORT_TTL
+    def test_mutable_mixin_shortens_historical_ttl(self, fake_redis):
+        class MutableAdapter(MutableDataMixin, RecordingAdapter):
+            pass
 
         adapter = MutableAdapter(fake_redis)
         adapter.fetch(20200101, 20200101)
-        assert fake_redis.ttls["adapter:recording:20200101"] == CachedAdapter.SHORT_TTL
+        assert fake_redis.ttls["adapter:recording:20200101"] == MUTABLE_TTL_REDIS
+
+    def test_mutable_mixin_keeps_today_ttl(self, fake_redis):
+        class MutableAdapter(MutableDataMixin, RecordingAdapter):
+            pass
+
+        adapter = MutableAdapter(fake_redis)
+        adapter.fetch(TODAY, TODAY)
+        assert fake_redis.ttls[f"adapter:recording:{TODAY}"] == TODAY_TTL_REDIS
 
 
 class TestRefresh:
@@ -240,7 +253,15 @@ class TestIdBasedAdapter:
         adapter.fetch_by_ids(["BLOCK-1", "BLOCK-2", "BLOCK-3"])
         assert adapter.calls == [["BLOCK-2", "BLOCK-3"]]
 
-    def test_fixed_long_ttl_and_key_scheme(self, fake_redis):
+    def test_fixed_historic_ttl_and_key_scheme(self, fake_redis):
         adapter = RecordingIdAdapter(fake_redis)
         adapter.fetch_by_ids(["BLOCK-1"])
-        assert fake_redis.ttls["adapter:recording_ids:BLOCK-1"] == IdBasedAdapter.TTL
+        assert fake_redis.ttls["adapter:recording_ids:BLOCK-1"] == HISTORIC_TTL_REDIS
+
+    def test_mutable_mixin_applies_to_id_keys(self, fake_redis):
+        class MutableIdAdapter(MutableDataMixin, RecordingIdAdapter):
+            pass
+
+        adapter = MutableIdAdapter(fake_redis)
+        adapter.fetch_by_ids(["BLOCK-1"])
+        assert fake_redis.ttls["adapter:recording_ids:BLOCK-1"] == MUTABLE_TTL_REDIS

@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from lsst.ts.logging_and_reporting.adapters.exposurelog import ExposurelogCachedAdapter
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import MUTABLE_TTL_REDIS
 
 SERVER = "https://test.example"
 
@@ -90,8 +91,8 @@ class TestFetchFromSource:
 
 
 class TestTtl:
-    def test_short_ttl_even_for_historical_dayobs(self, adapter, fake_redis):
+    def test_mutable_ttl_for_historical_dayobs(self, adapter, fake_redis):
         payload = [make_message(20200101)]
         with patch("requests.get", return_value=mock_response(payload)):
             adapter.fetch(20200101, 20200101)
-        assert fake_redis.ttls["adapter:exposurelog:20200101"] == adapter.SHORT_TTL
+        assert fake_redis.ttls["adapter:exposurelog:20200101"] == MUTABLE_TTL_REDIS

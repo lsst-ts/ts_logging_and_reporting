@@ -5,6 +5,7 @@ import pytest
 
 from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter
 from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS
 
 TODAY = current_dayobs()
 
@@ -26,10 +27,10 @@ class TestCaching:
         adapter.fetch(20250101, 20250101)
         assert adapter._compute_night.call_count == 1
 
-    def test_long_ttl_even_for_today(self, adapter, fake_redis):
+    def test_historic_ttl_even_for_today(self, adapter, fake_redis):
         adapter._compute_night = Mock(side_effect=lambda dayobs: {"dayobs": dayobs})
         adapter.fetch(TODAY, TODAY)
-        assert fake_redis.ttls[f"adapter:almanac:{TODAY}"] == AlmanacCachedAdapter.LONG_TTL
+        assert fake_redis.ttls[f"adapter:almanac:{TODAY}"] == HISTORIC_TTL_REDIS
 
 
 class TestComputeNight:

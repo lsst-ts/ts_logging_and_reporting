@@ -61,6 +61,7 @@ from typing import Any
 from lsst.ts.logging_and_reporting.utils import current_dayobs
 
 from .base_adapter import CachedAdapter
+from .cache_ttl import TODAY_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +86,12 @@ class RefreshWorker:
     redis : `Any`
         redis-py-compatible client, used for the leader lease.
     interval_seconds : `int`, optional
-        Seconds between refresh cycles. The default matches the short
-        cache-control ``max-age`` served for today's data.
+        Seconds between refresh cycles. Defaults to `TODAY_TTL` — the
+        cache-control ``max-age`` served for today's data — so
+        clients are never staler than one refresh cycle.
     """
 
-    def __init__(self, adapters: list[CachedAdapter], redis: Any, interval_seconds: int = 300):
+    def __init__(self, adapters: list[CachedAdapter], redis: Any, interval_seconds: int = TODAY_TTL):
         self._adapters = list(adapters)
         self._redis = redis
         self._interval = interval_seconds

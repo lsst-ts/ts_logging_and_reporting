@@ -9,6 +9,7 @@ from lsst.ts.logging_and_reporting.adapters.jira import (
     JiraObsCachedAdapter,
     get_system_names,
 )
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import MUTABLE_TTL_REDIS
 
 SERVER = "https://jira.test"
 
@@ -166,8 +167,8 @@ class TestFetchFromSource:
 
 
 class TestTtl:
-    def test_short_ttl_even_for_historical_dayobs(self, adapter, fake_redis):
+    def test_mutable_ttl_for_historical_dayobs(self, adapter, fake_redis):
         issues = [make_issue(created="2020-01-01T18:00:00.000+0000")]
         with patch("requests.get", jira_requests_get(issues)):
             adapter.fetch(20200101, 20200101)
-        assert fake_redis.ttls["adapter:jira_obs:20200101"] == adapter.SHORT_TTL
+        assert fake_redis.ttls["adapter:jira_obs:20200101"] == MUTABLE_TTL_REDIS
