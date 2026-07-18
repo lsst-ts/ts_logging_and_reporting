@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Cached adapter for OBS tickets from the Jira REST API.
+"""Cached adapters for OBS tickets and BLOCK summaries from Jira.
 
 See https://developer.atlassian.com/cloud/jira/platform/rest/v3 for
 the upstream API.
@@ -33,14 +33,18 @@ from typing import Any
 
 from pytz import timezone
 
-from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
+from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter, RestClient
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
     current_dayobs_utc,
     get_jira_hostname,
     get_utc_datetime_from_dayobs_str,
 )
-from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapter import (
+    SECONDS_PER_DAY,
+    IdBasedAdapter,
+    contiguous_runs,
+)
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -76,7 +80,23 @@ def get_system_names(jira_system_field: Any) -> list[str]:
     return systems
 
 
-class JiraObsCachedAdapter(RestCachedAdapter):
+class JiraApiMixin:
+    """Server resolution and Basic-auth headers for the Jira API."""
+
+    auth_source = "jira"
+
+    @property
+    def server(self) -> str:
+        return self._server_url or f"https://{get_jira_hostname()}"
+
+    def _request_headers(self) -> dict:
+        return {
+            "Authorization": f"Basic {self._get_token()}",
+            "content-type": "application/json",
+        }
+
+
+class JiraObsCachedAdapter(JiraApiMixin, RestCachedAdapter):
     """Fetches and caches OBS Jira tickets per dayobs.
 
     A ticket belongs to a dayobs bucket when it was created or last
@@ -93,7 +113,6 @@ class JiraObsCachedAdapter(RestCachedAdapter):
     """
 
     name = "jira_obs"
-    auth_source = "jira"
 
     EXCLUDED_STATUSES = ["Cancelled"]
     ISSUE_FIELDS = [
@@ -106,16 +125,6 @@ class JiraObsCachedAdapter(RestCachedAdapter):
         OBS_SYSTEMS_FIELD,
         TIME_LOST_FIELD,
     ]
-
-    @property
-    def server(self) -> str:
-        return self._server_url or f"https://{get_jira_hostname()}"
-
-    def _request_headers(self) -> dict:
-        return {
-            "Authorization": f"Basic {self._get_token()}",
-            "content-type": "application/json",
-        }
 
     def _ttl(self, dayobs: int) -> int:
         """Always the short TTL.
@@ -194,6 +203,35 @@ class JiraObsCachedAdapter(RestCachedAdapter):
         }
 
 
+class JiraBlockAdapter(JiraApiMixin, RestClient, IdBasedAdapter):
+    """Fetches and caches BLOCK ticket summaries by issue key.
+
+    Keys the search does not return are cached as ``None`` so an
+    unknown key does not trigger an upstream query on every request.
+    """
+
+    name = "jira_block"
+
+    TTL = SECONDS_PER_DAY
+    """A day: summaries rarely change, but an edited or newly created
+    ticket should not stay invisible for the base-class month."""
+
+    def _fetch_from_source(self, ids: list[str]) -> dict[str, str | None]:
+        logger.debug(f"Fetching BLOCK ticket summaries for {ids}")
+        jql_query = f"project = BLOCK AND key in ({','.join(ids)})"
+        response = self._get_json(
+            f"{self.server}/rest/api/latest/search/jql",
+            params={"jql": jql_query, "fields": "summary"},
+        )
+        summaries = {issue["key"]: issue["fields"]["summary"] for issue in response.get("issues", [])}
+        return {key: summaries.get(key) for key in ids}
+
+
 @functools.cache
 def get_jira_obs_adapter() -> JiraObsCachedAdapter:
     return JiraObsCachedAdapter(get_redis_client())
+
+
+@functools.cache
+def get_jira_block_adapter() -> JiraBlockAdapter:
+    return JiraBlockAdapter(get_redis_client())
