@@ -591,7 +591,7 @@ HTTP layer without touching the adapter or service code.
 | `adapters/nightreport.py` | ✅ `NightReportCachedAdapter` (rewritten from `source_adapters.py`) — dayobs-range API with exclusive `max_day_obs`; default TTL policy |
 | `adapters/consdb.py` | `ConsdbCachedAdapter` (moved from `consdb.py`) |
 | `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
-| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; always-short TTL. Still to add: `JiraBlockAdapter(IdBasedAdapter)` (BLOCK ticket summaries by key, moved from `jira.py`) |
+| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; always-short TTL. ✅ `JiraBlockAdapter` (`JiraApiMixin + RestClient + IdBasedAdapter`) — BLOCK ticket summaries by key, one-day fixed TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
 | `adapters/zephyr.py` | `ZephyrAdapter(IdBasedAdapter)` (test-case lookups by key, moved from `zephyr_service.py`) |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
@@ -653,8 +653,8 @@ HTTP layer without touching the adapter or service code.
 - Split into two classes:
   - ✅ `JiraObsCachedAdapter` — fetches and caches OBS tickets per dayobs; used by
     `JiraTicketsService`
-  - `JiraBlockAdapter(IdBasedAdapter)` — implements `fetch_by_ids(ids)` wrapping
-    `fetch_block_ticket_summaries()`; held by `BlockDetailsService`
+  - ✅ `JiraBlockAdapter(IdBasedAdapter)` — implements `fetch_by_ids(ids)` with the
+    `fetch_block_ticket_summaries()` JQL search; held by `BlockDetailsService`
 - The legacy `JiraAdapter` stays until the BLOCK side migrates
   (`get_block_ticket_summaries()` still uses it)
 
