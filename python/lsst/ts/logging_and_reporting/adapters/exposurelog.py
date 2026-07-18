@@ -28,13 +28,13 @@ from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
-from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapter import MutableDataMixin, contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
 
-class ExposurelogCachedAdapter(RestCachedAdapter):
+class ExposurelogCachedAdapter(MutableDataMixin, RestCachedAdapter):
     """Fetches and caches Exposure Log messages per dayobs.
 
     Messages for **all instruments** are cached together under one
@@ -49,15 +49,6 @@ class ExposurelogCachedAdapter(RestCachedAdapter):
     def __init__(self, redis: Any, server_url: str | None = None, limit: int = 2500):
         super().__init__(redis, server_url=server_url)
         self._limit = limit
-
-    def _ttl(self, dayobs: int) -> int:
-        """Always the short TTL.
-
-        Exposure log entries can be added or edited for past nights,
-        so historical entries must not be cached for long (mirrors
-        the always-short list in ``CacheControlMiddleware``).
-        """
-        return self.SHORT_TTL
 
     def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, list[dict]]:
         results: dict[int, list[dict]] = {dayobs: [] for dayobs in dayobs_list}

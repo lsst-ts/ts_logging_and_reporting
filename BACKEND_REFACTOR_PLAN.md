@@ -129,10 +129,11 @@ missing:
 2. `DayobsValidationMiddleware` — validates dayobs parameters, ensures `dayObsStart <= dayObsEnd`;
    must skip endpoints without dayobs parameters (`/block-details`, `/version`, `/health`)
 3. `CacheControlMiddleware` — **already implemented and committed** (with tests in
-   `tests/test_cache_control.py`); adds `Cache-Control` headers: short max-age if the response
-   includes today's dayobs, long max-age for fully historical responses. Endpoints whose data is
-   mutable regardless of the requested dayobs (`/exposure-flags`, `/exposure-entries`,
-   `/narrative-log`, `/block-details`) always receive the short max-age.
+   `tests/test_cache_control.py`); adds `Cache-Control` headers from the shared
+   `web_app/cache_ttl.py` constants: `TODAY_TTL` if the response includes today's dayobs,
+   `MUTABLE_TTL` for historical requests to the mutable endpoints (`/exposure-flags`,
+   `/exposure-entries`, `/narrative-log`, `/block-details`), `HISTORIC_TTL` for other fully
+   historical responses.
 4. `PublicAccessMiddleware` — for the public-facing release, enforces `dayObsStart == dayObsEnd`
    on dayobs-driven endpoints
 
@@ -281,11 +282,11 @@ CachedAdapter (ABC)
 │     in place every interval regardless of remaining TTL; the TTL only bounds
 │     how stale the entry can get if the worker stalls entirely.
 │     Overridable: adapters whose historical data is still mutable (exposure log and
-│     narrative log entries can be added/edited for past nights) should return the
-│     short TTL for all dayobs, mirroring the _ALWAYS_SHORT_PATHS list already in
-│     CacheControlMiddleware. (For those historical entries the worker does no
-│     refresh, so the short TTL is the actual staleness bound — 15 minutes is
-│     acceptable for log edits to past nights.)
+│     narrative log entries can be added/edited for past nights) mix in
+│     MutableDataMixin to get MUTABLE_TTL_REDIS for past dayobs, mirroring the
+│     _MUTABLE_PATHS list already in CacheControlMiddleware. (For those historical
+│     entries the worker does no refresh, so the mutable TTL is the actual
+│     staleness bound — edits to past nights appear within the hour.)
 │
 ├── refresh(dayobs: int) -> None
 │     Fetch-then-overwrite: calls _fetch_from_source([dayobs]) first, then
@@ -303,7 +304,7 @@ CachedAdapter (ABC)
 └── refresh_today() -> None
       Convenience wrapper: refresh(current dayobs). "Today" is the current
       astronomical dayobs — noon-to-noon UTC, computed as
-      (UTC now − 12 h).date(), matching utils.current_dayobs_utc().
+      (UTC now − 12 h).date(), via utils.current_dayobs().
 ```
 
 ---
@@ -439,13 +440,13 @@ Request: GET /exposure-entries?dayObsStart=20250101&dayObsEnd=20250108&instrumen
        - Returns {20250101: ..., ..., 20250107: ...}
   6. handle_request filters to the requested instrument (the cache holds all
      instruments per dayobs) and returns collate_response(filtered)
-  7. CacheControlMiddleware adds "Cache-Control: public, max-age=300"
-     (/exposure-entries is an always-short path; other endpoints get max-age=300
-     only when today is in the requested range, max-age=86400 otherwise)
+  7. CacheControlMiddleware adds "Cache-Control: public, max-age=<TODAY_TTL>"
+     (today is in the requested range; a historical range would get MUTABLE_TTL
+     since /exposure-entries is a mutable path, HISTORIC_TTL on other endpoints)
 
 Request: GET /block-details?key=BLOCK-42&key=BLOCK-99&key=BLOCK-T123_a
   1–2. Same middleware/Depends flow as above (DayobsValidationMiddleware skips —
-       no dayobs params; CacheControlMiddleware applies the short max-age)
+       no dayobs params; CacheControlMiddleware applies MUTABLE_TTL)
   3. Endpoint calls block_details_service.handle_request(keys)
   4. handle_request deduplicates and splits keys by pattern:
        Jira:   ["BLOCK-42", "BLOCK-99"]
@@ -551,10 +552,11 @@ HTTP layer without touching the adapter or service code.
    `web_app/middleware/cache_control.py`, registered in `main.py`, and tested in
    `tests/test_cache_control.py` (commits `42b301f`, `50a4f1b`, `1ca2ed8`). As built, it
    inspects the `dayObs`, `dayObsStart`, and `dayObsEnd` query parameters and sets
-   `Cache-Control: public, max-age=<N>` — 300 seconds (matching the intended `RefreshWorker`
-   interval) if today's dayobs is in the requested range, 86400 seconds for fully historical
-   requests. Mutable-data endpoints (`/exposure-flags`, `/block-details`, `/exposure-entries`,
-   `/narrative-log`) always receive the short value regardless of the requested range.
+   `Cache-Control: public, max-age=<N>` from the `web_app/cache_ttl.py` constants —
+   `TODAY_TTL` (300 s, matching the `RefreshWorker` interval) if today's dayobs is in the
+   requested range, `HISTORIC_TTL` (86400 s) for fully historical requests. Mutable-data
+   endpoints (`/exposure-flags`, `/block-details`, `/exposure-entries`, `/narrative-log`)
+   receive `MUTABLE_TTL` on historical ranges instead of the historic value.
 
 2. ✅ **Done (dev stack)** — the frontend repo's `docker/nginx.conf` configures the proxy
    cache: `proxy_cache_path`, `Cache-Control` pass-through, full-URL cache key,
@@ -577,7 +579,8 @@ HTTP layer without touching the adapter or service code.
 | File | Description |
 |---|---|
 | `web_app/middleware/__init__.py` | ✅ Exists — exports middleware classes |
-| `web_app/middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers based on whether today's dayobs is in the requested range (always-short for mutable-data endpoints) |
+| `web_app/cache_ttl.py` | ✅ All cache lifetimes in one place: `HISTORIC_TTL`/`HISTORIC_TTL_REDIS`, `TODAY_TTL`/`TODAY_TTL_REDIS`, `MUTABLE_TTL`/`MUTABLE_TTL_REDIS` — client `max-age` and Redis TTL per data kind; the `RefreshWorker` default interval is `TODAY_TTL` |
+| `web_app/middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers from the `cache_ttl` constants based on whether today's dayobs is in the requested range (mutable-data endpoints get `MUTABLE_TTL` on historical ranges) |
 | `web_app/middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
 | `web_app/middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
 | `web_app/middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
@@ -587,11 +590,11 @@ HTTP layer without touching the adapter or service code.
 | `web_app/redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
 | `adapters/http.py` | ✅ `RestClient` mixin — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GETs that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). `RestCachedAdapter` composes it with `CachedAdapter` for dayobs-keyed adapters; ID-keyed adapters compose it with `IdBasedAdapter` themselves |
 | `adapters/exposurelog.py` | ✅ `ExposurelogCachedAdapter` (rewritten from `exposure_log.py`, which becomes deletable) — caches all instruments together per dayobs key; services filter by instrument at collation |
-| `adapters/narrativelog.py` | ✅ `NarrativelogCachedAdapter` (rewritten from `source_adapters.py`) — queries the upstream `date_begin` window noon-to-noon per contiguous run, partitions by `date_begin` dayobs, derives `instrument` from the telescope component; always-short TTL |
+| `adapters/narrativelog.py` | ✅ `NarrativelogCachedAdapter` (rewritten from `source_adapters.py`) — queries the upstream `date_begin` window noon-to-noon per contiguous run, partitions by `date_begin` dayobs, derives `instrument` from the telescope component; mutable TTL policy (`MutableDataMixin`) |
 | `adapters/nightreport.py` | ✅ `NightReportCachedAdapter` (rewritten from `source_adapters.py`) — dayobs-range API with exclusive `max_day_obs`; default TTL policy |
 | `adapters/consdb.py` | `ConsdbCachedAdapter` (moved from `consdb.py`) |
 | `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
-| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; always-short TTL. ✅ `JiraBlockAdapter` (`JiraApiMixin + RestClient + IdBasedAdapter`) — BLOCK ticket summaries by key, one-day fixed TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
+| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; mutable TTL policy (`MutableDataMixin`). ✅ `JiraBlockAdapter` (`JiraApiMixin + MutableDataMixin + RestClient + IdBasedAdapter`) — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
 | `adapters/zephyr.py` | `ZephyrAdapter(IdBasedAdapter)` (test-case lookups by key, moved from `zephyr_service.py`) |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
@@ -898,7 +901,7 @@ upstream fetch count is one per missing dayobs — not N per dayobs.
 A representative slice rather than everything, since endpoints share the same cache loop:
 
 - `/almanac` — cheap local compute; measures pure caching overhead
-- `/narrative-log`, `/exposure-entries` — simple REST fetches (also always-short TTL endpoints)
+- `/narrative-log`, `/exposure-entries` — simple REST fetches (also mutable-TTL endpoints)
 - `/exposures` — multi-adapter collation with computed totals; the most complex service
 - `/obs-status` — EFD-heavy
 - `/expected-exposures` — heavy `rubin_sim` compute; caching should nearly eliminate it

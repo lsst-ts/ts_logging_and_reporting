@@ -37,10 +37,13 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
+    HISTORIC_TTL_REDIS,
+    MUTABLE_TTL_REDIS,
+    TODAY_TTL_REDIS,
+)
 
 logger = logging.getLogger(__name__)
-
-SECONDS_PER_DAY = 86400
 
 
 def _dayobs_to_date(dayobs: int) -> dt.date:
@@ -305,19 +308,6 @@ class CachedAdapter(_SingleFlightCache, BaseAdapter, ABC):
     `_fetch_from_source`.
     """
 
-    SHORT_TTL = 900
-    """TTL (seconds) for today's entry.
-
-    Must comfortably exceed the RefreshWorker interval so today's
-    entry cannot expire between refresh cycles; the worker overwrites
-    the entry in place every interval regardless of remaining TTL, so
-    this does not increase staleness — it only bounds how stale the
-    entry can get if the worker stalls entirely.
-    """
-
-    LONG_TTL = 30 * SECONDS_PER_DAY
-    """TTL (seconds) for historical entries."""
-
     def fetch(self, start_dayobs: int, end_dayobs: int) -> dict[int, Any]:
         return self._fetch_cached(dayobs_range(start_dayobs, end_dayobs))
 
@@ -343,15 +333,10 @@ class CachedAdapter(_SingleFlightCache, BaseAdapter, ABC):
         raise NotImplementedError
 
     def _ttl(self, dayobs: int) -> int:
-        """TTL for a dayobs entry: short for today, long otherwise.
-
-        Adapters whose historical data is still mutable (exposure log
-        and narrative log entries can be added or edited for past
-        nights) should override this to return `SHORT_TTL` for all
-        dayobs, mirroring the always-short endpoint list in
-        `CacheControlMiddleware`.
-        """
-        return self.SHORT_TTL if dayobs == current_dayobs() else self.LONG_TTL
+        """TTL for a dayobs entry: today's TTL for today, historic
+        otherwise. Adapters with different lifetimes override this
+        (or mix in `MutableDataMixin`)."""
+        return TODAY_TTL_REDIS if dayobs == current_dayobs() else HISTORIC_TTL_REDIS
 
     def refresh(self, dayobs: int) -> None:
         """Refresh one dayobs' cache entry, fetch-then-overwrite.
@@ -369,7 +354,7 @@ class CachedAdapter(_SingleFlightCache, BaseAdapter, ABC):
         Called by ``RefreshWorker`` — every interval for today, and
         once more for the previous dayobs after rollover (the
         finalisation pass, which re-stores the completed night with
-        the long historical TTL).
+        its historical TTL).
         """
         data = self._fetch_from_source([dayobs])
         if dayobs not in data:
@@ -381,6 +366,23 @@ class CachedAdapter(_SingleFlightCache, BaseAdapter, ABC):
     def refresh_today(self) -> None:
         """Refresh today's cache entry (see `refresh`)."""
         self.refresh(current_dayobs())
+
+
+class MutableDataMixin:
+    """TTL policy for adapters whose records can still change.
+
+    Log messages, tickets, and test cases can be added or edited at
+    any time, so entries get the shorter `MUTABLE_TTL_REDIS` instead
+    of `HISTORIC_TTL_REDIS`, mirroring the mutable endpoint list in
+    ``CacheControlMiddleware``. Works under either cache base class:
+    for dayobs-keyed adapters today's entry keeps `TODAY_TTL_REDIS`;
+    ID-keyed entries have no today.
+    """
+
+    def _ttl(self, key) -> int:
+        if isinstance(key, int) and key == current_dayobs():
+            return TODAY_TTL_REDIS
+        return MUTABLE_TTL_REDIS
 
 
 class IdBasedAdapter(_SingleFlightCache, ABC):
@@ -396,9 +398,6 @@ class IdBasedAdapter(_SingleFlightCache, ABC):
     name: str = "id_based"
     """Identifier used as the key in ``Service.adapters`` dicts and
     to namespace this adapter's cache keys."""
-
-    TTL = 30 * SECONDS_PER_DAY
-    """Fixed TTL (seconds) for all entries."""
 
     def fetch_by_ids(self, ids: list[str]) -> dict[str, Any]:
         """Return records for the given IDs, keyed by ID.
@@ -418,4 +417,6 @@ class IdBasedAdapter(_SingleFlightCache, ABC):
         raise NotImplementedError
 
     def _ttl(self, id_: str) -> int:
-        return self.TTL
+        """Fixed lifetime — ID-keyed data has no today/historic
+        split. Adapters with mutable records override this."""
+        return HISTORIC_TTL_REDIS

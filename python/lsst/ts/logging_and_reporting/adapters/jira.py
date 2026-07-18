@@ -41,8 +41,8 @@ from lsst.ts.logging_and_reporting.utils import (
     get_utc_datetime_from_dayobs_str,
 )
 from lsst.ts.logging_and_reporting.web_app.base_adapter import (
-    SECONDS_PER_DAY,
     IdBasedAdapter,
+    MutableDataMixin,
     contiguous_runs,
 )
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
@@ -96,7 +96,7 @@ class JiraApiMixin:
         }
 
 
-class JiraObsCachedAdapter(JiraApiMixin, RestCachedAdapter):
+class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestCachedAdapter):
     """Fetches and caches OBS Jira tickets per dayobs.
 
     A ticket belongs to a dayobs bucket when it was created or last
@@ -125,16 +125,6 @@ class JiraObsCachedAdapter(JiraApiMixin, RestCachedAdapter):
         OBS_SYSTEMS_FIELD,
         TIME_LOST_FIELD,
     ]
-
-    def _ttl(self, dayobs: int) -> int:
-        """Always the short TTL.
-
-        Tickets are mutable: a later edit moves a ticket's ``updated``
-        timestamp (changing which buckets it belongs to) and can change
-        its status, summary, or time lost — so historical buckets must
-        not be cached for long.
-        """
-        return self.SHORT_TTL
 
     @functools.cached_property
     def _user_timezone(self):
@@ -203,7 +193,7 @@ class JiraObsCachedAdapter(JiraApiMixin, RestCachedAdapter):
         }
 
 
-class JiraBlockAdapter(JiraApiMixin, RestClient, IdBasedAdapter):
+class JiraBlockAdapter(JiraApiMixin, MutableDataMixin, RestClient, IdBasedAdapter):
     """Fetches and caches BLOCK ticket summaries by issue key.
 
     Keys the search does not return are cached as ``None`` so an
@@ -211,10 +201,6 @@ class JiraBlockAdapter(JiraApiMixin, RestClient, IdBasedAdapter):
     """
 
     name = "jira_block"
-
-    TTL = SECONDS_PER_DAY
-    """A day: summaries rarely change, but an edited or newly created
-    ticket should not stay invisible for the base-class month."""
 
     def _fetch_from_source(self, ids: list[str]) -> dict[str, str | None]:
         logger.debug(f"Fetching BLOCK ticket summaries for {ids}")

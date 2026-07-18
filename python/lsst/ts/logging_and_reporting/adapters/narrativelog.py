@@ -29,7 +29,7 @@ from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, dayobs_at
-from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapter import MutableDataMixin, contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def _noon_utc(dayobs: int) -> str:
     return dt.datetime.strptime(str(dayobs), "%Y%m%d").replace(hour=12).isoformat()
 
 
-class NarrativelogCachedAdapter(RestCachedAdapter):
+class NarrativelogCachedAdapter(MutableDataMixin, RestCachedAdapter):
     """Fetches and caches Narrative Log messages per dayobs.
 
     Messages for **all telescopes** are cached together under one
@@ -66,15 +66,6 @@ class NarrativelogCachedAdapter(RestCachedAdapter):
     def __init__(self, redis: Any, server_url: str | None = None, page_limit: int = 1000):
         super().__init__(redis, server_url=server_url)
         self._page_limit = page_limit
-
-    def _ttl(self, dayobs: int) -> int:
-        """Always the short TTL.
-
-        Narrative log messages can be added or invalidated for past
-        nights, so historical entries must not be cached for long
-        (mirrors the always-short list in ``CacheControlMiddleware``).
-        """
-        return self.SHORT_TTL
 
     def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, list[dict]]:
         results: dict[int, list[dict]] = {dayobs: [] for dayobs in dayobs_list}

@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from lsst.ts.logging_and_reporting.adapters.jira import JiraBlockAdapter
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import MUTABLE_TTL_REDIS
 
 SERVER = "https://jira.test"
 
@@ -93,7 +94,7 @@ class TestCaching:
         assert result == {"BLOCK-404": None}
         mock_get.assert_not_called()
 
-    def test_entries_stored_with_long_fixed_ttl(self, adapter, fake_redis):
+    def test_entries_stored_with_mutable_ttl(self, adapter, fake_redis):
         with patch("requests.get", block_requests_get({"BLOCK-1": "First block"})):
             adapter.fetch_by_ids(["BLOCK-1"])
-        assert fake_redis.ttls["adapter:jira_block:BLOCK-1"] == JiraBlockAdapter.TTL
+        assert fake_redis.ttls["adapter:jira_block:BLOCK-1"] == MUTABLE_TTL_REDIS
