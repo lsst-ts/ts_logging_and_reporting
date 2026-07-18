@@ -1,10 +1,9 @@
-import datetime as dt
 import threading
 import time
 
 import pytest
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
+from lsst.ts.logging_and_reporting.utils import current_dayobs
 from lsst.ts.logging_and_reporting.web_app.base_adapter import (
     CachedAdapter,
     IdBasedAdapter,
@@ -12,7 +11,7 @@ from lsst.ts.logging_and_reporting.web_app.base_adapter import (
     dayobs_range,
 )
 
-TODAY = current_dayobs_utc(dt.datetime.now(dt.timezone.utc))
+TODAY = current_dayobs()
 
 
 class RecordingAdapter(CachedAdapter):

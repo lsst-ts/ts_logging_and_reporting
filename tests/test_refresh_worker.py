@@ -19,7 +19,7 @@ class StubAdapter:
 
 
 def fix_today(monkeypatch, dayobs):
-    monkeypatch.setattr(refresh_worker_module, "current_dayobs_utc", lambda now: dayobs)
+    monkeypatch.setattr(refresh_worker_module, "current_dayobs", lambda: dayobs)
 
 
 class TestRefreshCycle:

@@ -39,7 +39,7 @@ from lsst.ts.logging_and_reporting import adapters
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
-    current_dayobs_utc,
+    dayobs_at,
     get_access_token,
     get_jira_hostname,
     make_json_safe,
@@ -203,7 +203,11 @@ async def read_exposures(
                         {"night_hours": "max", "open_hours": "sum", "sunset12": "first", "sunrise12": "first"}
                     )
                     now_utc = pd.Timestamp.now(tz="UTC")
-                    current_dayobs = current_dayobs_utc(now_utc)
+                    # Not current_dayobs(): the closed-hours computation
+                    # below also uses now_utc, and deriving the dayobs
+                    # from the same instant keeps them consistent across
+                    # the noon-UTC rollover.
+                    current_dayobs = dayobs_at(now_utc)
                     open_dome_totals["closed_hours"] = open_dome_totals.apply(
                         lambda row: _compute_closed_hours(row, current_dayobs, now_utc),
                         axis=1,
