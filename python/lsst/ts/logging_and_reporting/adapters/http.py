@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Base class for cached adapters backed by REST APIs."""
+"""Base classes for cached adapters backed by REST APIs."""
 
 import logging
 from abc import ABC
@@ -39,8 +39,8 @@ from lsst.ts.logging_and_reporting.web_app.base_adapter import CachedAdapter
 logger = logging.getLogger(__name__)
 
 
-class RestCachedAdapter(CachedAdapter, ABC):
-    """`CachedAdapter` for upstream REST APIs.
+class RestClient:
+    """Mixin adding authenticated REST access to a cached adapter.
 
     Provides server URL resolution, service-account authentication,
     and JSON GET requests. Auth tokens are resolved per request from
@@ -49,6 +49,10 @@ class RestCachedAdapter(CachedAdapter, ABC):
 
     HTTP or connection failures raise, matching the cache-loop
     contract that any upstream error fails the whole fetch.
+
+    Combine with a cache base class: `RestCachedAdapter` pairs it
+    with `CachedAdapter` for dayobs-keyed adapters; ID-keyed adapters
+    pair it with `IdBasedAdapter` themselves.
     """
 
     auth_source = "rsp"
@@ -136,3 +140,7 @@ class RestCachedAdapter(CachedAdapter, ABC):
                 )
                 return records
             params["offset"] += len(page)
+
+
+class RestCachedAdapter(RestClient, CachedAdapter, ABC):
+    """`CachedAdapter` for upstream REST APIs."""
