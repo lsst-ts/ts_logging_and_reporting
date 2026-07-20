@@ -23,7 +23,7 @@
 """Background worker that keeps today's cache entries warm.
 
 The worker's fetch-then-
-overwrite cycle (via ``CachedAdapter.refresh``) means today's entry —
+overwrite cycle (via ``DayobsCachedAdapter.refresh``) means today's entry —
 the stampede-prone hot key — never misses under normal operation, and
 user requests for today never trigger an external fetch directly.
 
@@ -60,7 +60,7 @@ from typing import Any
 
 from lsst.ts.logging_and_reporting.utils import current_dayobs
 
-from .base_adapter import CachedAdapter
+from .base_adapter import DayobsCachedAdapter, InstrumentDayobsCachedAdapter
 from .cache_ttl import TODAY_TTL
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class RefreshWorker:
     """Daemon thread refreshing today's entry on each adapter.
 
     Every ``interval_seconds``, the leader instance calls
-    ``refresh(today)`` on each registered `CachedAdapter`
+    ``refresh(today)`` on each registered `DayobsCachedAdapter`
     (fetch-then-overwrite, so the existing entry stays served during
     the refresh), plus a one-time finalisation refresh of the previous
     dayobs after rollover. Failures are logged per adapter without
@@ -80,8 +80,8 @@ class RefreshWorker:
 
     Parameters
     ----------
-    adapters : `list` [`CachedAdapter`]
-        The adapters to refresh. ``IdBasedAdapter`` instances are not
+    adapters : `list` [`DayobsCachedAdapter` | `InstrumentDayobsCachedAdapter`]
+        The adapters to refresh. ``IdCachedAdapter`` instances are not
         accepted — they have no "today" entry.
     redis : `Any`
         redis-py-compatible client, used for the leader lease.
@@ -91,7 +91,12 @@ class RefreshWorker:
         clients are never staler than one refresh cycle.
     """
 
-    def __init__(self, adapters: list[CachedAdapter], redis: Any, interval_seconds: int = TODAY_TTL):
+    def __init__(
+        self,
+        adapters: list[DayobsCachedAdapter | InstrumentDayobsCachedAdapter],
+        redis: Any,
+        interval_seconds: int = TODAY_TTL,
+    ):
         self._adapters = list(adapters)
         self._redis = redis
         self._interval = interval_seconds

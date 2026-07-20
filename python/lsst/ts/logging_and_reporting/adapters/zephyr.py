@@ -32,7 +32,7 @@ import logging
 import requests
 
 from lsst.ts.logging_and_reporting.adapters.http import RestClient
-from lsst.ts.logging_and_reporting.web_app.base_adapter import IdBasedAdapter, MutableDataMixin
+from lsst.ts.logging_and_reporting.web_app.base_adapter import IdCachedAdapter, MutableDataMixin
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 ZEPHYR_SCALE_URL = "https://api.zephyrscale.smartbear.com/v2"
 
 
-class ZephyrAdapter(MutableDataMixin, RestClient, IdBasedAdapter):
+class ZephyrAdapter(MutableDataMixin, RestClient, IdCachedAdapter):
     """Fetches and caches Zephyr Scale test-case names by BLOCK key.
 
     Suffixed keys (``BLOCK-T123_a``) are variants of one test case

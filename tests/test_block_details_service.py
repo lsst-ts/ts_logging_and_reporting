@@ -10,7 +10,7 @@ HOSTNAME = "jira.test"
 
 
 class StubIdAdapter:
-    """Stands in for an IdBasedAdapter; returns canned summaries."""
+    """Stands in for an IdCachedAdapter; returns canned summaries."""
 
     def __init__(self, summaries=None, error=None):
         self.summaries = summaries or {}

@@ -41,7 +41,7 @@ from lsst.ts.logging_and_reporting.utils import (
     get_utc_datetime_from_dayobs_str,
 )
 from lsst.ts.logging_and_reporting.web_app.base_adapter import (
-    IdBasedAdapter,
+    IdCachedAdapter,
     MutableDataMixin,
     contiguous_runs,
 )
@@ -193,7 +193,7 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestCachedAdapter):
         }
 
 
-class JiraBlockAdapter(JiraApiMixin, MutableDataMixin, RestClient, IdBasedAdapter):
+class JiraBlockAdapter(JiraApiMixin, MutableDataMixin, RestClient, IdCachedAdapter):
     """Fetches and caches BLOCK ticket summaries by issue key.
 
     Keys the search does not return are cached as ``None`` so an
