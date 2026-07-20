@@ -31,7 +31,6 @@ from matplotlib import pyplot as plt
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
 from lsst.ts.logging_and_reporting.web_app.services import (
     almanac_service,
-    consdb_service,
     jira_service,
     rubin_nights_service,
     scheduler_service,
@@ -49,23 +48,6 @@ class DummyExposure:
 
     def get(self, key, default=None):
         return getattr(self, key, default)
-
-
-def test_get_exposures(monkeypatch):
-    # Patch any external dependencies if needed
-    # Here, just test the function signature and a simple mock
-    def mock_get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=None):
-        return [
-            {"exp_time": 10, "can_see_sky": True},
-            {"exp_time": 20, "can_see_sky": False},
-        ]
-
-    monkeypatch.setattr(consdb_service, "get_exposures", mock_get_exposures)
-
-    result = consdb_service.get_exposures(20240101, 20240102, "LSSTCam", auth_token="token")
-    assert isinstance(result, list)
-    assert result[0]["exp_time"] == 10
-    assert result[1]["can_see_sky"] is False
 
 
 def test_get_almanac(monkeypatch):
