@@ -34,6 +34,7 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import Any
 
 from lsst.ts.logging_and_reporting.utils import current_dayobs
@@ -114,12 +115,15 @@ def contiguous_runs(dayobs_list: list[int]) -> list[tuple[int, int]]:
     return runs
 
 
-class _SingleFlightCache:
-    """Redis-backed cache loop with per-key single-flight locks.
+class CachedAdapter:
+    """Base for all cached adapters: a Redis cache loop with per-key
+    single-flight locks.
 
-    Internal machinery shared by `CachedAdapter` (integer dayobs keys)
-    and `IdBasedAdapter` (string ID keys). Subclasses set ``name`` and
-    provide ``_ttl`` and ``_fetch_from_source``.
+    Shared by `DayobsCachedAdapter` (integer dayobs keys),
+    `IdCachedAdapter` (string ID keys), and
+    `InstrumentDayobsCachedAdapter` (instrument+dayobs keys). Subclasses
+    set ``name``, provide ``_ttl`` and ``_fetch_from_source``, and add
+    the public accessor for their key shape (``fetch``/``fetch_by_ids``).
 
     The ``redis`` client is duck-typed: anything providing ``get``,
     ``set(..., nx=, ex=)``, ``delete``, and ``exists`` with redis-py
@@ -271,19 +275,19 @@ class _SingleFlightCache:
             time.sleep(self.POLL_INTERVAL)
 
 
-class BaseAdapter(ABC):
-    """Abstract interface all dayobs-driven adapters implement."""
+class DayobsCachedAdapter(CachedAdapter, ABC):
+    """Base class for all dayobs-driven adapters.
 
-    name: str = "base"
+    Implements `fetch` as a Redis cache loop over the dayobs range;
+    subclasses set ``name`` and implement `_fetch_from_source`.
+    """
+
+    name: str = "dayobs"
     """Identifier used as the key in ``Service.adapters`` dicts and
     to namespace this adapter's cache keys."""
 
-    @abstractmethod
     def fetch(self, start_dayobs: int, end_dayobs: int) -> dict[int, Any]:
         """Return data for the dayobs range, partitioned by dayobs.
-
-        The returned data is already processed — no further
-        transformation is needed by the service layer.
 
         Parameters
         ----------
@@ -297,18 +301,6 @@ class BaseAdapter(ABC):
         `dict` [`int`, `Any`]
             One entry per dayobs in the range.
         """
-        raise NotImplementedError
-
-
-class CachedAdapter(_SingleFlightCache, BaseAdapter, ABC):
-    """Base class for all dayobs-driven adapters.
-
-    Implements `BaseAdapter.fetch` as a Redis cache loop over the
-    dayobs range; subclasses set ``name`` and implement
-    `_fetch_from_source`.
-    """
-
-    def fetch(self, start_dayobs: int, end_dayobs: int) -> dict[int, Any]:
         return self._fetch_cached(dayobs_range(start_dayobs, end_dayobs))
 
     @abstractmethod
@@ -385,11 +377,11 @@ class MutableDataMixin:
         return MUTABLE_TTL_REDIS
 
 
-class IdBasedAdapter(_SingleFlightCache, ABC):
+class IdCachedAdapter(CachedAdapter, ABC):
     """Base class for adapters keyed by opaque IDs rather than dayobs.
 
     Held directly by ``BlockDetailsService``. Runs the same cache loop
-    as `CachedAdapter` (including single-flight locks), adapted for
+    as `DayobsCachedAdapter` (including single-flight locks), adapted for
     string keys, with a long fixed TTL. Subclasses set ``name`` and
     implement `_fetch_from_source`. Not registered with the
     ``RefreshWorker`` — there is no "today" entry to refresh.
@@ -420,3 +412,90 @@ class IdBasedAdapter(_SingleFlightCache, ABC):
         """Fixed lifetime — ID-keyed data has no today/historic
         split. Adapters with mutable records override this."""
         return HISTORIC_TTL_REDIS
+
+
+class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
+    """Base class for adapters partitioned by instrument and dayobs.
+
+    Cache keys are the composite ``"{instrument}:{dayobs}"`` — used when
+    an upstream is per-instrument (so all instruments cannot share one
+    dayobs key) but still dayobs-driven. Owns the cache mechanics only:
+    subclasses provide ``_fetch_run(instrument, run_start, run_end)``
+    whose rows each carry a ``day_obs`` field, and may add request
+    validation by overriding `fetch`.
+    """
+
+    # Instruments this app serves: the RefreshWorker warms each for
+    # today, and subclasses validate requests against this set.
+    INSTRUMENTS = ("lsstcam", "latiss")
+
+    def fetch(self, instrument: str, start_dayobs: int, end_dayobs: int) -> dict[int, list[dict]]:
+        """Return rows for the range, partitioned by dayobs.
+
+        Parameters
+        ----------
+        instrument : `str`
+            Instrument name; lower-cased for the cache key.
+        start_dayobs, end_dayobs : `int`
+            Inclusive bounds of the range, in YYYYMMDD form.
+        """
+        instrument = instrument.lower()
+        days = dayobs_range(start_dayobs, end_dayobs)
+        by_key = self._fetch_cached([self._compose_key(instrument, day) for day in days])
+        return {day: by_key[self._compose_key(instrument, day)] for day in days}
+
+    def refresh(self, dayobs: int) -> None:
+        """Warm ``dayobs`` for each instrument (called by RefreshWorker).
+
+        Fetch-then-overwrite per instrument in `INSTRUMENTS`, so the
+        served entry is never emptied. Instruments are independent: one
+        instrument's upstream failure is logged and the rest still run.
+        """
+        for instrument in self.INSTRUMENTS:
+            key = self._compose_key(instrument, dayobs)
+            try:
+                fetched = self._fetch_from_source([key])
+                self._store(key, fetched[key])
+            except Exception:
+                logger.exception(f"{self.name} refresh failed for {instrument} dayobs {dayobs}")
+
+    @staticmethod
+    def _compose_key(instrument: str, dayobs: int) -> str:
+        return f"{instrument}:{dayobs}"
+
+    @staticmethod
+    def _split_key(key: str) -> tuple[str, int]:
+        instrument, dayobs = key.rsplit(":", 1)
+        return instrument, int(dayobs)
+
+    def _ttl(self, key: str) -> int:
+        """Today's entry gets the short TTL, past nights the historic one."""
+        _, dayobs = self._split_key(key)
+        return TODAY_TTL_REDIS if dayobs == current_dayobs() else HISTORIC_TTL_REDIS
+
+    def _fetch_from_source(self, keys: list[str]) -> dict[str, list[dict]]:
+        results: dict[str, list[dict]] = {key: [] for key in keys}
+        # Composite keys may span instruments, each with its own schema:
+        # fetch one instrument's contiguous runs at a time, then bucket
+        # the returned rows back by their day_obs.
+        by_instrument: dict[str, list[int]] = defaultdict(list)
+        for key in keys:
+            instrument, dayobs = self._split_key(key)
+            by_instrument[instrument].append(dayobs)
+        for instrument, dayobs_list in by_instrument.items():
+            for run_start, run_end in contiguous_runs(dayobs_list):
+                logger.debug(f"Fetching {self.name} for {instrument} dayobs {run_start}..{run_end}")
+                for record in self._fetch_run(instrument, run_start, run_end):
+                    key = self._compose_key(instrument, record.get("day_obs"))
+                    if key in results:
+                        results[key].append(record)
+        return results
+
+    @abstractmethod
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> list[dict]:
+        """Return one instrument's rows for a contiguous dayobs run.
+
+        Provided by a source mixin (e.g. `SqlClient`-backed). Each row
+        must carry a ``day_obs`` so it can be bucketed to its cache key.
+        """
+        raise NotImplementedError

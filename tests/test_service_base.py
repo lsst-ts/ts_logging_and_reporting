@@ -6,7 +6,7 @@ from lsst.ts.logging_and_reporting.web_app.service import Service
 
 
 class StubAdapter:
-    """Stands in for a CachedAdapter; returns canned per-dayobs data."""
+    """Stands in for a DayobsCachedAdapter; returns canned per-dayobs data."""
 
     def __init__(self, name, payload):
         self.name = name

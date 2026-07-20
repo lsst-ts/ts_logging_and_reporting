@@ -5,8 +5,8 @@ import pytest
 
 from lsst.ts.logging_and_reporting.utils import current_dayobs
 from lsst.ts.logging_and_reporting.web_app.base_adapter import (
-    CachedAdapter,
-    IdBasedAdapter,
+    DayobsCachedAdapter,
+    IdCachedAdapter,
     MutableDataMixin,
     contiguous_runs,
     dayobs_range,
@@ -20,8 +20,8 @@ from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
 TODAY = current_dayobs()
 
 
-class RecordingAdapter(CachedAdapter):
-    """CachedAdapter whose upstream returns f"data-{dayobs}" per day."""
+class RecordingAdapter(DayobsCachedAdapter):
+    """DayobsCachedAdapter whose upstream returns f"data-{dayobs}" per day."""
 
     name = "recording"
     POLL_INTERVAL = 0.005
@@ -41,7 +41,7 @@ class RecordingAdapter(CachedAdapter):
         return {dayobs: f"data-{dayobs}" for dayobs in dayobs_list}
 
 
-class RecordingIdAdapter(IdBasedAdapter):
+class RecordingIdAdapter(IdCachedAdapter):
     name = "recording_ids"
     POLL_INTERVAL = 0.005
 
@@ -237,7 +237,7 @@ class TestSingleFlight:
         assert fake_redis.exists("lock:adapter:recording:20250101") == 0
 
 
-class TestIdBasedAdapter:
+class TestIdCachedAdapter:
     def test_cold_and_hot_by_id(self, fake_redis):
         adapter = RecordingIdAdapter(fake_redis)
         result = adapter.fetch_by_ids(["BLOCK-1", "BLOCK-T2"])

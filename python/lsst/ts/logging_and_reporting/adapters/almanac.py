@@ -32,7 +32,7 @@ import astropy.coordinates
 from astroplan import Observer
 from astropy.time import Time
 
-from lsst.ts.logging_and_reporting.web_app.base_adapter import CachedAdapter
+from lsst.ts.logging_and_reporting.web_app.base_adapter import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
@@ -43,7 +43,7 @@ def _iso(time: Time) -> str:
     return Time(time, precision=0).iso
 
 
-class AlmanacCachedAdapter(CachedAdapter):
+class AlmanacCachedAdapter(DayobsCachedAdapter):
     """Computes and caches per-night sun and moon events.
 
     There is no upstream service: the events are computed locally with
