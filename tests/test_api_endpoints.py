@@ -27,6 +27,7 @@ import pandas as pd
 import pytest
 import requests
 from bokeh.plotting import figure
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import lsst.ts.logging_and_reporting.utils as ut
@@ -38,8 +39,11 @@ from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog
 from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
 from lsst.ts.logging_and_reporting.adapters.zephyr import get_zephyr_adapter
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
+from lsst.ts.logging_and_reporting.web_app import services as web_services
 from lsst.ts.logging_and_reporting.web_app.main import app, rsp_auth
 from lsst.ts.logging_and_reporting.web_app.services.block_details import ZEPHYR_TEST_CASE_PATH
+from lsst.ts.logging_and_reporting.web_app.services.data_log import DataLogService
+from lsst.ts.logging_and_reporting.web_app.services.exposures import ExposuresService
 
 client = TestClient(app)
 
@@ -943,216 +947,94 @@ def test_exposure_flags_endpoint(mock_requests_get, monkeypatch, exposurelog_cac
     }
 
 
-def test_exposures_endpoint_returns_updated_fields(monkeypatch):
-    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    exposures = [
-        {"id": 1, "can_see_sky": True, "exp_time": 30},
-        {"id": 2, "can_see_sky": False, "exp_time": 20},
-        {"id": 3, "can_see_sky": True, "exp_time": None},
-    ]
-    time_accounting = {
-        "sum_overhead_with_filter_change": 0.0,
-        "sum_overhead_without_filter_change": 0.0,
-        "sum_visit_gap_with_filter_change": 0.0,
-        "sum_visit_gap_without_filter_change": 0.0,
+EXPOSURES_ENDPOINT = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+DATA_LOG_ENDPOINT = "/data-log?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+
+
+class _StubService:
+    """Returns a canned response, for endpoint wiring tests."""
+
+    def __init__(self, result):
+        self.result = result
+
+    def handle(self, *args, **kwargs):
+        return self.result
+
+
+class _StubConsdbAdapter:
+    """ConsDB adapter stand-in that raises when fetched."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def fetch(self, instrument, start_dayobs, end_dayobs):
+        raise self.error
+
+
+@pytest.fixture
+def override_service():
+    yield app.dependency_overrides
+    app.dependency_overrides.clear()
+
+
+def test_exposures_endpoint_returns_service_response(override_service):
+    result = {
+        "exposures": [{"exposure_id": 1}],
+        "exposures_count": 1,
+        "sum_exposure_time": 30,
+        "on_sky_exposures_count": 1,
+        "total_on_sky_exposure_time": 30,
+        "open_dome_times": [],
+        "day_obs_open_dome_hours": {},
+        "open_dome_error": None,
+        "night_on_sky_time_accounting": {"sum": 0.0},
+        "time_accounting_error": None,
     }
+    override_service[web_services.get_exposures_service] = lambda: _StubService(result)
+    override_service[rsp_auth] = lambda: "token"
 
-    with (
-        patch("lsst.ts.logging_and_reporting.web_app.main.get_exposures", return_value=exposures),
-        patch("lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome") as mock_open_close,
-        patch("lsst.ts.logging_and_reporting.web_app.main.get_time_accounting") as mock_time_accounting,
-        patch("lsst.ts.logging_and_reporting.web_app.main._compute_closed_hours", return_value=7.0),
-    ):
-        mock_open_close.return_value = pd.DataFrame(
-            [
-                {
-                    "day_obs": 20250730,
-                    "open_time": "2025-07-30T23:11:57.696481",
-                    "close_time": "2025-07-31T08:15:31.360361",
-                    "night_hours": 12.0,
-                    "open_hours": 9.05935107777778,
-                    "sunset12": "2025-07-30T23:00:00Z",
-                    "sunrise12": "2025-07-31T11:00:00Z",
-                }
-            ]
-        )
-        mock_time_accounting.return_value = time_accounting
-
-        _test_endpoint_authentication(endpoint, monkeypatch)
-
-        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
-        assert response.status_code == 200
-        data = response.json()
-        assert "exposures" in data
-        assert data["exposures_count"] == 3
-        assert data["sum_exposure_time"] == 50
-        assert data["on_sky_exposures_count"] == 2
-        assert data["total_on_sky_exposure_time"] == 30
-        assert data["open_dome_times"] == [
-            {
-                "day_obs": 20250730,
-                "open_time": "2025-07-30T23:11:57.696481",
-                "close_time": "2025-07-31T08:15:31.360361",
-                "night_hours": 12.0,
-                "open_hours": 9.05935107777778,
-                "sunset12": "2025-07-30T23:00:00Z",
-                "sunrise12": "2025-07-31T11:00:00Z",
-            }
-        ]
-        assert data["day_obs_open_dome_hours"] == {
-            "20250730": {
-                "night_hours": 12.0,
-                "open_hours": 9.05935107777778,
-                "sunset12": "2025-07-30T23:00:00Z",
-                "sunrise12": "2025-07-31T11:00:00Z",
-                "closed_hours": 7.0,
-            }
-        }
-        assert data["open_dome_error"] is None
-        assert data["night_on_sky_time_accounting"] == time_accounting
-        assert data["time_accounting_error"] is None
-        assert mock_time_accounting.call_count == 4
-        assert mock_open_close.call_count == 4
+    response = client.get(EXPOSURES_ENDPOINT)
+    assert response.status_code == 200
+    assert response.json() == result
 
 
-def test_exposures_endpoint_open_dome_aggregation_error(monkeypatch):
-    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+def test_exposures_endpoint_consdb_failure_returns_502(override_service):
+    service = ExposuresService(
+        adapters={"consdb": _StubConsdbAdapter(requests.ConnectionError("consdb down"))}
+    )
+    override_service[web_services.get_exposures_service] = lambda: service
+    override_service[rsp_auth] = lambda: "token"
 
-    with (
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
-            return_value=[{"id": 1, "can_see_sky": True, "exp_time": 30}],
-        ),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome",
-            return_value=pd.DataFrame(
-                [
-                    {
-                        "day_obs": 20250730,
-                        "open_time": "2025-07-30T23:11:57.696481",
-                        "close_time": "2025-07-31T08:15:31.360361",
-                        "night_hours": 12.0,
-                        "open_hours": 9.05935107777778,
-                        "sunset12": "2025-07-30T23:00:00Z",
-                        "sunrise12": "2025-07-31T11:00:00Z",
-                    }
-                ]
-            ),
-        ),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main._compute_closed_hours",
-            side_effect=RuntimeError("aggregation failed"),
-        ),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
-            return_value={"sum_overhead_with_filter_change": 0.0},
-        ),
-    ):
-        _test_endpoint_authentication(endpoint, monkeypatch)
-
-        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["open_dome_times"]) == 1
-        assert data["day_obs_open_dome_hours"] is None
-        assert data["open_dome_error"] == "Failed to aggregate dome open hours"
-        assert data["night_on_sky_time_accounting"] == {"sum_overhead_with_filter_change": 0.0}
-        assert data["time_accounting_error"] is None
+    response = client.get(EXPOSURES_ENDPOINT)
+    assert response.status_code == 502
 
 
-def test_exposures_endpoint_open_dome_retrieval_error(monkeypatch):
-    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+def test_exposures_endpoint_unknown_instrument_returns_422(override_service):
+    service = ExposuresService(
+        adapters={"consdb": _StubConsdbAdapter(HTTPException(status_code=422, detail="Unknown instrument"))}
+    )
+    override_service[web_services.get_exposures_service] = lambda: service
+    override_service[rsp_auth] = lambda: "token"
 
-    with (
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
-            return_value=[{"id": 1, "can_see_sky": True, "exp_time": 30}],
-        ),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome",
-            side_effect=RuntimeError("efd unavailable"),
-        ),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
-            return_value={"sum_overhead_with_filter_change": 0.0},
-        ),
-    ):
-        _test_endpoint_authentication(endpoint, monkeypatch)
-
-        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["open_dome_times"] is None
-        assert data["day_obs_open_dome_hours"] is None
-        assert data["open_dome_error"] == "Failed to retrieve dome open/close times"
-        assert data["night_on_sky_time_accounting"] == {"sum_overhead_with_filter_change": 0.0}
-        assert data["time_accounting_error"] is None
+    response = client.get(EXPOSURES_ENDPOINT)
+    assert response.status_code == 422
 
 
-def test_exposures_endpoint_time_accounting_error(monkeypatch):
-    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+def test_data_log_endpoint_returns_service_response(override_service):
+    result = {"data_log": [{"exposure_id": 1, "value": "NaN"}]}
+    override_service[web_services.get_data_log_service] = lambda: _StubService(result)
 
-    with (
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
-            return_value=[{"id": 1, "can_see_sky": True, "exp_time": 30}],
-        ),
-        patch("lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome", return_value=pd.DataFrame()),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
-            side_effect=RuntimeError("time accounting failed"),
-        ),
-    ):
-        _test_endpoint_authentication(endpoint, monkeypatch)
-
-        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["open_dome_times"] == []
-        assert data["day_obs_open_dome_hours"] == {}
-        assert data["open_dome_error"] is None
-        assert data["night_on_sky_time_accounting"] is None
-        assert data["time_accounting_error"] == "Failed to compute night time accounting"
+    response = client.get(DATA_LOG_ENDPOINT)
+    assert response.status_code == 200
+    assert response.json() == result
 
 
-def test_exposures_endpoint_no_exposures_returns_zeroed_time_accounting(monkeypatch):
-    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    zeroed_time_accounting = {
-        "sum_overhead_with_filter_change": 0.0,
-        "sum_overhead_without_filter_change": 0.0,
-        "sum_visit_gap_with_filter_change": 0.0,
-        "sum_visit_gap_without_filter_change": 0.0,
-    }
+def test_data_log_endpoint_consdb_failure_returns_502(override_service):
+    service = DataLogService(adapters={"consdb": _StubConsdbAdapter(requests.ConnectionError("consdb down"))})
+    override_service[web_services.get_data_log_service] = lambda: service
 
-    with (
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
-            return_value=[],
-        ),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome",
-            side_effect=RuntimeError("efd unavailable"),
-        ),
-        patch(
-            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
-            return_value=zeroed_time_accounting,
-        ),
-    ):
-        _test_endpoint_authentication(endpoint, monkeypatch)
-
-        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["exposures"] == []
-        assert data["exposures_count"] == 0
-        assert data["sum_exposure_time"] == 0
-        assert data["on_sky_exposures_count"] == 0
-        assert data["total_on_sky_exposure_time"] == 0
-        assert data["open_dome_times"] is None
-        assert data["day_obs_open_dome_hours"] is None
-        assert data["open_dome_error"] == "Failed to retrieve dome open/close times"
-        assert data["night_on_sky_time_accounting"] == zeroed_time_accounting
-        assert data["time_accounting_error"] is None
+    response = client.get(DATA_LOG_ENDPOINT)
+    assert response.status_code == 502
 
 
 def test_jira_tickets_endpoint(monkeypatch, jira_obs_cache):
