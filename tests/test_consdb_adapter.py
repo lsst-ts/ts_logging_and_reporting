@@ -1,0 +1,148 @@
+from unittest.mock import Mock, patch
+
+import pytest
+import requests
+from fastapi import HTTPException
+
+from lsst.ts.logging_and_reporting.adapters.consdb import ConsdbCachedAdapter
+from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS, TODAY_TTL_REDIS
+
+SERVER = "https://consdb.test"
+
+
+def consdb_post(records, columns=None):
+    """Mock ``requests.post`` returning a ConsDB columns/data payload."""
+    if columns is None:
+        columns = list(records[0].keys()) if records else []
+    data = [[record.get(column) for column in columns] for record in records]
+    response = Mock()
+    response.json.return_value = {"columns": columns, "data": data}
+    response.raise_for_status.return_value = None
+    return Mock(return_value=response)
+
+
+def sent_sql(mock_post):
+    return mock_post.call_args.kwargs["json"]["query"]
+
+
+@pytest.fixture
+def adapter(fake_redis, monkeypatch):
+    monkeypatch.setenv("ACCESS_TOKEN", "test-token")
+    return ConsdbCachedAdapter(fake_redis, server_url=SERVER)
+
+
+class TestQueryBuilding:
+    def test_efd_channels_folded_in_for_lsstcam(self, adapter):
+        mock_post = consdb_post([])
+        with patch("requests.post", mock_post):
+            adapter._fetch_run("lsstcam", 20250101, 20250101)
+        sql = sent_sql(mock_post)
+        assert "SELECT e.*, q.*, f.mt_salindex112_temperature_0_mean" in sql
+        assert "LEFT JOIN efd_lsstcam.exposure_efd f ON e.exposure_id = f.exposure_id" in sql
+        assert "20250101 <= e.day_obs AND e.day_obs <= 20250101" in sql
+
+    def test_no_efd_join_for_latiss(self, adapter):
+        mock_post = consdb_post([])
+        with patch("requests.post", mock_post):
+            adapter._fetch_run("latiss", 20250101, 20250101)
+        sql = sent_sql(mock_post)
+        assert "exposure_efd" not in sql
+        assert sql.startswith("SELECT e.*, q.*")
+
+    def test_posts_to_consdb_query_endpoint(self, adapter):
+        mock_post = consdb_post([])
+        with patch("requests.post", mock_post):
+            adapter._fetch_run("lsstcam", 20250101, 20250101)
+        assert mock_post.call_args.args[0] == f"{SERVER}/consdb/query"
+
+
+class TestRowShaping:
+    def test_zips_columns_and_data_into_records(self, adapter):
+        records = [{"exposure_id": 1, "day_obs": 20250101, "seq_num": 5}]
+        with patch("requests.post", consdb_post(records)):
+            rows = adapter._fetch_run("lsstcam", 20250101, 20250101)
+        assert rows == records
+
+    def test_duplicate_column_keeps_first_non_null(self, adapter):
+        # exposure.day_obs valid, quicklook.day_obs null under the same name.
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "columns": ["exposure_id", "day_obs", "day_obs"],
+            "data": [[1, 20250101, None]],
+        }
+        with patch("requests.post", Mock(return_value=response)):
+            rows = adapter._fetch_run("lsstcam", 20250101, 20250101)
+        assert rows == [{"exposure_id": 1, "day_obs": 20250101}]
+
+    def test_duplicate_column_null_does_not_clobber_valid(self, adapter):
+        # first copy null, second copy valid -> keep the valid one.
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"columns": ["exposure_id", "val", "val"], "data": [[1, None, 7]]}
+        with patch("requests.post", Mock(return_value=response)):
+            rows = adapter._fetch_run("lsstcam", 20250101, 20250101)
+        assert rows == [{"exposure_id": 1, "val": 7}]
+
+
+class TestFetch:
+    def test_partitions_records_by_dayobs(self, adapter):
+        records = [
+            {"exposure_id": 1, "day_obs": 20250101, "seq_num": 2},
+            {"exposure_id": 2, "day_obs": 20250101, "seq_num": 1},
+            {"exposure_id": 3, "day_obs": 20250102, "seq_num": 1},
+        ]
+        with patch("requests.post", consdb_post(records)):
+            result = adapter.fetch("LSSTCam", 20250101, 20250102)
+        assert {dayobs: len(rows) for dayobs, rows in result.items()} == {20250101: 2, 20250102: 1}
+
+    def test_instrument_lower_cased_in_cache_key(self, adapter, fake_redis):
+        with patch("requests.post", consdb_post([])):
+            adapter.fetch("LSSTCam", 20250101, 20250101)
+        assert "adapter:consdb_exposures:lsstcam:20250101" in fake_redis.keys()
+
+    def test_one_query_per_contiguous_run(self, adapter):
+        mock_post = consdb_post([])
+        with patch("requests.post", mock_post):
+            adapter._fetch_from_source(["lsstcam:20250101", "lsstcam:20250102", "lsstcam:20250105"])
+        assert mock_post.call_count == 2
+
+    def test_auth_header_uses_service_token(self, adapter):
+        mock_post = consdb_post([])
+        with patch("requests.post", mock_post):
+            adapter.fetch("lsstcam", 20250101, 20250101)
+        assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer test-token"
+
+    def test_http_error_propagates(self, adapter):
+        response = Mock()
+        response.json.return_value = {"columns": [], "data": []}
+        response.raise_for_status.side_effect = requests.HTTPError("500 Internal Server Error")
+        with patch("requests.post", Mock(return_value=response)):
+            with pytest.raises(requests.HTTPError):
+                adapter.fetch("lsstcam", 20250101, 20250101)
+
+
+class TestValidation:
+    def test_unknown_instrument_raises_422(self, adapter):
+        with pytest.raises(HTTPException) as exc:
+            adapter.fetch("lsstComCam", 20250101, 20250101)
+        assert exc.value.status_code == 422
+
+    def test_malformed_dayobs_raises_422(self, adapter):
+        with pytest.raises(HTTPException) as exc:
+            adapter.fetch("lsstcam", 20259999, 20250101)
+        assert exc.value.status_code == 422
+
+
+class TestTtl:
+    def test_historic_ttl_for_past_dayobs(self, adapter, fake_redis):
+        with patch("requests.post", consdb_post([])):
+            adapter.fetch("lsstcam", 20200101, 20200101)
+        assert fake_redis.ttls["adapter:consdb_exposures:lsstcam:20200101"] == HISTORIC_TTL_REDIS
+
+    def test_today_ttl_for_today(self, adapter, fake_redis):
+        today = current_dayobs()
+        with patch("requests.post", consdb_post([])):
+            adapter.fetch("lsstcam", today, today)
+        assert fake_redis.ttls[f"adapter:consdb_exposures:lsstcam:{today}"] == TODAY_TTL_REDIS
