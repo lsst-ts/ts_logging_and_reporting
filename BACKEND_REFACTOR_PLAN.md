@@ -61,7 +61,7 @@ fetches and caches OBS tickets per dayobs, used by `JiraTicketsService`.
 `/block-details` is **not dayobs-driven**. The endpoint now receives a list of BLOCK keys
 directly from the frontend (`?key=BLOCK-42&key=BLOCK-T123_a`), splits them by pattern
 (`BLOCK-T\d+(_x)?` → Zephyr, `BLOCK-\d+` → Jira), and resolves each set against its source.
-`BlockDetailsService` therefore holds two `IdBasedAdapter` subclasses called directly by the
+`BlockDetailsService` therefore holds two `IdCachedAdapter` subclasses called directly by the
 service (not adapter-to-adapter):
 
 - `JiraBlockAdapter` — wraps `fetch_block_ticket_summaries()`; ID-keyed Redis cache
@@ -147,7 +147,7 @@ use `**kwargs`.
 |---|---|
 | `/version`, `/health` | No data fetch; no caching needed |
 | `/mock-exposures` | Reads a local file; no adapter |
-| `/block-details` | ID-driven, not dayobs-driven — gets a `Service` (`BlockDetailsService`) but its `handle_request` takes BLOCK keys, and its adapters are `IdBasedAdapter` subclasses rather than `CachedAdapter` |
+| `/block-details` | ID-driven, not dayobs-driven — gets a `Service` (`BlockDetailsService`) but its `handle_request` takes BLOCK keys, and its adapters are `IdCachedAdapter` subclasses rather than `DayobsCachedAdapter` |
 
 `/version`, `/health`, and `/mock-exposures` remain as simple FastAPI route functions with no
 `Service`.
@@ -192,31 +192,29 @@ use `**kwargs`.
 
 ## 2. New Class Overview
 
-### `BaseAdapter` (ABC)
+### `CachedAdapter` (base — the shared cache loop)
 
-The abstract interface all dayobs-driven adapters implement.
+The cache machinery every adapter extends: a Redis cache loop with per-key single-flight locks,
+generic over the key type (int dayobs, string id, or composite `"{instrument}:{dayobs}"`). It
+owns `_cache_key` (`"adapter:{name}:{key}"`), `_store` (JSON + `_ttl`), the single-flight
+`_fetch_cached` loop, and `name`. Subclasses set `name`, implement `_fetch_from_source` and
+`_ttl`, and add the public accessor for their key shape (`fetch` / `fetch_by_ids`). Promoted
+from the former private `_SingleFlightCache`; the old one-subclass `BaseAdapter` interface is
+removed.
 
-```
-BaseAdapter (ABC)
-│
-├── fetch(start_dayobs: int, end_dayobs: int) -> dict[int, Any]
-│     Abstract. Returns data for the given dayobs range, partitioned by dayobs.
-│     The returned data is in the format expected by the service layer (i.e. already
-│     processed — no further transformation is needed after fetch() returns).
-│
-└── name: str
-      Class-level identifier used as the key in Service.adapters dicts.
-```
+The three key-shape subclasses are `DayobsCachedAdapter`, `IdCachedAdapter`, and
+`InstrumentDayobsCachedAdapter`.
 
 ---
 
-### `CachedAdapter` (ABC, extends `BaseAdapter`)
+### `DayobsCachedAdapter` (ABC, extends `CachedAdapter`)
 
-All adapters extend this class. The cache loop lives here; subclasses set `name` and implement
-`_fetch_from_source`.
+The dayobs-keyed adapter every log/report/almanac source extends. Adds the dayobs `fetch`, the
+`RefreshWorker` hooks (`refresh` / `refresh_today`), and the today/historic `_ttl`; the cache
+loop itself is inherited from `CachedAdapter`.
 
 ```
-CachedAdapter (ABC)
+DayobsCachedAdapter (ABC)
 │
 ├── __init__(redis: Redis)
 │
@@ -309,25 +307,39 @@ CachedAdapter (ABC)
 
 ---
 
-### `IdBasedAdapter` (ABC)
+### `IdCachedAdapter` (ABC, extends `CachedAdapter`)
 
 For adapters whose data is keyed by an opaque ID rather than a dayobs. Held directly by
 `BlockDetailsService` — the one service that is ID-driven rather than dayobs-driven.
 
 ```
-IdBasedAdapter (ABC)
+IdCachedAdapter (ABC)
 │
 └── fetch_by_ids(ids: list[str]) -> dict[str, Any]
       Abstract. Fetches records for the given IDs and returns them keyed by ID.
-      Implements the same cache loop as CachedAdapter, adapted for string keys:
-      check the ID-keyed Redis cache, batch-fetch only the misses, store, return.
+      Runs the inherited cache loop over string keys: check the ID-keyed Redis
+      cache, batch-fetch only the misses, store, return.
 ```
 
-`JiraBlockAdapter` and `ZephyrAdapter` are `IdBasedAdapter` subclasses. Each maintains its own
+`JiraBlockAdapter` and `ZephyrAdapter` are `IdCachedAdapter` subclasses. Each maintains its own
 ID-keyed Redis cache (keyed by adapter name, e.g. `adapter:block_detail:BLOCK-42`) with a long
-fixed TTL, sharing the cache-loop machinery (including single-flight locks) with `CachedAdapter`
-adapted for string keys. They are not registered with the `RefreshWorker` — there is no "today"
-entry to refresh.
+fixed TTL. They are not registered with the `RefreshWorker` — there is no "today" entry to
+refresh.
+
+---
+
+### `InstrumentDayobsCachedAdapter` (ABC, extends `CachedAdapter`)
+
+For per-instrument upstreams (ConsDB) that are dayobs-driven but cannot share one dayobs key
+across instruments (each instrument is a separate schema). Cache keys are the composite
+`"{instrument}:{dayobs}"`. Adds `fetch(instrument, start_dayobs, end_dayobs)`, groups the
+requested keys by instrument and fetches each instrument's contiguous runs through the
+`_fetch_run(instrument, run_start, run_end)` seam, then buckets the returned rows back by their
+`day_obs`. `refresh(dayobs)` fans out over `INSTRUMENTS` (fetch-then-overwrite per instrument),
+so the `RefreshWorker` warms today for each. Cache mechanics only — no request validation.
+
+The concrete ConsDB adapters extend `ConsdbSqlAdapter` (`SqlClient` + this class), which adds
+instrument/dayobs validation (→ 422) before the values reach raw SQL — see `adapters/consdb.py`.
 
 ---
 
@@ -354,9 +366,13 @@ Service (ABC)
 │     converting upstream requests failures into a logged HTTP 502 and any
 │     other exception into a logged HTTP 500. Endpoints call this rather
 │     than handle_request. (All REST adapters raise requests exceptions via
-│     _get_json, so the 502 mapping covers every upstream uniformly; future
-│     non-requests upstreams — Zephyr, rubin_nights clients, ConsDB's
-│     ConsdbQueryError — need translating when their chunks land.)
+│     _get_json, so the 502 mapping covers every upstream uniformly. Zephyr
+│     (chunk 4) already relies on this — it lets raw requests errors through.
+│     ConsDB does the same: its adapter drops the legacy ConsdbQueryError and
+│     lets the underlying requests.HTTPError/ConnectionError propagate, so the
+│     base mapping yields the same 502 the old wrapper produced. Only the
+│     rubin_nights clients still raise non-requests exceptions that will need
+│     translating when chunk 7 lands.)
 │
 └── collate_response(data: dict[int, Any]) -> dict
       Abstract (for now — a concrete default may be extracted once the first
@@ -584,18 +600,18 @@ HTTP layer without touching the adapter or service code.
 | `web_app/middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
 | `web_app/middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
 | `web_app/middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
-| `web_app/base_adapter.py` | ✅ `BaseAdapter` ABC, `CachedAdapter` ABC, `IdBasedAdapter` ABC, and the `dayobs_range` / `contiguous_runs` helpers |
+| `web_app/base_adapter.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses; `MutableDataMixin`; and the `dayobs_range` / `contiguous_runs` helpers |
 | `web_app/service.py` | ✅ `Service` ABC (with the `handle()` error wrapper) and the `flatten_sorted()` collation helper |
 | `web_app/refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
 | `web_app/redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
-| `adapters/http.py` | ✅ `RestClient` mixin — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GETs that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). `RestCachedAdapter` composes it with `CachedAdapter` for dayobs-keyed adapters; ID-keyed adapters compose it with `IdBasedAdapter` themselves |
+| `adapters/http.py` | ✅ `RestClient` mixin — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GET/POST that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). `RestCachedAdapter` composes it with `DayobsCachedAdapter` for dayobs-keyed adapters; ID-keyed adapters compose it with `IdCachedAdapter` themselves. ✅ `SqlClient` — `RestClient` subclass adding ConsDB `/consdb/query` execution and row shaping, composed with `InstrumentDayobsCachedAdapter` by the ConsDB adapters |
 | `adapters/exposurelog.py` | ✅ `ExposurelogCachedAdapter` (rewritten from `exposure_log.py`, which becomes deletable) — caches all instruments together per dayobs key; services filter by instrument at collation |
 | `adapters/narrativelog.py` | ✅ `NarrativelogCachedAdapter` (rewritten from `source_adapters.py`) — queries the upstream `date_begin` window noon-to-noon per contiguous run, partitions by `date_begin` dayobs, derives `instrument` from the telescope component; mutable TTL policy (`MutableDataMixin`) |
 | `adapters/nightreport.py` | ✅ `NightReportCachedAdapter` (rewritten from `source_adapters.py`) — dayobs-range API with exclusive `max_day_obs`; default TTL policy |
-| `adapters/consdb.py` | `ConsdbCachedAdapter` (moved from `consdb.py`) |
+| `adapters/consdb.py` | `ConsdbSqlAdapter` base (`SqlClient` + `InstrumentDayobsCachedAdapter` + instrument/dayobs validation) with two subclasses: `ConsdbCachedAdapter` (exposure⋈quicklook `SELECT *`, serving both `/exposures` and `/data-log`) and `EFDCachedAdapter` (transformed-EFD channels, merged into the data log); replaces the legacy `consdb.py` |
 | `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
-| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; mutable TTL policy (`MutableDataMixin`). ✅ `JiraBlockAdapter` (`JiraApiMixin + MutableDataMixin + RestClient + IdBasedAdapter`) — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
-| `adapters/zephyr.py` | ✅ `ZephyrAdapter` (`MutableDataMixin + RestClient + IdBasedAdapter`) — test-case names by BLOCK key, queried directly from the Zephyr Scale REST API (drops the async `ZephyrInterface` dependency: our one call path was a single raw GET); cache keyed by **parent** key so every `_x` suffix variant shares one entry; 404s cached as `null` |
+| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; mutable TTL policy (`MutableDataMixin`). ✅ `JiraBlockAdapter` (`JiraApiMixin + MutableDataMixin + RestClient + IdCachedAdapter`) — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
+| `adapters/zephyr.py` | ✅ `ZephyrAdapter` (`MutableDataMixin + RestClient + IdCachedAdapter`) — test-case names by BLOCK key, queried directly from the Zephyr Scale REST API (drops the async `ZephyrInterface` dependency: our one call path was a single raw GET); cache keyed by **parent** key so every `_x` suffix variant shares one entry; 404s cached as `null` |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
@@ -628,8 +644,8 @@ HTTP layer without touching the adapter or service code.
 
 - ✅ `NightReportAdapter` and `NarrativelogAdapter` are superseded by their `adapters/`
   rewrites; the file itself goes in the cleanup step
-- `SourceAdapter` ABC is removed entirely (replaced by `BaseAdapter` / `CachedAdapter` /
-  `RestCachedAdapter`)
+- `SourceAdapter` ABC is removed entirely (replaced by the `CachedAdapter` base /
+  `DayobsCachedAdapter` / `RestCachedAdapter`)
 - The `protected_get` / `protected_post` helpers are superseded by
   `RestCachedAdapter._get_json`, which raises on failure instead of returning
   `(ok, result, code)` tuples
@@ -641,12 +657,21 @@ HTTP layer without touching the adapter or service code.
 
 **`consdb.py`** → **deleted**, moved to `adapters/consdb.py`
 
-- `ConsdbCachedAdapter` extends `CachedAdapter`; implements `_fetch_from_source(dayobs_list)`
-  and `_cache_key(dayobs)`; retains `query()` as an internal helper
+- `ConsdbCachedAdapter` and `EFDCachedAdapter` extend `ConsdbSqlAdapter`
+  (`SqlClient` + `InstrumentDayobsCachedAdapter`); each implements `_fetch_run(instrument,
+  run_start, run_end)`, and `ConsdbCachedAdapter` overrides `_rows_from_result` to reconcile the
+  exposure⋈quicklook join's duplicate columns. Cache keys are `"{instrument}:{dayobs}"`
+- Drops the legacy `ConsdbQueryError` wrapping. The old `query()` caught
+  `requests.HTTPError`/`ConnectionError` only to re-tag them so the endpoint could map them to
+  502; the base `Service.handle` already maps `requests.RequestException → 502`, so the adapter
+  just lets the raw requests error propagate. The one thing worth keeping — ConsDB reports SQL
+  errors as a 500 with the Postgres text in the JSON `message` body — is preserved as a log line
+  in the adapter's error path, not a bespoke exception type. `ConsdbQueryError` stays *defined*
+  (rubin_nights' `get_visits` and `/static-map` still use it) until chunk 7 / the cleanup step.
 
 **`almanac.py`** → **deleted** (with `almanac_service.py`, in the `rubin_nights` step)
 
-- ✅ `AlmanacCachedAdapter` exists in `adapters/almanac.py`: extends `CachedAdapter`;
+- ✅ `AlmanacCachedAdapter` exists in `adapters/almanac.py`: extends `DayobsCachedAdapter`;
   `_fetch_from_source` iterates the dayobs list and computes each night locally with
   `astroplan`
 - The legacy `Almanac` class stays until `almanac_service.py`'s `get_almanac()` goes (see
@@ -657,7 +682,7 @@ HTTP layer without touching the adapter or service code.
 - Split into two classes:
   - ✅ `JiraObsCachedAdapter` — fetches and caches OBS tickets per dayobs; used by
     `JiraTicketsService`
-  - ✅ `JiraBlockAdapter(IdBasedAdapter)` — implements `fetch_by_ids(ids)` with the
+  - ✅ `JiraBlockAdapter(IdCachedAdapter)` — implements `fetch_by_ids(ids)` with the
     `fetch_block_ticket_summaries()` JQL search; held by `BlockDetailsService`
 - The legacy `JiraAdapter` stays until the BLOCK side migrates
   (`get_block_ticket_summaries()` still uses it)
@@ -689,14 +714,27 @@ HTTP layer without touching the adapter or service code.
 **`web_app/services/consdb_service.py`**
 
 - Replace `get_exposures()` and `get_data_log()` with `ExposuresService(Service)` and
-  `DataLogService(Service)`
-- `ExposuresService` holds `{"consdb": ConsdbCachedAdapter, "dome": RubinNightsDomeAdapter}`;
-  its `collate_response` also computes the derived totals the endpoint now returns (exposure
-  counts/sums, dome open/closed hours via `_compute_closed_hours`, and the twilight-windowed
-  time accounting from `get_time_accounting`)
-- `ExposuresService.handle_request` must preserve the current graceful degradation: dome and
-  time-accounting sub-failures are reported in the payload (`open_dome_error`,
-  `time_accounting_error`) rather than failing the whole request
+  `DataLogService(Service)`, each holding only `{"consdb": ConsdbCachedAdapter}` and filtering
+  to the requested instrument at collation
+- **Chunk 5 is a partial `/exposures` switch.** Only the ConsDB exposure fetch moves to
+  `ExposuresService`; the dome and time-accounting collation stays on the legacy rubin_nights
+  path until chunk 7. Concretely, in `main.py`'s `/exposures`:
+  - the `get_exposures(...)` call becomes `exposures_service.handle(...)`, and the exposure
+    counts/sums computed inline right after it stay in the endpoint
+  - `get_open_close_dome(...)`, the `groupby("day_obs")` dome-hours aggregation +
+    `_compute_closed_hours` + `dayobs_at(now_utc)` block, and `get_time_accounting(...)` all
+    stay inline, still calling the legacy `rubin_nights_service` functions
+  - both graceful-degradation branches are untouched: dome and time-accounting sub-failures are
+    still caught inline and reported via `open_dome_error` / `time_accounting_error` rather than
+    failing the request
+  - the endpoint is therefore **not** reduced to `return service.handle(...)` — it still stitches
+    exposures together with the two legacy sub-queries
+- Because `ExposuresService.handle` maps ConsDB failures to 502 itself, the outer
+  `except ConsdbQueryError` block for the exposures call (main.py:244) is dropped — the 502
+  arrives already-mapped from the service. `/data-log` (the clean, full switch) likewise drops
+  its `except ConsdbQueryError` (main.py:285)
+- Folding the dome adapter into `ExposuresService` (`{"dome": RubinNightsDomeAdapter}`) and
+  moving the derived totals into `collate_response` is a **chunk 7** concern, not chunk 5
 - Note: the ConsDB query treats its upper dayobs bound as **exclusive** (`e.day_obs < max`),
   while the cache loop enumerates the range inclusively — `ConsdbCachedAdapter` must normalise
   this at the query boundary so cache keys stay per-dayobs
@@ -730,7 +768,7 @@ HTTP layer without touching the adapter or service code.
   which were copied there)
 - ✅ `/block-details` is served by `BlockDetailsService` in the new
   `web_app/services/block_details.py`, holding `JiraBlockAdapter` and `ZephyrAdapter`
-  (both `IdBasedAdapter`); `handle_request(keys)` deduplicates, splits by key pattern,
+  (both `IdCachedAdapter`); `handle_request(keys)` deduplicates, splits by key pattern,
   calls `fetch_by_ids` on each, and preserves the per-source error reporting (with one
   change: auth failures raise 401 for the whole request, as the endpoint's `Depends` did)
 - ✅ `get_block_ticket_summaries()` logic moved into `JiraBlockAdapter`
@@ -753,10 +791,10 @@ HTTP layer without touching the adapter or service code.
 **`web_app/services/rubin_nights_service.py`** → **deleted**, replaced by:
 
 - Adapter classes move to `adapters/rubin_nights_*.py` (see new files above):
-  - `RubinNightsDomeAdapter(CachedAdapter)` — dome open/close times
-  - `RubinNightsEFDAdapter(CachedAdapter)` — observatory status events
-  - `RubinNightsContextAdapter(CachedAdapter)` — context feed messages
-  - `RubinNightsVisitsAdapter(CachedAdapter)` — visit data
+  - `RubinNightsDomeAdapter(DayobsCachedAdapter)` — dome open/close times
+  - `RubinNightsEFDAdapter(DayobsCachedAdapter)` — observatory status events
+  - `RubinNightsContextAdapter(DayobsCachedAdapter)` — context feed messages
+  - `RubinNightsVisitsAdapter(DayobsCachedAdapter)` — visit data
 - Service classes move to three new files:
   - `web_app/services/obs_status_service.py` — `ObsStatusService(Service)` using
     `RubinNightsEFDAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
@@ -797,7 +835,7 @@ HTTP layer without touching the adapter or service code.
 
 | Item | Reason |
 |---|---|
-| `source_adapters.py` | Superseded by `adapters/narrativelog.py`, `adapters/nightreport.py`, and `RestCachedAdapter`; `SourceAdapter` ABC replaced by `BaseAdapter` / `CachedAdapter` |
+| `source_adapters.py` | Superseded by `adapters/narrativelog.py`, `adapters/nightreport.py`, and `RestCachedAdapter`; `SourceAdapter` ABC replaced by the `CachedAdapter` base / `DayobsCachedAdapter` |
 | `exposure_log.py` | Superseded by `adapters/exposurelog.py` |
 | `consdb.py` | Moved to `adapters/consdb.py` |
 | `almanac.py` | Superseded by `adapters/almanac.py`; deleted with `almanac_service.py` once `rubin_nights_service.py` stops calling `get_almanac()` |
@@ -820,7 +858,7 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
 3. **Service layer refactor** — once adapters exist the services are thin and quick; do all of
    them together
 4. ✅ **`BlockDetailsService` + ID-based adapters** — `JiraBlockAdapter` and `ZephyrAdapter`
-   with their ID-keyed cache loop; validates the `IdBasedAdapter` variant of the pattern.
+   with their ID-keyed cache loop; validates the `IdCachedAdapter` variant of the pattern.
    Legacy `jira.py`, `jira_service.py`, and `zephyr_service.py` are now dead code awaiting
    the final cleanup stage (step 8)
 5. **ConsDB adapter** — SQL-based, more complex than the REST adapters but self-contained
@@ -1009,10 +1047,10 @@ package "Adapter Layer" {
     }
     package "adapters/jira.py" {
         component [JiraObsCachedAdapter] as AD_JIRA_OBS
-        component [JiraBlockAdapter\n<<IdBasedAdapter>>] as AD_JIRA_BLK
+        component [JiraBlockAdapter\n<<IdCachedAdapter>>] as AD_JIRA_BLK
     }
     package "adapters/zephyr.py" {
-        component [ZephyrAdapter\n<<IdBasedAdapter>>] as AD_ZEP
+        component [ZephyrAdapter\n<<IdCachedAdapter>>] as AD_ZEP
     }
     package "adapters/rubin_nights_*.py" {
         component [RubinNightsDomeAdapter] as AD_DOME
@@ -1124,7 +1162,7 @@ AD_VIS --> EXT_RN
 AD_EXP_EXP --> EXT_SIM
 
 ' Background worker refreshes all CachedAdapters
-' (IdBasedAdapters are not registered — no "today" entry to refresh)
+' (IdCachedAdapters are not registered — no "today" entry to refresh)
 WORKER --> AD_EXP
 WORKER --> AD_NAR
 WORKER --> AD_NIG

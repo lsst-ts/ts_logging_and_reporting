@@ -34,7 +34,7 @@ from lsst.ts.logging_and_reporting.utils import (
     get_auth_header,
     retrieve_access_token,
 )
-from lsst.ts.logging_and_reporting.web_app.base_adapter import CachedAdapter
+from lsst.ts.logging_and_reporting.web_app.base_adapter import DayobsCachedAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,8 @@ class RestClient:
     contract that any upstream error fails the whole fetch.
 
     Combine with a cache base class: `RestCachedAdapter` pairs it
-    with `CachedAdapter` for dayobs-keyed adapters; ID-keyed adapters
-    pair it with `IdBasedAdapter` themselves.
+    with `DayobsCachedAdapter` for dayobs-keyed adapters; ID-keyed
+    adapters pair it with `IdCachedAdapter` themselves.
     """
 
     auth_source = "rsp"
@@ -108,6 +108,32 @@ class RestClient:
         response.raise_for_status()
         return response.json()
 
+    def _post_json(self, url: str, json_body: Any) -> Any:
+        """POST ``json_body`` to ``url`` and return the decoded JSON body.
+
+        Parameters
+        ----------
+        url : `str`
+            Full URL of the API endpoint.
+        json_body : `Any`
+            Request payload, serialised as the JSON request body.
+
+        Raises
+        ------
+        requests.HTTPError
+            If the response status is an error.
+        requests.ConnectionError
+            If the server is unreachable.
+        """
+        response = requests.post(
+            url,
+            json=json_body,
+            headers=self._request_headers(),
+            timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
+        )
+        response.raise_for_status()
+        return response.json()
+
     def _get_json_paged(self, url: str, params: dict, page_limit: int) -> list:
         """GET all pages of a record-list endpoint.
 
@@ -142,5 +168,49 @@ class RestClient:
             params["offset"] += len(page)
 
 
-class RestCachedAdapter(RestClient, CachedAdapter, ABC):
-    """`CachedAdapter` for upstream REST APIs."""
+class RestCachedAdapter(RestClient, DayobsCachedAdapter, ABC):
+    """`DayobsCachedAdapter` for upstream REST APIs."""
+
+
+class SqlClient(RestClient):
+    """REST client for ConsDB's SQL query endpoint.
+
+    Give it SQL, get back row dicts: adds ``/consdb/query`` execution
+    and result shaping on top of `RestClient`. Combine with a cache
+    base (e.g. `InstrumentDayobsCachedAdapter`) to build an adapter.
+    """
+
+    def _query(self, sql: str) -> list[dict]:
+        """POST ``sql`` to the ConsDB query endpoint and shape the rows.
+
+        ConsDB reports SQL errors as an HTTP 500 with the Postgres text
+        in the response body's ``message`` field; that message is logged
+        here before the error propagates and the base `Service.handle`
+        turns the requests failure into a 502.
+        """
+        url = f"{self.server}/consdb/query"
+        try:
+            result = self._post_json(url, {"query": sql})
+        except requests.HTTPError as err:
+            logger.error(f"ConsDB query failed: {self._error_message(err)}. SQL: {sql!r}")
+            raise
+        return self._rows_from_result(result)
+
+    def _rows_from_result(self, result: dict) -> list[dict]:
+        """Zip the ``columns``/``data`` payload into row dicts.
+
+        Assumes distinct column names; callers whose queries join tables
+        with overlapping names override this.
+        """
+        return [dict(zip(result["columns"], row)) for row in result["data"]]
+
+    @staticmethod
+    def _error_message(err: requests.HTTPError) -> str:
+        """Best-effort extraction of ConsDB's Postgres error message."""
+        response = err.response
+        if response is None:
+            return str(err)
+        try:
+            return response.json().get("message", response.text)
+        except ValueError:
+            return response.text
