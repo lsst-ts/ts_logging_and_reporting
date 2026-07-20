@@ -877,6 +877,16 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
    helper functions (`build_block_response`, the `ZEPHYR_BLOCK_BASE_URL`/
    `JIRA_BLOCK_BASE_URL` constants), dead tests, and — being thorough — every import that
    is no longer used anywhere, in both `python/` and `tests/`
+9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
+   `web_app/main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
+   and complete. For each route confirm: the response is accurately typed (avoid bare
+   `dict[str, Any]` where a more specific return type or model is now available), all query
+   parameters are typed with sensible descriptions, and a NumPy-style docstring documents the
+   parameters, the return shape, and the `HTTPException` status codes it can raise (matching the
+   style already used on `/exposures`). Verify the rendered Swagger UI reflects the post-refactor
+   set of endpoints — no stale routes, and every surviving route documented consistently. As part
+   of this pass, review whether routes such as `/mock-exposures` are still required, or whether
+   they were scaffolding/testing aids that can now be removed.
 
 ### Testing
 
