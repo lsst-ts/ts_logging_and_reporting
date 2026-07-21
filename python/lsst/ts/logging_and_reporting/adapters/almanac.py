@@ -32,9 +32,9 @@ import astropy.coordinates
 from astroplan import Observer
 from astropy.time import Time
 
-from lsst.ts.logging_and_reporting.web_app.base_adapters import DayobsCachedAdapter
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS
-from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
+from lsst.ts.logging_and_reporting.base_adapters import DayobsCachedAdapter
+from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS
+from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 

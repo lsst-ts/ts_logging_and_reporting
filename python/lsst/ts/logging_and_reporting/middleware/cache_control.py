@@ -25,9 +25,8 @@ import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-
+from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
 from lsst.ts.logging_and_reporting.utils import current_dayobs
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
 
 logger = logging.getLogger(__name__)
 

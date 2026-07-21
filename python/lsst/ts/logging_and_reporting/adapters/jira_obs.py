@@ -34,14 +34,14 @@ from pytz import timezone
 
 from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin, MutableDataMixin
+from lsst.ts.logging_and_reporting.base_adapters import DayobsCachedAdapter
+from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
     contiguous_runs,
     dayobs_at,
     get_utc_datetime_from_dayobs_str,
 )
-from lsst.ts.logging_and_reporting.web_app.base_adapters import DayobsCachedAdapter
-from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 

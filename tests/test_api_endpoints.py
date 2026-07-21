@@ -33,6 +33,7 @@ from rubin_sim.sim_archive import NoMatchingSimulationsFoundError
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
+from lsst.ts.logging_and_reporting import services as web_services
 from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
 from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
 from lsst.ts.logging_and_reporting.adapters.jira_block import get_jira_block_adapter
@@ -41,12 +42,11 @@ from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog
 from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
 from lsst.ts.logging_and_reporting.adapters.zephyr import get_zephyr_adapter
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
-from lsst.ts.logging_and_reporting.web_app import services as web_services
-from lsst.ts.logging_and_reporting.web_app.main import app, rsp_auth
-from lsst.ts.logging_and_reporting.web_app.services.block_details import ZEPHYR_TEST_CASE_PATH
-from lsst.ts.logging_and_reporting.web_app.services.data_log import DataLogService
-from lsst.ts.logging_and_reporting.web_app.services.expected_exposures import ExpectedExposuresService
-from lsst.ts.logging_and_reporting.web_app.services.exposures import ExposuresService
+from lsst.ts.logging_and_reporting.main import app, rsp_auth
+from lsst.ts.logging_and_reporting.services.block_details import ZEPHYR_TEST_CASE_PATH
+from lsst.ts.logging_and_reporting.services.data_log import DataLogService
+from lsst.ts.logging_and_reporting.services.expected_exposures import ExpectedExposuresService
+from lsst.ts.logging_and_reporting.services.exposures import ExposuresService
 
 client = TestClient(app)
 
@@ -1156,7 +1156,7 @@ def test_context_feed_endpoint(monkeypatch):
 
     # Patch before auth check so real function never runs
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_context_feed",
+        "lsst.ts.logging_and_reporting.main.get_context_feed",
         lambda dayObsStart, dayObsEnd, auth_token: (dummy_data, dummy_cols),
     )
 
@@ -1192,7 +1192,7 @@ def test_context_feed_endpoint(monkeypatch):
         raise Exception("failure")
 
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_context_feed",
+        "lsst.ts.logging_and_reporting.main.get_context_feed",
         raise_error,
     )
 
@@ -1233,8 +1233,8 @@ def sample_visit_data_for_visit_maps():
     return pd.DataFrame(visits_list)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
-@patch("lsst.ts.logging_and_reporting.web_app.main.build_visit_maps_using_builder")
+@patch("lsst.ts.logging_and_reporting.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.main.build_visit_maps_using_builder")
 def test_visit_maps_full_mode_both_maps(
     mock_build_visitmaps_using_builder,
     mock_get_visits,
@@ -1303,8 +1303,8 @@ def sample_visit_data_for_static_map():
     )
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.build_static_visit_map")
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.main.build_static_visit_map")
+@patch("lsst.ts.logging_and_reporting.main.get_visits")
 def test_static_visit_map_success(
     mock_get_visits,
     mock_build_static_visit_map,
@@ -1339,8 +1339,8 @@ def test_static_visit_map_success(
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main._encode_png_payload")
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.main._encode_png_payload")
+@patch("lsst.ts.logging_and_reporting.main.get_visits")
 def test_static_visit_map_no_valid_rows(
     mock_get_visits,
     mock_encode_png_payload,
@@ -1374,7 +1374,7 @@ def test_static_visit_map_no_valid_rows(
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.main.get_visits")
 def test_static_visit_map_get_visits_consdb_error(mock_get_visits):
     mock_get_visits.side_effect = ConsdbQueryError("consdb down")
 
@@ -1395,8 +1395,8 @@ def test_static_visit_map_get_visits_consdb_error(mock_get_visits):
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.build_static_visit_map")
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.main.build_static_visit_map")
+@patch("lsst.ts.logging_and_reporting.main.get_visits")
 def test_static_visit_map_build_failure_returns_500(
     mock_get_visits,
     mock_build_static_visit_map,
@@ -1422,7 +1422,7 @@ def test_static_visit_map_build_failure_returns_500(
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.main.get_visits")
 def test_visit_maps_no_visits_data(
     mock_get_visits,
 ):
@@ -1449,7 +1449,7 @@ def test_visit_maps_no_visits_data(
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-@patch("lsst.ts.logging_and_reporting.web_app.main.get_visits")
+@patch("lsst.ts.logging_and_reporting.main.get_visits")
 def test_visit_maps_read_visits_exception(
     mock_get_visits,
 ):
@@ -1676,7 +1676,7 @@ def test_obs_status_happy_path(monkeypatch, dummy_response):
         return dummy_response
 
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        "lsst.ts.logging_and_reporting.main.get_obs_status",
         mock_get_obs_status,
     )
 
@@ -1724,7 +1724,7 @@ def test_obs_status_defaults(monkeypatch, dummy_response):
         return dummy_response
 
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        "lsst.ts.logging_and_reporting.main.get_obs_status",
         mock_get_obs_status,
     )
 
@@ -1760,7 +1760,7 @@ def test_obs_status_single_metric(monkeypatch, dummy_response):
         return dummy_response
 
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        "lsst.ts.logging_and_reporting.main.get_obs_status",
         mock_get_obs_status,
     )
 
@@ -1808,7 +1808,7 @@ def test_include_entries_boolean_parsing(
         return dummy_response
 
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        "lsst.ts.logging_and_reporting.main.get_obs_status",
         mock_get_obs_status,
     )
 
@@ -1838,7 +1838,7 @@ def test_obs_status_empty_metric_list(monkeypatch, dummy_response):
         return dummy_response
 
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        "lsst.ts.logging_and_reporting.main.get_obs_status",
         mock_get_obs_status,
     )
 
@@ -1909,7 +1909,7 @@ def test_obs_status_internal_exception_returns_500(monkeypatch):
         raise Exception("failure")
 
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_obs_status",
+        "lsst.ts.logging_and_reporting.main.get_obs_status",
         raise_error,
     )
 

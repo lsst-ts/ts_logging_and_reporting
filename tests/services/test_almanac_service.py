@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from lsst.ts.logging_and_reporting.web_app.services.almanac import (
+from lsst.ts.logging_and_reporting.services.almanac import (
     AlmanacService,
     _compute_elapsed_twilight_hours,
 )

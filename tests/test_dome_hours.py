@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from lsst.ts.logging_and_reporting.utils import dayobs_at
-from lsst.ts.logging_and_reporting.web_app.services.rubin_nights_service import (
+from lsst.ts.logging_and_reporting.services.rubin_nights_service import (
     _compute_closed_hours,
     get_open_close_dome,
 )
+from lsst.ts.logging_and_reporting.utils import dayobs_at
 
-MODULE = "lsst.ts.logging_and_reporting.web_app.services.rubin_nights_service"
+MODULE = "lsst.ts.logging_and_reporting.services.rubin_nights_service"
 
 # ---------------------------------------------------------------------------
 # Shared constants

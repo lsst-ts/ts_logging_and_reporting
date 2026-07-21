@@ -26,7 +26,7 @@ def run_logging_and_reporting() -> None:
     """Run the night report REST API web server."""
 
     uvicorn.run(
-        "lsst.ts.logging_and_reporting.web_app.main:app",
+        "lsst.ts.logging_and_reporting.main:app",
         host="0.0.0.0",
         port=8080,
         log_level="info",

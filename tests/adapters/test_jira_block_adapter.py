@@ -4,7 +4,7 @@ import pytest
 import requests
 
 from lsst.ts.logging_and_reporting.adapters.jira_block import JiraBlockAdapter
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import MUTABLE_TTL_REDIS
+from lsst.ts.logging_and_reporting.cache_ttl import MUTABLE_TTL_REDIS
 
 SERVER = "https://jira.test"
 

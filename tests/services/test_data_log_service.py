@@ -1,4 +1,4 @@
-from lsst.ts.logging_and_reporting.web_app.services.data_log import DataLogService
+from lsst.ts.logging_and_reporting.services.data_log import DataLogService
 
 
 class StubConsdbAdapter:
