@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Cached adapters for OBS tickets and BLOCK summaries from Jira.
+"""Cached adapter for OBS tickets from Jira.
 
 See https://developer.atlassian.com/cloud/jira/platform/rest/v3 for
 the upstream API.
@@ -32,17 +32,14 @@ import logging
 
 from pytz import timezone
 
-from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter, RestClient
+from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin, MutableDataMixin
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
     dayobs_at,
     get_utc_datetime_from_dayobs_str,
 )
-from lsst.ts.logging_and_reporting.web_app.base_adapter import (
-    IdCachedAdapter,
-    contiguous_runs,
-)
+from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -152,31 +149,6 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestCachedAdapter):
         }
 
 
-class JiraBlockAdapter(JiraApiMixin, MutableDataMixin, RestClient, IdCachedAdapter):
-    """Fetches and caches BLOCK ticket summaries by issue key.
-
-    Keys the search does not return are cached as ``None`` so an
-    unknown key does not trigger an upstream query on every request.
-    """
-
-    name = "jira_block"
-
-    def _fetch_from_source(self, ids: list[str]) -> dict[str, str | None]:
-        logger.debug(f"Fetching BLOCK ticket summaries for {ids}")
-        jql_query = f"project = BLOCK AND key in ({','.join(ids)})"
-        response = self._get_json(
-            f"{self.server}/rest/api/latest/search/jql",
-            params={"jql": jql_query, "fields": "summary"},
-        )
-        summaries = {issue["key"]: issue["fields"]["summary"] for issue in response.get("issues", [])}
-        return {key: summaries.get(key) for key in ids}
-
-
 @functools.cache
 def get_jira_obs_adapter() -> JiraObsCachedAdapter:
     return JiraObsCachedAdapter(get_redis_client())
-
-
-@functools.cache
-def get_jira_block_adapter() -> JiraBlockAdapter:
-    return JiraBlockAdapter(get_redis_client())
