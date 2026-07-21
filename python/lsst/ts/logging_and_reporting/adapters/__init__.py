@@ -23,10 +23,12 @@
 """Singleton getters for the cached upstream-source adapters."""
 
 from .almanac import get_almanac_adapter
-from .consdb import get_consdb_exposures_adapter, get_consdb_visits_adapter
+from .consdb_exposures import get_consdb_exposures_adapter
+from .consdb_visits import get_consdb_visits_adapter
 from .expected_exposures import get_expected_exposures_adapter
 from .exposurelog import get_exposurelog_adapter
-from .jira import get_jira_block_adapter, get_jira_obs_adapter
+from .jira_block import get_jira_block_adapter
+from .jira_obs import get_jira_obs_adapter
 from .narrativelog import get_narrativelog_adapter
 from .nightreport import get_nightreport_adapter
 from .zephyr import get_zephyr_adapter

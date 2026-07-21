@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Cached adapters for the Consolidated Database (ConsDB)."""
+"""Cached adapter for ConsDB exposure records."""
 
 import functools
 
@@ -67,32 +67,6 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
         return self._query(" ".join(sql.split()))
 
 
-class ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
-    """Caches the raw visit record (visit1 ⋈ visit1_quicklook) per night.
-
-    Feeds the visit-map endpoints. Cached un-augmented: the rubin_nights
-    augmentation is pure local compute and runs in `VisitMapsService` on
-    read, so both map forms derive from one entry.
-    """
-
-    name = "consdb_visits"
-
-    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> list[dict]:
-        sql = f"""
-            SELECT v.*, q.*
-            FROM cdb_{instrument}.visit1 v
-            LEFT JOIN cdb_{instrument}.visit1_quicklook q
-                ON v.visit_id = q.visit_id
-            WHERE {run_start} <= v.day_obs AND v.day_obs <= {run_end}
-        """
-        return self._query(" ".join(sql.split()))
-
-
 @functools.cache
 def get_consdb_exposures_adapter() -> ConsdbExposuresAdapter:
     return ConsdbExposuresAdapter(get_redis_client())
-
-
-@functools.cache
-def get_consdb_visits_adapter() -> ConsdbVisitsAdapter:
-    return ConsdbVisitsAdapter(get_redis_client())

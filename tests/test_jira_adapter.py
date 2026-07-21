@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
-from lsst.ts.logging_and_reporting.adapters.jira import (
+from lsst.ts.logging_and_reporting.adapters.jira_obs import (
     OBS_SYSTEMS_FIELD,
     TIME_LOST_FIELD,
     JiraObsCachedAdapter,
