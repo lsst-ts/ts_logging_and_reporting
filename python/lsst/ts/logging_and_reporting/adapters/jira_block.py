@@ -29,9 +29,9 @@ the upstream API.
 import functools
 import logging
 
-from lsst.ts.logging_and_reporting.adapters.http import RestClient
+from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin, MutableDataMixin
-from lsst.ts.logging_and_reporting.web_app.base_adapter import IdCachedAdapter
+from lsst.ts.logging_and_reporting.web_app.base_adapters import IdCachedAdapter
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)

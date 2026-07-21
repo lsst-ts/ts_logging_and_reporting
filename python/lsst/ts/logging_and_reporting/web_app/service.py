@@ -35,7 +35,7 @@ from typing import Any
 import requests
 from fastapi import HTTPException
 
-from .base_adapter import CachedAdapter
+from .base_adapters import CachedAdapter
 
 logger = logging.getLogger(__name__)
 

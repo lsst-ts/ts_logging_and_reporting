@@ -27,10 +27,10 @@ import functools
 import logging
 from typing import Any
 
-from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
+from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, dayobs_at
-from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapters import DayobsCachedAdapter, contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def _noon_utc(dayobs: int) -> str:
     return dt.datetime.strptime(str(dayobs), "%Y%m%d").replace(hour=12).isoformat()
 
 
-class NarrativelogCachedAdapter(MutableDataMixin, RestCachedAdapter):
+class NarrativelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapter):
     """Fetches and caches Narrative Log messages per dayobs.
 
     Messages for **all telescopes** are cached together under one
