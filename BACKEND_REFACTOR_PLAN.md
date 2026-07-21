@@ -608,14 +608,13 @@ HTTP layer without touching the adapter or service code.
 | `adapters/exposurelog.py` | ✅ `ExposurelogCachedAdapter` (rewritten from `exposure_log.py`, which becomes deletable) — caches all instruments together per dayobs key; services filter by instrument at collation |
 | `adapters/narrativelog.py` | ✅ `NarrativelogCachedAdapter` (rewritten from `source_adapters.py`) — queries the upstream `date_begin` window noon-to-noon per contiguous run, partitions by `date_begin` dayobs, derives `instrument` from the telescope component; mutable TTL policy (`MutableDataMixin`) |
 | `adapters/nightreport.py` | ✅ `NightReportCachedAdapter` (rewritten from `source_adapters.py`) — dayobs-range API with exclusive `max_day_obs`; default TTL policy |
-| `adapters/consdb.py` | `ConsdbSqlAdapter` base (`SqlClient` + `InstrumentDayobsCachedAdapter` + instrument/dayobs validation) with one subclass `ConsdbCachedAdapter` — the exposure⋈quicklook `SELECT` with the per-instrument transformed-EFD channels folded in via a `LEFT JOIN`; one cache entry serves both `/exposures` (projected) and `/data-log` (full). Replaces the legacy `consdb.py` |
+| `adapters/consdb.py` | `ConsdbSqlAdapter` base (`SqlClient` + `InstrumentDayobsCachedAdapter` + instrument/dayobs validation + the quicklook-join duplicate-column dedup) with two subclasses. `ConsdbExposuresAdapter` — the exposure⋈quicklook `SELECT` with the per-instrument transformed-EFD channels folded in via a `LEFT JOIN`; one cache entry serves both `/exposures` (projected) and `/data-log` (full). `ConsdbVisitsAdapter` — the visit1⋈visit1_quicklook `SELECT` by `day_obs`, caching the raw un-augmented frame for the visit-map endpoints (`augment` is a consumer-side transform run in `VisitMapsService`, not cached). Replaces the legacy `consdb.py` |
 | `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
 | `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; mutable TTL policy (`MutableDataMixin`). ✅ `JiraBlockAdapter` (`JiraApiMixin + MutableDataMixin + RestClient + IdCachedAdapter`) — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
 | `adapters/zephyr.py` | ✅ `ZephyrAdapter` (`MutableDataMixin + RestClient + IdCachedAdapter`) — test-case names by BLOCK key, queried directly from the Zephyr Scale REST API (drops the async `ZephyrInterface` dependency: our one call path was a single raw GET); cache keyed by **parent** key so every `_x` suffix variant shares one entry; 404s cached as `null` |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
-| `adapters/rubin_nights_visits.py` | `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/expected_exposures.py` | ✅ `ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter)` — caches the `nominal_visits` count per dayobs from `rubin_sim.sim_archive.fetch_sim_stats_for_night` (no `RestClient`; it drives the sim archive directly); mutable TTL; registered with the RefreshWorker |
 | `adapters/__init__.py` | ✅ Exists — re-exports the adapter singleton getters (getters only) |
 | `web_app/services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
@@ -624,7 +623,7 @@ HTTP layer without touching the adapter or service code.
 | `web_app/services/block_details.py` | ✅ `BlockDetailsService` + `get_block_details_service()`; splits keys by pattern across the two ID-based adapters, reports per-source failures in the response's `errors` field (both failing → 500), and decorates records with source and URL (built lazily from `get_jira_hostname()`) |
 | `web_app/services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
 | `web_app/services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
-| `web_app/services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py` / `scheduler_service.py`) |
+| `web_app/services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `ConsdbVisitsAdapter` (map-building logic split from `scheduler_service.py`) |
 
 ### Modified Files
 
@@ -657,11 +656,12 @@ HTTP layer without touching the adapter or service code.
 
 **`consdb.py`** → **deleted**, moved to `adapters/consdb.py`
 
-- `ConsdbCachedAdapter` extends `ConsdbSqlAdapter` (`SqlClient` +
-  `InstrumentDayobsCachedAdapter`); its `_fetch_run(instrument, run_start, run_end)` runs the
-  exposure⋈quicklook `SELECT` with the instrument's transformed-EFD channels folded in via a
-  `LEFT JOIN`, and it overrides `_rows_from_result` to reconcile the join's duplicate columns.
-  Cache keys are `"{instrument}:{dayobs}"`
+- `ConsdbExposuresAdapter` extends `ConsdbSqlAdapter` (`SqlClient` +
+  `InstrumentDayobsCachedAdapter` + the shared duplicate-column dedup in `_rows_from_result`); its
+  `_fetch_run(instrument, run_start, run_end)` runs the exposure⋈quicklook `SELECT` with the
+  instrument's transformed-EFD channels folded in via a `LEFT JOIN`. Cache keys are
+  `"{instrument}:{dayobs}"`. `ConsdbVisitsAdapter` (chunk 7) is the sibling subclass for the
+  visit1⋈visit1_quicklook query
 - Drops the legacy `ConsdbQueryError` wrapping. The old `query()` caught
   `requests.HTTPError`/`ConnectionError` only to re-tag them so the endpoint could map them to
   502; the base `Service.handle` already maps `requests.RequestException → 502`, so the adapter
@@ -717,7 +717,7 @@ HTTP layer without touching the adapter or service code.
 
 - `ExposuresService(Service)` owns the whole `/exposures` response, so the endpoint is thin
   (`return service.handle(dayObsStart, dayObsEnd, instrument, auth_token)`):
-  - the exposures come from `{"consdb": ConsdbCachedAdapter}`, projected to the curated
+  - the exposures come from `{"consdb": ConsdbExposuresAdapter}`, projected to the curated
     `EXPOSURE_COLUMNS` in `collate_response`, with the exposure/on-sky counts and durations
   - dome open/close hours and twilight time-accounting are computed in `_dome_hours` /
     `_time_accounting`, which call the `rubin_nights_service` functions
@@ -727,7 +727,7 @@ HTTP layer without touching the adapter or service code.
   - the two sub-computations degrade to `open_dome_error` / `time_accounting_error` in the
     payload rather than failing the request; a ConsDB failure propagates (→ 502 via
     `Service.handle`)
-- `DataLogService(Service)` is a clean full switch, also `{"consdb": ConsdbCachedAdapter}`;
+- `DataLogService(Service)` is a clean full switch, also `{"consdb": ConsdbExposuresAdapter}`;
   the endpoint is `return service.handle(...)`. It returns the full exposure record with special
   floats rendered as JSON-safe strings
 - The transformed-EFD channels are folded into the ConsDB `SELECT` as a per-instrument
@@ -796,7 +796,10 @@ HTTP layer without touching the adapter or service code.
   - `RubinNightsDomeAdapter(DayobsCachedAdapter)` — dome open/close times
   - `RubinNightsEFDAdapter(DayobsCachedAdapter)` — observatory status events
   - `RubinNightsContextAdapter(DayobsCachedAdapter)` — context feed messages
-  - `RubinNightsVisitsAdapter(DayobsCachedAdapter)` — visit data
+  - Visit data is **not** a rubin_nights split: it is a ConsDB SQL query, so it lives in
+    `adapters/consdb.py` as `ConsdbVisitsAdapter(ConsdbSqlAdapter)` (see the ConsDB file-map row),
+    keyed `{instrument}:{dayobs}`. ✅ **DONE** — the exposure adapter was renamed
+    `ConsdbExposuresAdapter` and the shared quicklook dedup moved onto `ConsdbSqlAdapter`
 - Service classes move to three new files:
   - `web_app/services/obs_status_service.py` — `ObsStatusService(Service)` using
     `RubinNightsEFDAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
@@ -806,7 +809,7 @@ HTTP layer without touching the adapter or service code.
   - `web_app/services/context_feed_service.py` — `ContextFeedService(Service)` using
     `RubinNightsContextAdapter`
   - `web_app/services/visit_maps_service.py` — `VisitMapsService(Service)` and
-    `StaticVisitMapService(Service)`, both using `RubinNightsVisitsAdapter`; each overrides
+    `StaticVisitMapService(Service)`, both using `ConsdbVisitsAdapter`; each overrides
     `collate_response` to build its output (multi-night Bokeh figure / static PNG) from
     per-night visit data
 - `/exposures` already owns the dome and time-accounting logic in `ExposuresService`
@@ -814,12 +817,29 @@ HTTP layer without touching the adapter or service code.
   `get_time_accounting`). This step turns the dome fetch into `RubinNightsDomeAdapter` and moves
   the pure computation helpers to a utility module, so the service reads dome data from an adapter
   instead of calling `rubin_nights_service`; the twilight windows come from `AlmanacCachedAdapter`
-  in the service's adapter set (replacing the `get_almanac()` call), after which
-  `almanac_service.py` and the legacy `almanac.py` are deleted
-- `get_visits` passes an `augment` flag through to the rubin_nights ConsDB client
-  (`/multi-night-visit-maps` uses the default `augment=True`, `/static-visit-map` passes
-  `augment=False`); `RubinNightsVisitsAdapter` must either include the flag in its cache key
-  or cache one form and derive the other — decide during implementation
+  in the service's adapter set (replacing the `get_almanac()` call). Once `ObsStatusService` and
+  `ExposuresService` no longer call `get_almanac()`, `almanac_service.py` and the legacy
+  `almanac.py` are dead code but are **deleted in the chunk 8 cleanup sweep**, not here, to keep
+  this chunk's diff focused on the split
+- The `augment` flag on `get_visits` is **not** cached. Both map endpoints derive from the same
+  raw `visit1`⋈`visit1_quicklook` query; `augment` only decides whether rubin_nights runs its
+  local `augment_visits` post-processing (pure numpy/pandas — seeing, predicted zeropoints, moon/LST
+  columns, opsim-format conversion; no IO, guarded by `HAS_RUBIN_SCHEDULER`/`HAS_RUBIN_SIM`).
+  `/multi-night-visit-maps` needs the augmented columns because `consdb_to_opsim` (whose docstring
+  states it assumes `augment_visits` has already run — it renames augmented-only columns like
+  `approx_parallactic`→`paraAngle`, `sky_bg_mag`→`skyBrightness`, and its `critical_columns` guard
+  requires `scheduler_note`) and the Bokeh `VisitMapBuilder` consume them; `/static-visit-map` is a
+  healpix visit-count density map needing only raw `s_ra`/`s_dec`/`sky_rotation`/`obs_start_mjd`/
+  `science_program`, so it passes `augment=False` to skip wasted compute. The flag is fixed
+  server-side per endpoint (the frontend just calls two different endpoints), never sent by the
+  client.
+- Therefore `ConsdbVisitsAdapter` caches **one raw (un-augmented) entry per
+  `{instrument}:{dayobs}`** — the actual external cost, and the smaller/cleaner-to-serialise frame.
+  Augmentation moves to the consumers: `StaticVisitMapService` renders the raw frame directly;
+  `VisitMapsService` runs `augment_visits(raw, instrument=…)` then `consdb_to_opsim` before building
+  the figure (same "cache the IO, compute the derived on read" rule used for the almanac). When
+  `rubin_scheduler`/`rubin_sim` are absent, `augment_visits`/`consdb_to_opsim` return unchanged/`None`,
+  so `VisitMapsService` falls back to the existing empty-frame "no map" path
 
 **`web_app/services/expected_exposures.py`** (new; replaces `scheduler_service.py`'s
 `get_expected_exposures()`)
@@ -838,7 +858,7 @@ HTTP layer without touching the adapter or service code.
 **`web_app/services/scheduler_service.py`** (visit maps only)
 
 - `build_visit_maps_using_builder()` logic moves into `VisitMapsService.collate_response()`,
-  which receives per-night visit data from `RubinNightsVisitsAdapter` and builds the Bokeh figure
+  which receives per-night visit data from `ConsdbVisitsAdapter` and builds the Bokeh figure
 - `build_static_visit_map()` (matplotlib/`maf` PNG rendering for `/static-visit-map`, which
   replaced the old `/survey-progress-map`) moves into `StaticVisitMapService.collate_response()`
 - Visualisation helpers (`_style_*`, `_add_*`, `_compute_nvisits_bundle`, etc.) remain in the
@@ -1066,7 +1086,8 @@ package "Adapter Layer" {
         component [ExposurelogCachedAdapter] as AD_EXP
         component [NarrativelogCachedAdapter] as AD_NAR
         component [NightReportCachedAdapter] as AD_NIG
-        component [ConsdbCachedAdapter] as AD_CDB
+        component [ConsdbExposuresAdapter] as AD_CDB
+        component [ConsdbVisitsAdapter] as AD_VIS
         component [AlmanacCachedAdapter] as AD_ALM
         component [ExpectedExposuresCachedAdapter] as AD_EXP_EXP
     }
@@ -1081,7 +1102,6 @@ package "Adapter Layer" {
         component [RubinNightsDomeAdapter] as AD_DOME
         component [RubinNightsEFDAdapter] as AD_EFD
         component [RubinNightsContextAdapter] as AD_CTX
-        component [RubinNightsVisitsAdapter] as AD_VIS
     }
 }
 
