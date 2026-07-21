@@ -36,11 +36,11 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any
 
-from lsst.ts.logging_and_reporting.utils import contiguous_runs, current_dayobs, dayobs_range
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
+from lsst.ts.logging_and_reporting.cache_ttl import (
     HISTORIC_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
+from lsst.ts.logging_and_reporting.utils import contiguous_runs, current_dayobs, dayobs_range
 
 logger = logging.getLogger(__name__)
 

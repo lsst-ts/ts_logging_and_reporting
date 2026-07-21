@@ -34,11 +34,11 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs, get_jira_hostname
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
+from lsst.ts.logging_and_reporting.cache_ttl import (
     MUTABLE_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
+from lsst.ts.logging_and_reporting.utils import current_dayobs, get_jira_hostname
 
 logger = logging.getLogger(__name__)
 

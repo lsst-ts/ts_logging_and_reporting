@@ -1,4 +1,4 @@
-from lsst.ts.logging_and_reporting.web_app.services.jira import JiraTicketsService
+from lsst.ts.logging_and_reporting.services.jira import JiraTicketsService
 
 
 class StubAdapter:

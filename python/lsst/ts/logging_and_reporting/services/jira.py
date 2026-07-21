@@ -33,11 +33,11 @@ import logging
 from datetime import datetime
 
 from lsst.ts.logging_and_reporting.adapters.jira_obs import get_jira_obs_adapter
+from lsst.ts.logging_and_reporting.service import Service
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
     get_utc_datetime_from_dayobs_str,
 )
-from lsst.ts.logging_and_reporting.web_app.service import Service
 
 logger = logging.getLogger(__name__)
 

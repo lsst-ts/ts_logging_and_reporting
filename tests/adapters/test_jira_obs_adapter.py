@@ -9,7 +9,7 @@ from lsst.ts.logging_and_reporting.adapters.jira_obs import (
     JiraObsCachedAdapter,
 )
 from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import MUTABLE_TTL_REDIS
+from lsst.ts.logging_and_reporting.cache_ttl import MUTABLE_TTL_REDIS
 
 SERVER = "https://jira.test"
 

@@ -28,14 +28,14 @@ import pytest
 from astropy.time import Time
 from matplotlib import pyplot as plt
 
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
-from lsst.ts.logging_and_reporting.web_app.services import (
+from lsst.ts.logging_and_reporting.services import (
     almanac_service,
     jira_service,
     rubin_nights_service,
     scheduler_service,
     zephyr_service,
 )
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
 
 
 class DummyExposure:
@@ -72,7 +72,7 @@ def test_get_almanac(monkeypatch):
 
     # Mock the Almanac class to return fixed data
     monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.services.almanac_service.Almanac",
+        "lsst.ts.logging_and_reporting.services.almanac_service.Almanac",
         DummyAlmanac,
     )
     result = almanac_service.get_almanac(20240101, 20240102)
@@ -190,7 +190,7 @@ class TestGetJiraTickets:
         mock_adapter_cls.return_value = mock_adapter_instance
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             mock_adapter_cls,
         )
 
@@ -227,7 +227,7 @@ class TestGetJiraTickets:
                 return []
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             DummyJiraAdapter,
         )
 
@@ -247,7 +247,7 @@ class TestGetJiraTickets:
                 return None
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             DummyJiraAdapter,
         )
 
@@ -267,7 +267,7 @@ class TestGetJiraTickets:
                 return dummy_tickets
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             DummyJiraAdapter,
         )
 
@@ -299,7 +299,7 @@ class TestGetJiraTickets:
                 return dummy_tickets
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             DummyJiraAdapter,
         )
 
@@ -409,7 +409,7 @@ class TestGetBlockTicketSummaries:
                 return {"SHOULD": "NOT BE CALLED"}
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             DummyJiraAdapter,
         )
 
@@ -429,7 +429,7 @@ class TestGetBlockTicketSummaries:
                 return {}
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             DummyJiraAdapter,
         )
 
@@ -447,7 +447,7 @@ class TestGetBlockTicketSummaries:
                 return {key: f"Summary for {key}" for key in ticket_keys}
 
         monkeypatch.setattr(
-            "lsst.ts.logging_and_reporting.web_app.services.jira_service.JiraAdapter",
+            "lsst.ts.logging_and_reporting.services.jira_service.JiraAdapter",
             DummyJiraAdapter,
         )
 

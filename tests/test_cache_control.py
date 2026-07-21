@@ -26,8 +26,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
-from lsst.ts.logging_and_reporting.web_app.middleware.cache_control import (
+from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
+from lsst.ts.logging_and_reporting.middleware.cache_control import (
     _MUTABLE_PATHS,
     CacheControlMiddleware,
 )
@@ -80,7 +80,7 @@ def _cache_header(response):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_historical_range_gets_long_ttl(mock_today, client):
@@ -89,7 +89,7 @@ def test_historical_range_gets_long_ttl(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_range_including_today_gets_short_ttl(mock_today, client):
@@ -101,7 +101,7 @@ def test_range_including_today_gets_short_ttl(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_single_dayobs_today_gets_short_ttl(mock_today, client):
@@ -110,7 +110,7 @@ def test_single_dayobs_today_gets_short_ttl(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_single_dayobs_historical_gets_long_ttl(mock_today, client):
@@ -131,7 +131,7 @@ def test_no_dayobs_params_no_cache_header(client):
 
 @pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_mutable_paths_get_mutable_ttl_for_historical_range(mock_today, path, client):
@@ -141,7 +141,7 @@ def test_mutable_paths_get_mutable_ttl_for_historical_range(mock_today, path, cl
 
 @pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_mutable_paths_get_today_ttl_when_range_includes_today(mock_today, path, client):
@@ -164,7 +164,7 @@ def test_invalid_dayobs_no_cache_header(client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_only_start_param(mock_today, client):
@@ -173,7 +173,7 @@ def test_only_start_param(mock_today, client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_only_end_param(mock_today, client):

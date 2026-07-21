@@ -2,9 +2,9 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from lsst.ts.logging_and_reporting.web_app.services.exposures import ExposuresService
+from lsst.ts.logging_and_reporting.services.exposures import ExposuresService
 
-EXPOSURES = "lsst.ts.logging_and_reporting.web_app.services.exposures"
+EXPOSURES = "lsst.ts.logging_and_reporting.services.exposures"
 
 
 class StubConsdbAdapter:
