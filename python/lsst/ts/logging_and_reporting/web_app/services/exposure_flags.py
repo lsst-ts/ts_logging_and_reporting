@@ -20,11 +20,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Services for the /exposure-entries and /exposure-flags endpoints.
+"""Service for the /exposure-flags endpoint.
 
-Both services share one ``ExposurelogCachedAdapter``, which caches
-Exposure Log messages for all instruments per dayobs; instrument
-filtering happens here at collation time.
+Uses the shared ``ExposurelogCachedAdapter``, which caches Exposure
+Log messages for all instruments per dayobs; instrument filtering
+happens here at collation time.
 """
 
 import functools
@@ -40,46 +40,6 @@ logger = logging.getLogger(__name__)
 # Exposure flags worth surfacing; "unknown" (mapped from upstream
 # "none") is deliberately excluded.
 FLAG_VALUES = {"questionable", "junk"}
-
-
-class ExposureEntriesService(Service):
-    """Collates Exposure Log entries for /exposure-entries."""
-
-    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
-        """Return exposure log entries for the range and instrument.
-
-        Parameters
-        ----------
-        day_obs_start : `int`
-            Inclusive lower bound of the dayobs range.
-        day_obs_end : `int`
-            Exclusive upper bound of the dayobs range (the API
-            contract — the frontend sends end + 1 day).
-        instrument : `str`
-            Instrument to filter by (e.g. ``LSSTCam``).
-        """
-        per_day = self.adapters["exposurelog"].fetch(
-            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-        )
-        filtered = {
-            dayobs: [m for m in messages if m.get("instrument") == instrument]
-            for dayobs, messages in per_day.items()
-        }
-        if not any(filtered.values()):
-            logger.debug(
-                f"No messages for dayObsStart: {day_obs_start}, "
-                f"dayObsEnd: {day_obs_end} and instrument: {instrument}"
-            )
-        response = self.collate_response(filtered)
-        logger.debug(
-            f"Fetched {len(response['exposure_entries'])} Exposure Log records "
-            f"for dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end} "
-            f"and instrument: {instrument}"
-        )
-        return response
-
-    def collate_response(self, data: dict[int, Any]) -> dict:
-        return {"exposure_entries": flatten_sorted(data, "date_added")}
 
 
 class ExposureFlagsService(Service):
@@ -128,11 +88,6 @@ class ExposureFlagsService(Service):
             for message in flatten_sorted(data, "date_added")
         ]
         return {"exposure_flags": flagged}
-
-
-@functools.cache
-def get_exposure_entries_service() -> ExposureEntriesService:
-    return ExposureEntriesService(adapters={"exposurelog": get_exposurelog_adapter()})
 
 
 @functools.cache
