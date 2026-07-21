@@ -1,4 +1,4 @@
-from lsst.ts.logging_and_reporting.web_app.services.nightreport_service import NightReportService
+from lsst.ts.logging_and_reporting.web_app.services.nightreport import NightReportService
 
 
 class StubAdapter:
