@@ -7,8 +7,8 @@ from lsst.ts.logging_and_reporting.adapters.jira import (
     OBS_SYSTEMS_FIELD,
     TIME_LOST_FIELD,
     JiraObsCachedAdapter,
-    get_system_names,
 )
+from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin
 from lsst.ts.logging_and_reporting.web_app.cache_ttl import MUTABLE_TTL_REDIS
 
 SERVER = "https://jira.test"
@@ -59,10 +59,10 @@ def adapter(fake_redis, monkeypatch):
 class TestGetSystemNames:
     def test_extracts_names_from_nested_structure(self):
         field = [{"name": "Simonyi", "child": {"name": "M1M3"}}, [{"name": "AuxTel"}]]
-        assert get_system_names(field) == ["Simonyi", "M1M3", "AuxTel"]
+        assert JiraApiMixin.get_system_names(field) == ["Simonyi", "M1M3", "AuxTel"]
 
     def test_none_field_gives_empty_list(self):
-        assert get_system_names(None) == []
+        assert JiraApiMixin.get_system_names(None) == []
 
 
 class TestFetchFromSource:
