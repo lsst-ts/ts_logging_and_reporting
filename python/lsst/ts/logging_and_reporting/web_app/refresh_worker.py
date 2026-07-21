@@ -60,7 +60,7 @@ from typing import Any
 
 from lsst.ts.logging_and_reporting.utils import current_dayobs
 
-from .base_adapter import DayobsCachedAdapter, InstrumentDayobsCachedAdapter
+from .base_adapters import DayobsCachedAdapter, InstrumentDayobsCachedAdapter
 from .cache_ttl import TODAY_TTL
 
 logger = logging.getLogger(__name__)

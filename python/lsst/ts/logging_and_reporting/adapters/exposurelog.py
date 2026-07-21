@@ -26,16 +26,16 @@ import functools
 import logging
 from typing import Any
 
-from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
+from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
-from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapters import DayobsCachedAdapter, contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
 
-class ExposurelogCachedAdapter(MutableDataMixin, RestCachedAdapter):
+class ExposurelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapter):
     """Fetches and caches Exposure Log messages per dayobs.
 
     Messages for **all instruments** are cached together under one

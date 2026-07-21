@@ -20,10 +20,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Base classes for cached adapters backed by REST APIs."""
+"""Transport clients for adapters backed by REST APIs.
+
+A client provides the request machinery (auth, timeouts, JSON GET/POST,
+paging); a concrete adapter combines one with a cache base class and any
+mixins. `RestClient` is the general JSON client; `SqlClient` adds ConsDB's
+SQL query endpoint on top.
+"""
 
 import logging
-from abc import ABC
 from typing import Any
 
 import requests
@@ -34,7 +39,6 @@ from lsst.ts.logging_and_reporting.utils import (
     get_auth_header,
     retrieve_access_token,
 )
-from lsst.ts.logging_and_reporting.web_app.base_adapter import DayobsCachedAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +54,8 @@ class RestClient:
     HTTP or connection failures raise, matching the cache-loop
     contract that any upstream error fails the whole fetch.
 
-    Combine with a cache base class: `RestCachedAdapter` pairs it
-    with `DayobsCachedAdapter` for dayobs-keyed adapters; ID-keyed
-    adapters pair it with `IdCachedAdapter` themselves.
+    Combine with a cache base class, e.g. `DayobsCachedAdapter` for
+    dayobs-keyed adapters or `IdCachedAdapter` for ID-keyed ones.
     """
 
     auth_source = "rsp"
@@ -166,10 +169,6 @@ class RestClient:
                 )
                 return records
             params["offset"] += len(page)
-
-
-class RestCachedAdapter(RestClient, DayobsCachedAdapter, ABC):
-    """`DayobsCachedAdapter` for upstream REST APIs."""
 
 
 class SqlClient(RestClient):

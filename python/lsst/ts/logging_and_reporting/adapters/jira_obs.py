@@ -32,14 +32,14 @@ import logging
 
 from pytz import timezone
 
-from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
+from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin, MutableDataMixin
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
     dayobs_at,
     get_utc_datetime_from_dayobs_str,
 )
-from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapters import DayobsCachedAdapter, contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ TIMESTAMP_INPUT_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 TIMESTAMP_OUTPUT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestCachedAdapter):
+class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCachedAdapter):
     """Fetches and caches OBS Jira tickets per dayobs.
 
     A ticket belongs to a dayobs bucket when it was created or last
