@@ -756,13 +756,13 @@ HTTP layer without touching the adapter or service code.
   sets like any other multi-adapter service (they only read the 12-degree twilight fields),
   and `almanac_service.py` + `almanac.py` are deleted
 
-**`web_app/services/narrativelog_service.py`** — ✅ done
+**`web_app/services/narrativelog.py`** — ✅ done
 
 - `get_messages()` replaced with `NarrativeLogService(Service)` using
   `NarrativelogCachedAdapter`; the time-lost sums moved from the endpoint into
   `collate_response`
 
-**`web_app/services/nightreport_service.py`** — ✅ done
+**`web_app/services/nightreport.py`** — ✅ done
 
 - `get_night_reports()` replaced with `NightReportService(Service)` using
   `NightReportCachedAdapter`
@@ -936,6 +936,16 @@ substantial rework — existing tests that call service functions directly will 
 New tests should be written alongside each adapter as it is implemented (step 2 above), rather
 than deferred to the end. The testing patterns established for the first few adapters will serve
 as templates for the rest.
+
+New-architecture tests are organised one file per concrete unit, mirroring the source layout:
+
+- `tests/adapters/test_<name>_adapter.py` for each adapter in `adapters/`.
+- `tests/services/test_<name>_service.py` for each service in `web_app/services/`.
+
+The `_adapter`/`_service` suffix makes the layer obvious at a glance. Framework-level tests
+whose source lives directly under `web_app/` (the base ABCs, cache-control middleware, the
+refresh worker, the endpoint/integration tests) and `test_utils.py` stay at the `tests/` root,
+as do the legacy tests for the pre-refactor modules still awaiting the step-8 cleanup.
 
 ---
 
