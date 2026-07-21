@@ -338,8 +338,9 @@ requested keys by instrument and fetches each instrument's contiguous runs throu
 `day_obs`. `refresh(dayobs)` fans out over `INSTRUMENTS` (fetch-then-overwrite per instrument),
 so the `RefreshWorker` warms today for each. Cache mechanics only — no request validation.
 
-The concrete ConsDB adapters extend `ConsdbSqlAdapter` (`SqlClient` + this class), which adds
-instrument/dayobs validation (→ 422) before the values reach raw SQL — see `adapters/consdb.py`.
+The concrete ConsDB adapters combine `ConsdbSqlMixin` (`adapters/mixins.py`) with `SqlClient` and
+this class; the mixin adds instrument/dayobs validation (→ 422) and quicklook-join row dedup before
+the values reach raw SQL — see `adapters/consdb_exposures.py` and `adapters/consdb_visits.py`.
 
 ---
 
@@ -544,7 +545,7 @@ all users.
 
 Instead, adapters resolve a service-account token per fetch from the source configured by their
 `auth_source` (`AUTH_SOURCES` in `utils.py`: environment variable such as `ACCESS_TOKEN`, or RSP
-notebook utilities) — implemented in `RestCachedAdapter._get_token()`. Resolving at fetch time
+notebook utilities) — implemented in `RestClient._get_token()`. Resolving at fetch time
 rather than startup means token rotation needs no restart. No token is passed at request time,
 and endpoints on the new pattern no longer read per-request `Authorization` headers; user
 authentication is enforced upstream by the RSP gateway (internal) or nginx/ingress (public).
@@ -600,17 +601,20 @@ HTTP layer without touching the adapter or service code.
 | `web_app/middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
 | `web_app/middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
 | `web_app/middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
-| `web_app/base_adapter.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses; `MutableDataMixin`; and the `dayobs_range` / `contiguous_runs` helpers |
+| `web_app/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils.py`) |
 | `web_app/service.py` | ✅ `Service` ABC (with the `handle()` error wrapper) and the `flatten_sorted()` collation helper |
 | `web_app/refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
 | `web_app/redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
-| `adapters/http.py` | ✅ `RestClient` mixin — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GET/POST that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). `RestCachedAdapter` composes it with `DayobsCachedAdapter` for dayobs-keyed adapters; ID-keyed adapters compose it with `IdCachedAdapter` themselves. ✅ `SqlClient` — `RestClient` subclass adding ConsDB `/consdb/query` execution and row shaping, composed with `InstrumentDayobsCachedAdapter` by the ConsDB adapters |
+| `adapters/base_clients.py` | ✅ `RestClient` — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GET/POST that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). Adapters compose it explicitly with a cache base — `DayobsCachedAdapter` for dayobs-keyed, `IdCachedAdapter` for ID-keyed. ✅ `SqlClient` — `RestClient` subclass adding ConsDB `/consdb/query` execution and row shaping, composed with `InstrumentDayobsCachedAdapter` by the ConsDB adapters. Renamed from `http.py` (the empty `RestCachedAdapter` convenience base was removed) |
+| `adapters/mixins.py` | ✅ Shared adapter mixins: `MutableDataMixin` (mutable-TTL policy), `JiraApiMixin` (Jira Basic-auth headers, server resolution, `get_system_names`), and `ConsdbSqlMixin` (ConsDB instrument/dayobs validation + quicklook-join row dedup) |
 | `adapters/exposurelog.py` | ✅ `ExposurelogCachedAdapter` (rewritten from `exposure_log.py`, which becomes deletable) — caches all instruments together per dayobs key; services filter by instrument at collation |
 | `adapters/narrativelog.py` | ✅ `NarrativelogCachedAdapter` (rewritten from `source_adapters.py`) — queries the upstream `date_begin` window noon-to-noon per contiguous run, partitions by `date_begin` dayobs, derives `instrument` from the telescope component; mutable TTL policy (`MutableDataMixin`) |
 | `adapters/nightreport.py` | ✅ `NightReportCachedAdapter` (rewritten from `source_adapters.py`) — dayobs-range API with exclusive `max_day_obs`; default TTL policy |
-| `adapters/consdb.py` | `ConsdbSqlAdapter` base (`SqlClient` + `InstrumentDayobsCachedAdapter` + instrument/dayobs validation + the quicklook-join duplicate-column dedup) with two subclasses. `ConsdbExposuresAdapter` — the exposure⋈quicklook `SELECT` with the per-instrument transformed-EFD channels folded in via a `LEFT JOIN`; one cache entry serves both `/exposures` (projected) and `/data-log` (full). `ConsdbVisitsAdapter` — the visit1⋈visit1_quicklook `SELECT` by `day_obs`, caching the raw un-augmented frame for the visit-map endpoints (`augment` is a consumer-side transform run in `VisitMapsService`, not cached). Replaces the legacy `consdb.py` |
+| `adapters/consdb_exposures.py` | `ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter)` — the exposure⋈quicklook `SELECT` with the per-instrument transformed-EFD channels folded in via a `LEFT JOIN`; one cache entry serves both `/exposures` (projected) and `/data-log` (full). Replaces the legacy `consdb.py` |
+| `adapters/consdb_visits.py` | `ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter)` — the visit1⋈visit1_quicklook `SELECT` by `day_obs`, caching the raw un-augmented frame for the visit-map endpoints (`augment` is a consumer-side transform run in `VisitMapsService`, not cached) |
 | `adapters/almanac.py` | ✅ `AlmanacCachedAdapter` — local `astroplan` compute, no upstream service; records keyed by the morning-twilight-boundary dayobs (night of observing dayobs N cached under N+1, matching the legacy labeling); always-long TTL (ephemeris is deterministic) and therefore not registered with the `RefreshWorker` |
-| `adapters/jira.py` | ✅ `JiraObsCachedAdapter` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; mutable TTL policy (`MutableDataMixin`). ✅ `JiraBlockAdapter` (`JiraApiMixin + MutableDataMixin + RestClient + IdCachedAdapter`) — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` |
+| `adapters/jira_obs.py` | ✅ `JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCachedAdapter)` — OBS tickets per dayobs, bucketed by created **and** last-updated noon-to-noon windows (a ticket can sit in two buckets; the service dedupes); Basic auth against `JIRA_API_HOSTNAME`, JQL dates in the account's timezone (cached per process), range-independent records with a `created_utc` field for the service-derived `isNew`; mutable TTL policy |
+| `adapters/jira_block.py` | ✅ `JiraBlockAdapter(JiraApiMixin, MutableDataMixin, RestClient, IdCachedAdapter)` — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` (`adapters/mixins.py`) |
 | `adapters/zephyr.py` | ✅ `ZephyrAdapter` (`MutableDataMixin + RestClient + IdCachedAdapter`) — test-case names by BLOCK key, queried directly from the Zephyr Scale REST API (drops the async `ZephyrInterface` dependency: our one call path was a single raw GET); cache keyed by **parent** key so every `_x` suffix variant shares one entry; 404s cached as `null` |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
@@ -644,9 +648,9 @@ HTTP layer without touching the adapter or service code.
 - ✅ `NightReportAdapter` and `NarrativelogAdapter` are superseded by their `adapters/`
   rewrites; the file itself goes in the cleanup step
 - `SourceAdapter` ABC is removed entirely (replaced by the `CachedAdapter` base /
-  `DayobsCachedAdapter` / `RestCachedAdapter`)
+  `DayobsCachedAdapter`)
 - The `protected_get` / `protected_post` helpers are superseded by
-  `RestCachedAdapter._get_json`, which raises on failure instead of returning
+  `RestClient._get_json`, which raises on failure instead of returning
   `(ok, result, code)` tuples
 
 **`exposure_log.py`** → **deleted** — ✅ superseded
@@ -654,14 +658,14 @@ HTTP layer without touching the adapter or service code.
 - `ExposurelogAdapter` is superseded by `adapters/exposurelog.py`; the file can be removed once
   no notebook/report code imports it (cleanup step)
 
-**`consdb.py`** → **deleted**, moved to `adapters/consdb.py`
+**`consdb.py`** → **deleted**, moved to `adapters/consdb_exposures.py` and `adapters/consdb_visits.py`
 
-- `ConsdbExposuresAdapter` extends `ConsdbSqlAdapter` (`SqlClient` +
-  `InstrumentDayobsCachedAdapter` + the shared duplicate-column dedup in `_rows_from_result`); its
-  `_fetch_run(instrument, run_start, run_end)` runs the exposure⋈quicklook `SELECT` with the
-  instrument's transformed-EFD channels folded in via a `LEFT JOIN`. Cache keys are
-  `"{instrument}:{dayobs}"`. `ConsdbVisitsAdapter` (chunk 7) is the sibling subclass for the
-  visit1⋈visit1_quicklook query
+- `ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter)`; the
+  `ConsdbSqlMixin` (`adapters/mixins.py`) supplies instrument/dayobs validation and the
+  duplicate-column dedup in `_rows_from_result`. Its `_fetch_run(instrument, run_start, run_end)`
+  runs the exposure⋈quicklook `SELECT` with the instrument's transformed-EFD channels folded in via
+  a `LEFT JOIN`. Cache keys are `"{instrument}:{dayobs}"`. `ConsdbVisitsAdapter` (chunk 7) is the
+  sibling subclass for the visit1⋈visit1_quicklook query
 - Drops the legacy `ConsdbQueryError` wrapping. The old `query()` caught
   `requests.HTTPError`/`ConnectionError` only to re-tag them so the endpoint could map them to
   502; the base `Service.handle` already maps `requests.RequestException → 502`, so the adapter
@@ -678,7 +682,7 @@ HTTP layer without touching the adapter or service code.
 - The legacy `Almanac` class stays until `almanac_service.py`'s `get_almanac()` goes (see
   below) — it is that function's only remaining consumer
 
-**`jira.py`** → **deleted**, moved to `adapters/jira.py`
+**`jira.py`** → **deleted**, moved to `adapters/jira_obs.py` and `adapters/jira_block.py`
 
 - Split into two classes:
   - ✅ `JiraObsCachedAdapter` — fetches and caches OBS tickets per dayobs; used by
@@ -735,7 +739,7 @@ HTTP layer without touching the adapter or service code.
   query, or merge; `/exposures` projects the EFD column away
 - Both endpoints drop their `except ConsdbQueryError` blocks: a ConsDB failure is mapped to 502
   by `Service.handle` (requests error), and an unrecognised instrument / malformed dayobs is a
-  422 raised by `ConsdbSqlAdapter` validation
+  422 raised by `ConsdbSqlMixin` validation
 - The ConsDB query uses inclusive bounds (`run_start <= e.day_obs <= run_end`);
   `InstrumentDayobsCachedAdapter` keys entries per dayobs, so the endpoint's exclusive `dayObsEnd`
   is converted (`end - 1 day`) before the fetch and never reaches the SQL as-is
@@ -797,9 +801,10 @@ HTTP layer without touching the adapter or service code.
   - `RubinNightsEFDAdapter(DayobsCachedAdapter)` — observatory status events
   - `RubinNightsContextAdapter(DayobsCachedAdapter)` — context feed messages
   - Visit data is **not** a rubin_nights split: it is a ConsDB SQL query, so it lives in
-    `adapters/consdb.py` as `ConsdbVisitsAdapter(ConsdbSqlAdapter)` (see the ConsDB file-map row),
-    keyed `{instrument}:{dayobs}`. ✅ **DONE** — the exposure adapter was renamed
-    `ConsdbExposuresAdapter` and the shared quicklook dedup moved onto `ConsdbSqlAdapter`
+    `adapters/consdb_visits.py` as `ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient,
+    InstrumentDayobsCachedAdapter)` (see the ConsDB file-map rows), keyed `{instrument}:{dayobs}`.
+    ✅ **DONE** — the exposure adapter was renamed `ConsdbExposuresAdapter` and the shared quicklook
+    dedup moved onto `ConsdbSqlMixin`
 - Service classes move to three new files:
   - `web_app/services/obs_status_service.py` — `ObsStatusService(Service)` using
     `RubinNightsEFDAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
@@ -868,12 +873,12 @@ HTTP layer without touching the adapter or service code.
 
 | Item | Reason |
 |---|---|
-| `source_adapters.py` | Superseded by `adapters/narrativelog.py`, `adapters/nightreport.py`, and `RestCachedAdapter`; `SourceAdapter` ABC replaced by the `CachedAdapter` base / `DayobsCachedAdapter` |
+| `source_adapters.py` | Superseded by `adapters/narrativelog.py` and `adapters/nightreport.py` (each composing `RestClient` + `DayobsCachedAdapter`); `SourceAdapter` ABC replaced by the `CachedAdapter` base / `DayobsCachedAdapter` |
 | `exposure_log.py` | Superseded by `adapters/exposurelog.py` |
-| `consdb.py` | Moved to `adapters/consdb.py` |
+| `consdb.py` | Moved to `adapters/consdb_exposures.py` and `adapters/consdb_visits.py` |
 | `almanac.py` | Superseded by `adapters/almanac.py`; deleted with `almanac_service.py` once `rubin_nights_service.py` stops calling `get_almanac()` |
 | `web_app/services/almanac_service.py` | Superseded by `web_app/services/almanac.py`; survives only for `get_almanac()` until the `rubin_nights` services use `AlmanacCachedAdapter` directly |
-| `jira.py` | Moved to `adapters/jira.py` |
+| `jira.py` | Moved to `adapters/jira_obs.py` and `adapters/jira_block.py` |
 | Standalone service functions in each `services/*.py` | Replaced by `Service` subclasses |
 
 ---
@@ -883,7 +888,7 @@ HTTP layer without touching the adapter or service code.
 After Step 0 (cache-control middleware + nginx), the main refactor should proceed in this order
 to validate the pattern on simpler cases before tackling the riskiest parts:
 
-1. ✅ **`base_adapter.py` and `service.py` ABCs** — lay the foundation everything else builds on
+1. ✅ **`base_adapters.py` and `service.py` ABCs** — lay the foundation everything else builds on
 2. **Simple REST adapters** — ✅ `ExposurelogCachedAdapter` (the pattern-validating vertical
    slice: adapter + services + endpoint switch, done end-to-end),
    ✅ `NarrativelogCachedAdapter`, ✅ `NightReportCachedAdapter`, ✅ `AlmanacCachedAdapter`,
@@ -1091,7 +1096,7 @@ package "Adapter Layer" {
         component [AlmanacCachedAdapter] as AD_ALM
         component [ExpectedExposuresCachedAdapter] as AD_EXP_EXP
     }
-    package "adapters/jira.py" {
+    package "adapters/jira_*.py" {
         component [JiraObsCachedAdapter] as AD_JIRA_OBS
         component [JiraBlockAdapter\n<<IdCachedAdapter>>] as AD_JIRA_BLK
     }
