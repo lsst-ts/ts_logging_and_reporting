@@ -4,7 +4,8 @@ import pytest
 import requests
 from fastapi import HTTPException
 
-from lsst.ts.logging_and_reporting.adapters.consdb import ConsdbExposuresAdapter, ConsdbVisitsAdapter
+from lsst.ts.logging_and_reporting.adapters.consdb_exposures import ConsdbExposuresAdapter
+from lsst.ts.logging_and_reporting.adapters.consdb_visits import ConsdbVisitsAdapter
 from lsst.ts.logging_and_reporting.utils import current_dayobs
 from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS, TODAY_TTL_REDIS
 

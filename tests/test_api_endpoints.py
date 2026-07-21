@@ -35,7 +35,8 @@ import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
 from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
 from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
-from lsst.ts.logging_and_reporting.adapters.jira import get_jira_block_adapter, get_jira_obs_adapter
+from lsst.ts.logging_and_reporting.adapters.jira_block import get_jira_block_adapter
+from lsst.ts.logging_and_reporting.adapters.jira_obs import get_jira_obs_adapter
 from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
 from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
 from lsst.ts.logging_and_reporting.adapters.zephyr import get_zephyr_adapter
