@@ -71,8 +71,27 @@ class ConsdbSqlAdapter(SqlClient, InstrumentDayobsCachedAdapter, ABC):
         except ValueError:
             raise HTTPException(status_code=422, detail=f"Invalid dayobs: {dayobs!r}")
 
+    def _rows_from_result(self, result: dict) -> list[dict]:
+        # The quicklook join yields duplicate column names; keep the first
+        # non-null so a join null never clobbers a valid primary value.
+        records = []
+        duplicate_columns = set()
+        for row in result["data"]:
+            record: dict = {}
+            for column, value in zip(result["columns"], row):
+                if column in record:
+                    duplicate_columns.add(column)
+                    if record[column] is None and value is not None:
+                        record[column] = value
+                else:
+                    record[column] = value
+            records.append(record)
+        if duplicate_columns:
+            logger.debug(f"Merged duplicate ConsDB columns: {', '.join(sorted(duplicate_columns))}")
+        return records
 
-class ConsdbCachedAdapter(ConsdbSqlAdapter):
+
+class ConsdbExposuresAdapter(ConsdbSqlAdapter):
     """Caches the full exposure record (exposure ⋈ quicklook ⋈ EFD).
 
     One cache entry serves both endpoints: `ExposuresService` projects
@@ -101,27 +120,33 @@ class ConsdbCachedAdapter(ConsdbSqlAdapter):
         """
         return self._query(" ".join(sql.split()))
 
-    def _rows_from_result(self, result: dict) -> list[dict]:
-        # The exposure/quicklook join returns duplicate column names;
-        # keep the first non-null so a null from the join never clobbers
-        # a valid exposure value.
-        records = []
-        duplicate_columns = set()
-        for row in result["data"]:
-            record: dict = {}
-            for column, value in zip(result["columns"], row):
-                if column in record:
-                    duplicate_columns.add(column)
-                    if record[column] is None and value is not None:
-                        record[column] = value
-                else:
-                    record[column] = value
-            records.append(record)
-        if duplicate_columns:
-            logger.debug(f"Merged duplicate ConsDB columns: {', '.join(sorted(duplicate_columns))}")
-        return records
+
+class ConsdbVisitsAdapter(ConsdbSqlAdapter):
+    """Caches the raw visit record (visit1 ⋈ visit1_quicklook) per night.
+
+    Feeds the visit-map endpoints. Cached un-augmented: the rubin_nights
+    augmentation is pure local compute and runs in `VisitMapsService` on
+    read, so both map forms derive from one entry.
+    """
+
+    name = "consdb_visits"
+
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> list[dict]:
+        sql = f"""
+            SELECT v.*, q.*
+            FROM cdb_{instrument}.visit1 v
+            LEFT JOIN cdb_{instrument}.visit1_quicklook q
+                ON v.visit_id = q.visit_id
+            WHERE {run_start} <= v.day_obs AND v.day_obs <= {run_end}
+        """
+        return self._query(" ".join(sql.split()))
 
 
 @functools.cache
-def get_consdb_adapter() -> ConsdbCachedAdapter:
-    return ConsdbCachedAdapter(get_redis_client())
+def get_consdb_exposures_adapter() -> ConsdbExposuresAdapter:
+    return ConsdbExposuresAdapter(get_redis_client())
+
+
+@functools.cache
+def get_consdb_visits_adapter() -> ConsdbVisitsAdapter:
+    return ConsdbVisitsAdapter(get_redis_client())

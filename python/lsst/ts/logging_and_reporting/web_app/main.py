@@ -63,7 +63,8 @@ logger = logging.getLogger(__name__)
 
 refresh_worker = RefreshWorker(
     [
-        adapters.get_consdb_adapter(),
+        adapters.get_consdb_exposures_adapter(),
+        adapters.get_consdb_visits_adapter(),
         adapters.get_expected_exposures_adapter(),
         adapters.get_exposurelog_adapter(),
         adapters.get_jira_obs_adapter(),
