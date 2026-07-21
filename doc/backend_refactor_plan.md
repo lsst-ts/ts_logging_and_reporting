@@ -23,6 +23,7 @@ Two further caching layers are enabled by `CacheControlMiddleware`:
 
 - *Client*: `Cache-Control` response headers allow browsers to cache per-request results by URL,
   so repeated identical requests from the same user are served locally without hitting the server.
+  - question - Is this something we have to set up/allow in our front end, or is this automatically in use by browsers? 
 - *Nginx proxy cache*: the nginx reverse proxy in front of the application should be configured to
   honour and store responses with `Cache-Control` headers. This gives a shared cache across all
   users — historical responses can be cached at the proxy for as long as their `max-age` allows;
@@ -101,6 +102,7 @@ These endpoints remain as simple FastAPI route functions with no `Service`.
 - Background refresh means today's data is always warm; no cold-cache penalty for users
 - Cache-control headers enable downstream caching at the browser and nginx proxy levels
 - Partial cache hits: a request for 7 days only fetches the days not already in the adapter cache
+  - question - I'm not sure how this is true
 
 ### Cons
 
@@ -159,6 +161,7 @@ CachedAdapter (ABC)
 │       5. If there are any misses, call _fetch_from_source(missing_dayobs) as a
 │          batch. Any upstream error propagates immediately and the entire request
 │          fails — partial data is never returned.
+    question - why not return partial data, why not say 'some days are available, only past 3 days available, not past 5'? 
 │       6. Store each result via _store(dayobs, data).
 │       7. Return the complete dict[int, Any] for the full range.
 │
@@ -183,6 +186,10 @@ CachedAdapter (ABC)
       astronomical dayobs (rolls over at noon local time, not midnight).
 ```
 
+question - what does 'concrete' vs 'abstract' mean for some of these functions? 
+ 
+question - local time will always be prod deployment time right? what does 'noon local time' mean in `refresh_today`? 
+
 ---
 
 ### `IdBasedAdapter` (ABC)
@@ -203,6 +210,8 @@ from within `JiraObsBlockCachedAdapter` and maintain their own ID-keyed Redis ca
 `block_detail:BLOCK-42`) with a long fixed TTL, using the same `_check_cache` / `_store` helpers
 from `CachedAdapter` adapted for string keys.
 
+question - why do we need a whole different adapter for this, can't `JiraObsBlockCachedAdapter`'s `fetch_from_source` just request by id from jira rather than needing a whole new adapter?
+
 ---
 
 ### `Service` (ABC)
@@ -216,7 +225,9 @@ Service (ABC)
 │     Injected at construction.
 │
 ├── handle_request(...) -> dict
-│     Abstract. Each subclass defines its own typed signature. Implementation:
+│     Abstract. Each subclass defines its own typed signature. 
+question - what does that mean, its own signature ? 
+|      Implementation:
 │       1. Call each adapter's fetch(start_dayobs, end_dayobs).
 │       2. Merge per-dayobs results across adapters into dict[int, dict[str, Any]].
 │       3. Return collate_response(merged).
@@ -228,12 +239,23 @@ Service (ABC)
       multi-night figures from the per-night data.
 ```
 
+answer - I think concrete vs abstract means 'implemented in abc' vs 'to be implemented in child' 
+
+question - Returning a dict containing a list under a 'results' key seems pointless, can't we just return a list of the results? I think this is mimicing current patterns in the backend that I do not think are good patterns.
+
 ---
 
 ### `RefreshWorker`
 
 Runs on a dedicated daemon thread. Holds references to all `CachedAdapter` singletons and
 periodically calls `refresh_today()` on each.
+
+question - is this thread a different microservice, or how does this run just one other thread? 
+When we start up the backend we have 4 pods right now, so would we have 4 threads?
+I think we would not.
+Our startup.sh calls `run_logging_and_reporting.py` and that creates our uvicorn server.
+We would want our `RefreshWorker` thread to be separate from each of those. 
+
 
 ```
 RefreshWorker
@@ -266,6 +288,10 @@ Startup:
 
   worker = RefreshWorker([exposurelog_adapter, ...], interval_seconds=300)
   worker.start()
+
+question - is this on startup of our uvicorn server? 
+question - why would we create the service before it's being called in an endpoint? 
+answer? - for the RefreshWorker to call it? Why wouldn't we just have the RefreshWorker call the endpoints? 
 
 Request: GET /exposure-entries?startDayObs=20250101&endDayObs=20250107&instrument=LSSTCam
   1. DayobsValidationMiddleware validates params
@@ -305,6 +331,9 @@ Background (every 5 minutes):
 
 ## 3. Infrastructure Notes
 
+question - what happens to the cache every time we update or re-deploy the application? 
+question - what if a user/robert thinks the BLOCK definition has changed since the cache has stored the existing definition? Can someone refresh the cached definitions? Will those BLOCK definitions change? 
+
 ### Redis Configuration
 
 Redis must be configured as a cache, not a general-purpose data store. Recommended settings:
@@ -325,6 +354,8 @@ repopulate the cache on next request. Persistence adds I/O overhead with no bene
 A single shared connection pool should be instantiated once at application startup and passed to
 all adapters. This avoids each adapter opening its own connections and ensures the total number
 of connections to Redis stays bounded.
+
+question - did we say this shared connection would be a `Depends()`?
 
 ### Metrics and Instrumentation
 
@@ -360,6 +391,8 @@ The current code passes the user's RSP token through to upstream API calls (expo
 narrativelog, Jira, etc.). With singleton adapters and a shared cache this is problematic: the
 cache is keyed by `(adapter, dayobs)`, not by user, so whoever triggers a cache miss donates
 their token to populate an entry shared by all users.
+
+Answer - Frossie already mentioned that we should have per-deployment service accounts for nightly digest so we can track the usage load it puts on any of the databases.
 
 The resolution depends on whether upstream APIs support service account tokens:
 
@@ -414,6 +447,9 @@ immediate caching benefits at the HTTP layer without touching the adapter or ser
 - Immediately reduces load on the backend for repeated identical requests
 - Establishes the caching contract (short TTL for today, long TTL for history) that the rest of
   the refactor is built around
+
+
+question - does step 0 end here? 
 
 ---
 
