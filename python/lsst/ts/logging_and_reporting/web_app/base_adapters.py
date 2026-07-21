@@ -29,7 +29,6 @@ cache keys are derived from each adapter's ``name``, so concrete
 adapters implement only ``_fetch_from_source`` and set ``name``.
 """
 
-import datetime as dt
 import json
 import logging
 import time
@@ -37,81 +36,13 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.utils import contiguous_runs, current_dayobs, dayobs_range
 from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
     HISTORIC_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _dayobs_to_date(dayobs: int) -> dt.date:
-    return dt.datetime.strptime(str(dayobs), "%Y%m%d").date()
-
-
-def _date_to_dayobs(date: dt.date) -> int:
-    return int(date.strftime("%Y%m%d"))
-
-
-def dayobs_range(start_dayobs: int, end_dayobs: int) -> list[int]:
-    """Enumerate all dayobs in ``[start_dayobs, end_dayobs]`` inclusive.
-
-    Parameters
-    ----------
-    start_dayobs : `int`
-        First dayobs of the range, in YYYYMMDD form.
-    end_dayobs : `int`
-        Last dayobs of the range (inclusive), in YYYYMMDD form.
-
-    Returns
-    -------
-    `list` [`int`]
-        Every dayobs in the range, ascending.
-    """
-    start = _dayobs_to_date(start_dayobs)
-    end = _dayobs_to_date(end_dayobs)
-    days = []
-    while start <= end:
-        days.append(_date_to_dayobs(start))
-        start += dt.timedelta(days=1)
-    return days
-
-
-def contiguous_runs(dayobs_list: list[int]) -> list[tuple[int, int]]:
-    """Group dayobs into contiguous ``(start, end)`` runs (inclusive).
-
-    For adapters whose upstream API takes a min/max dayobs range: the
-    cache loop hands ``_fetch_from_source`` only the missing dayobs,
-    which may be non-contiguous, and issuing one range request per
-    contiguous run avoids refetching the cached days in between.
-    Adjacency is calendar-aware (20250131 and 20250201 are adjacent).
-
-    Parameters
-    ----------
-    dayobs_list : `list` [`int`]
-        Dayobs in YYYYMMDD form, in any order.
-
-    Returns
-    -------
-    `list` [`tuple` [`int`, `int`]]
-        Inclusive ``(start_dayobs, end_dayobs)`` per run, ascending.
-        e.g. ``[20250101, 20250103, 20250104]`` →
-        ``[(20250101, 20250101), (20250103, 20250104)]``.
-    """
-    if not dayobs_list:
-        return []
-    dates = sorted(_dayobs_to_date(d) for d in set(dayobs_list))
-    runs = []
-    run_start = run_end = dates[0]
-    for date in dates[1:]:
-        if date - run_end == dt.timedelta(days=1):
-            run_end = date
-        else:
-            runs.append((_date_to_dayobs(run_start), _date_to_dayobs(run_end)))
-            run_start = run_end = date
-    runs.append((_date_to_dayobs(run_start), _date_to_dayobs(run_end)))
-    return runs
 
 
 class CachedAdapter:

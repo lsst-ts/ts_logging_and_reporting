@@ -4,12 +4,10 @@ import time
 import pytest
 
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
-from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.utils import current_dayobs, dayobs_range
 from lsst.ts.logging_and_reporting.web_app.base_adapters import (
     DayobsCachedAdapter,
     IdCachedAdapter,
-    contiguous_runs,
-    dayobs_range,
 )
 from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
     HISTORIC_TTL_REDIS,
@@ -52,30 +50,6 @@ class RecordingIdAdapter(IdCachedAdapter):
     def _fetch_from_source(self, ids):
         self.calls.append(list(ids))
         return {id_: f"detail-{id_}" for id_ in ids}
-
-
-class TestHelpers:
-    def test_dayobs_range_within_month(self):
-        assert dayobs_range(20250101, 20250103) == [20250101, 20250102, 20250103]
-
-    def test_dayobs_range_crosses_month_and_year(self):
-        assert dayobs_range(20241230, 20250102) == [20241230, 20241231, 20250101, 20250102]
-
-    def test_dayobs_range_single_day(self):
-        assert dayobs_range(20250101, 20250101) == [20250101]
-
-    def test_contiguous_runs_empty(self):
-        assert contiguous_runs([]) == []
-
-    def test_contiguous_runs_groups_and_sorts(self):
-        runs = contiguous_runs([20250104, 20250101, 20250103])
-        assert runs == [(20250101, 20250101), (20250103, 20250104)]
-
-    def test_contiguous_runs_calendar_aware(self):
-        assert contiguous_runs([20250131, 20250201]) == [(20250131, 20250201)]
-
-    def test_contiguous_runs_deduplicates(self):
-        assert contiguous_runs([20250101, 20250101, 20250102]) == [(20250101, 20250102)]
 
 
 class TestCacheLoop:
