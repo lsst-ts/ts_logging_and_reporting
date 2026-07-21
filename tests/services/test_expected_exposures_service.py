@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 from rubin_sim.sim_archive import NoMatchingSimulationsFoundError
 
-from lsst.ts.logging_and_reporting.web_app.services.expected_exposures import ExpectedExposuresService
+from lsst.ts.logging_and_reporting.services.expected_exposures import ExpectedExposuresService
 
 
 class StubAdapter:

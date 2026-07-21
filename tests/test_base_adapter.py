@@ -4,16 +4,16 @@ import time
 import pytest
 
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
-from lsst.ts.logging_and_reporting.utils import current_dayobs, dayobs_range
-from lsst.ts.logging_and_reporting.web_app.base_adapters import (
+from lsst.ts.logging_and_reporting.base_adapters import (
     DayobsCachedAdapter,
     IdCachedAdapter,
 )
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
+from lsst.ts.logging_and_reporting.cache_ttl import (
     HISTORIC_TTL_REDIS,
     MUTABLE_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
+from lsst.ts.logging_and_reporting.utils import current_dayobs, dayobs_range
 
 TODAY = current_dayobs()
 

@@ -130,7 +130,7 @@ missing:
    must skip endpoints without dayobs parameters (`/block-details`, `/version`, `/health`)
 3. `CacheControlMiddleware` — **already implemented and committed** (with tests in
    `tests/test_cache_control.py`); adds `Cache-Control` headers from the shared
-   `web_app/cache_ttl.py` constants: `TODAY_TTL` if the response includes today's dayobs,
+   `cache_ttl.py` constants: `TODAY_TTL` if the response includes today's dayobs,
    `MUTABLE_TTL` for historical requests to the mutable endpoints (`/exposure-flags`,
    `/exposure-entries`, `/narrative-log`, `/block-details`), `HISTORIC_TTL` for other fully
    historical responses.
@@ -387,7 +387,7 @@ per-dayobs record lists into one list ordered by a record field.
 
 **Singletons via cached getters:** each adapter module exposes a `functools.cache` getter
 (e.g. `get_exposurelog_adapter()`) built on the shared `get_redis_client()`, and each service
-module likewise (`get_exposure_entries_service()`). The `adapters` and `web_app/services`
+module likewise (`get_exposure_entries_service()`). The `adapters` and `services`
 package `__init__`s re-export the getters (getters only, not the classes), so `main.py`
 imports the two namespaces rather than individual modules: endpoints inject services with
 `Depends(services.get_..._service)`, and the `RefreshWorker` list is built from
@@ -398,7 +398,7 @@ centralised in `main.py`, so adapters shared by several services have one natura
 
 ### `RefreshWorker`
 
-Lives in its own module (`web_app/refresh_worker.py`). Runs on a dedicated daemon thread. Holds
+Lives in its own module (`refresh_worker.py`). Runs on a dedicated daemon thread. Holds
 references to all `CachedAdapter` singletons and periodically calls `refresh(today)` on each.
 
 ```
@@ -566,10 +566,10 @@ HTTP layer without touching the adapter or service code.
 **Status:**
 
 1. ✅ **Done** — `CacheControlMiddleware` is implemented in
-   `web_app/middleware/cache_control.py`, registered in `main.py`, and tested in
+   `middleware/cache_control.py`, registered in `main.py`, and tested in
    `tests/test_cache_control.py` (commits `42b301f`, `50a4f1b`, `1ca2ed8`). As built, it
    inspects the `dayObs`, `dayObsStart`, and `dayObsEnd` query parameters and sets
-   `Cache-Control: public, max-age=<N>` from the `web_app/cache_ttl.py` constants —
+   `Cache-Control: public, max-age=<N>` from the `cache_ttl.py` constants —
    `TODAY_TTL` (300 s, matching the `RefreshWorker` interval) if today's dayobs is in the
    requested range, `HISTORIC_TTL` (86400 s) for fully historical requests. Mutable-data
    endpoints (`/exposure-flags`, `/block-details`, `/exposure-entries`, `/narrative-log`)
@@ -595,16 +595,16 @@ HTTP layer without touching the adapter or service code.
 
 | File | Description |
 |---|---|
-| `web_app/middleware/__init__.py` | ✅ Exists — exports middleware classes |
-| `web_app/cache_ttl.py` | ✅ All cache lifetimes in one place: `HISTORIC_TTL`/`HISTORIC_TTL_REDIS`, `TODAY_TTL`/`TODAY_TTL_REDIS`, `MUTABLE_TTL`/`MUTABLE_TTL_REDIS` — client `max-age` and Redis TTL per data kind; the `RefreshWorker` default interval is `TODAY_TTL` |
-| `web_app/middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers from the `cache_ttl` constants based on whether today's dayobs is in the requested range (mutable-data endpoints get `MUTABLE_TTL` on historical ranges) |
-| `web_app/middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
-| `web_app/middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
-| `web_app/middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
-| `web_app/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils.py`) |
-| `web_app/service.py` | ✅ `Service` ABC (with the `handle()` error wrapper) and the `flatten_sorted()` collation helper |
-| `web_app/refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
-| `web_app/redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
+| `middleware/__init__.py` | ✅ Exists — exports middleware classes |
+| `cache_ttl.py` | ✅ All cache lifetimes in one place: `HISTORIC_TTL`/`HISTORIC_TTL_REDIS`, `TODAY_TTL`/`TODAY_TTL_REDIS`, `MUTABLE_TTL`/`MUTABLE_TTL_REDIS` — client `max-age` and Redis TTL per data kind; the `RefreshWorker` default interval is `TODAY_TTL` |
+| `middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers from the `cache_ttl` constants based on whether today's dayobs is in the requested range (mutable-data endpoints get `MUTABLE_TTL` on historical ranges) |
+| `middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
+| `middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
+| `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
+| `base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils.py`) |
+| `service.py` | ✅ `Service` ABC (with the `handle()` error wrapper) and the `flatten_sorted()` collation helper |
+| `refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
+| `redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
 | `adapters/base_clients.py` | ✅ `RestClient` — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GET/POST that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). Adapters compose it explicitly with a cache base — `DayobsCachedAdapter` for dayobs-keyed, `IdCachedAdapter` for ID-keyed. ✅ `SqlClient` — `RestClient` subclass adding ConsDB `/consdb/query` execution and row shaping, composed with `InstrumentDayobsCachedAdapter` by the ConsDB adapters. Renamed from `http.py` (the empty `RestCachedAdapter` convenience base was removed) |
 | `adapters/mixins.py` | ✅ Shared adapter mixins: `MutableDataMixin` (mutable-TTL policy), `JiraApiMixin` (Jira Basic-auth headers, server resolution, `get_system_names`), and `ConsdbSqlMixin` (ConsDB instrument/dayobs validation + quicklook-join row dedup) |
 | `adapters/exposurelog.py` | ✅ `ExposurelogCachedAdapter` (rewritten from `exposure_log.py`, which becomes deletable) — caches all instruments together per dayobs key; services filter by instrument at collation |
@@ -621,13 +621,13 @@ HTTP layer without touching the adapter or service code.
 | `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/expected_exposures.py` | ✅ `ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter)` — caches the `nominal_visits` count per dayobs from `rubin_sim.sim_archive.fetch_sim_stats_for_night` (no `RestClient`; it drives the sim archive directly); mutable TTL; registered with the RefreshWorker |
 | `adapters/__init__.py` | ✅ Exists — re-exports the adapter singleton getters (getters only) |
-| `web_app/services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
-| `web_app/services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
-| `web_app/services/jira.py` | ✅ `JiraTicketsService` + `get_jira_tickets_service()`; dedupes multi-bucket tickets, derives the range-dependent `isNew` at collation, and holds the instrument include/exclude filters |
-| `web_app/services/block_details.py` | ✅ `BlockDetailsService` + `get_block_details_service()`; splits keys by pattern across the two ID-based adapters, reports per-source failures in the response's `errors` field (both failing → 500), and decorates records with source and URL (built lazily from `get_jira_hostname()`) |
-| `web_app/services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
-| `web_app/services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
-| `web_app/services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `ConsdbVisitsAdapter` (map-building logic split from `scheduler_service.py`) |
+| `services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
+| `services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
+| `services/jira.py` | ✅ `JiraTicketsService` + `get_jira_tickets_service()`; dedupes multi-bucket tickets, derives the range-dependent `isNew` at collation, and holds the instrument include/exclude filters |
+| `services/block_details.py` | ✅ `BlockDetailsService` + `get_block_details_service()`; splits keys by pattern across the two ID-based adapters, reports per-source failures in the response's `errors` field (both failing → 500), and decorates records with source and URL (built lazily from `get_jira_hostname()`) |
+| `services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
+| `services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
+| `services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `ConsdbVisitsAdapter` (map-building logic split from `scheduler_service.py`) |
 
 ### Modified Files
 
@@ -692,7 +692,7 @@ HTTP layer without touching the adapter or service code.
 - The legacy `JiraAdapter` stays until the BLOCK side migrates
   (`get_block_ticket_summaries()` still uses it)
 
-**`web_app/main.py`** — partially done
+**`main.py`** — partially done
 
 - ✅ `RefreshWorker` started/stopped via the FastAPI lifespan
 - ✅ Logging configured once via `logging.basicConfig` from the `LOG_LEVEL` env var (default
@@ -708,7 +708,7 @@ HTTP layer without touching the adapter or service code.
 - Endpoints without a `Service` (`/version`, `/health`, `/mock-exposures`) remain as simple
   route functions
 
-**`web_app/services/exposure_entries.py`** and **`web_app/services/exposure_flags.py`** — ✅ done
+**`services/exposure_entries.py`** and **`services/exposure_flags.py`** — ✅ done
 
 - `get_exposurelog_entries()` and `get_exposure_flags()` replaced by
   `ExposureEntriesService(Service)` and `ExposureFlagsService(Service)`, one per file, both
@@ -716,7 +716,7 @@ HTTP layer without touching the adapter or service code.
 - Services convert the exclusive `dayObsEnd` to the inclusive cache range and filter by
   instrument (and flag values) at collation time
 
-**`web_app/services/exposures.py`** and **`web_app/services/data_log.py`** (new; replace
+**`services/exposures.py`** and **`services/data_log.py`** (new; replace
 `consdb_service.py`'s `get_exposures()` / `get_data_log()`)
 
 - `ExposuresService(Service)` owns the whole `/exposures` response, so the endpoint is thin
@@ -746,34 +746,34 @@ HTTP layer without touching the adapter or service code.
 - `get_mock_exposures()` stays a plain function in `consdb_service.py` (which otherwise holds only
   the now-unused `get_exposures`/`get_data_log`, removed in the cleanup step)
 
-**`web_app/services/almanac_service.py`** → **deleted** (in the `rubin_nights` step)
+**`services/almanac_service.py`** → **deleted** (in the `rubin_nights` step)
 
 - ✅ The `/almanac` endpoint is served by `AlmanacService` in the new
-  `web_app/services/almanac.py`
+  `services/almanac.py`
 - `almanac_service.py` survives only for `get_almanac()`, which `rubin_nights_service.py`
   calls in two places (`get_time_accounting` and `get_obs_status` night-only metrics). When
   those become adapter-backed services, they take `AlmanacCachedAdapter` into their adapter
   sets like any other multi-adapter service (they only read the 12-degree twilight fields),
   and `almanac_service.py` + `almanac.py` are deleted
 
-**`web_app/services/narrativelog.py`** — ✅ done
+**`services/narrativelog.py`** — ✅ done
 
 - `get_messages()` replaced with `NarrativeLogService(Service)` using
   `NarrativelogCachedAdapter`; the time-lost sums moved from the endpoint into
   `collate_response`
 
-**`web_app/services/nightreport.py`** — ✅ done
+**`services/nightreport.py`** — ✅ done
 
 - `get_night_reports()` replaced with `NightReportService(Service)` using
   `NightReportCachedAdapter`
 
-**`web_app/services/jira_service.py`**
+**`services/jira_service.py`**
 
-- ✅ `/jira-tickets` is served by `JiraTicketsService` in the new `web_app/services/jira.py`
+- ✅ `/jira-tickets` is served by `JiraTicketsService` in the new `services/jira.py`
   (deduplication, service-derived `isNew`, and the instrument include/exclude filters,
   which were copied there)
 - ✅ `/block-details` is served by `BlockDetailsService` in the new
-  `web_app/services/block_details.py`, holding `JiraBlockAdapter` and `ZephyrAdapter`
+  `services/block_details.py`, holding `JiraBlockAdapter` and `ZephyrAdapter`
   (both `IdCachedAdapter`); `handle_request(keys)` deduplicates, splits by key pattern,
   calls `fetch_by_ids` on each, and preserves the per-source error reporting (with one
   change: auth failures raise 401 for the whole request, as the endpoint's `Depends` did)
@@ -782,7 +782,7 @@ HTTP layer without touching the adapter or service code.
   copies, and `get_block_ticket_summaries()`) and dies in the final cleanup stage
   (implementation-order step 8), along with the legacy `jira.py` and `zephyr_service.py`
 
-**`web_app/services/zephyr_service.py`**
+**`services/zephyr_service.py`**
 
 - ✅ Replaced by `adapters/zephyr.py`: `ZephyrAdapter` implements `fetch_by_ids(ids)`
   synchronously against the Zephyr Scale REST API directly (the legacy path's only call,
@@ -794,7 +794,7 @@ HTTP layer without touching the adapter or service code.
 - No `Service` subclass needed; `ZephyrAdapter` is held by `BlockDetailsService`; the
   legacy file dies in the final cleanup stage (implementation-order step 8)
 
-**`web_app/services/rubin_nights_service.py`** → **deleted**, replaced by:
+**`services/rubin_nights_service.py`** → **deleted**, replaced by:
 
 - Adapter classes move to `adapters/rubin_nights_*.py` (see new files above):
   - `RubinNightsDomeAdapter(DayobsCachedAdapter)` — dome open/close times
@@ -806,14 +806,14 @@ HTTP layer without touching the adapter or service code.
     ✅ **DONE** — the exposure adapter was renamed `ConsdbExposuresAdapter` and the shared quicklook
     dedup moved onto `ConsdbSqlMixin`
 - Service classes move to three new files:
-  - `web_app/services/obs_status_service.py` — `ObsStatusService(Service)` using
+  - `services/obs_status_service.py` — `ObsStatusService(Service)` using
     `RubinNightsEFDAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
     intervals, replacing its `get_almanac()` call); the status/interval helper functions
     (`decode_states`, `contains_*`, `sum_interval_overlap`, `get_availability`, etc.) move
     with it as module-level utilities
-  - `web_app/services/context_feed_service.py` — `ContextFeedService(Service)` using
+  - `services/context_feed_service.py` — `ContextFeedService(Service)` using
     `RubinNightsContextAdapter`
-  - `web_app/services/visit_maps_service.py` — `VisitMapsService(Service)` and
+  - `services/visit_maps_service.py` — `VisitMapsService(Service)` and
     `StaticVisitMapService(Service)`, both using `ConsdbVisitsAdapter`; each overrides
     `collate_response` to build its output (multi-night Bokeh figure / static PNG) from
     per-night visit data
@@ -846,7 +846,7 @@ HTTP layer without touching the adapter or service code.
   `rubin_scheduler`/`rubin_sim` are absent, `augment_visits`/`consdb_to_opsim` return unchanged/`None`,
   so `VisitMapsService` falls back to the existing empty-frame "no map" path
 
-**`web_app/services/expected_exposures.py`** (new; replaces `scheduler_service.py`'s
+**`services/expected_exposures.py`** (new; replaces `scheduler_service.py`'s
 `get_expected_exposures()`)
 
 - ✅ `ExpectedExposuresService(Service)` holds `{"expected_exposures": ExpectedExposuresCachedAdapter}`;
@@ -860,7 +860,7 @@ HTTP layer without touching the adapter or service code.
   code in `scheduler_service.py` until the cleanup step
 - `get_mock_exposures()`-style note: none — this endpoint has no mock variant
 
-**`web_app/services/scheduler_service.py`** (visit maps only)
+**`services/scheduler_service.py`** (visit maps only)
 
 - `build_visit_maps_using_builder()` logic moves into `VisitMapsService.collate_response()`,
   which receives per-night visit data from `ConsdbVisitsAdapter` and builds the Bokeh figure
@@ -877,7 +877,7 @@ HTTP layer without touching the adapter or service code.
 | `exposure_log.py` | Superseded by `adapters/exposurelog.py` |
 | `consdb.py` | Moved to `adapters/consdb_exposures.py` and `adapters/consdb_visits.py` |
 | `almanac.py` | Superseded by `adapters/almanac.py`; deleted with `almanac_service.py` once `rubin_nights_service.py` stops calling `get_almanac()` |
-| `web_app/services/almanac_service.py` | Superseded by `web_app/services/almanac.py`; survives only for `get_almanac()` until the `rubin_nights` services use `AlmanacCachedAdapter` directly |
+| `services/almanac_service.py` | Superseded by `services/almanac.py`; survives only for `get_almanac()` until the `rubin_nights` services use `AlmanacCachedAdapter` directly |
 | `jira.py` | Moved to `adapters/jira_obs.py` and `adapters/jira_block.py` |
 | Standalone service functions in each `services/*.py` | Replaced by `Service` subclasses |
 
@@ -915,7 +915,7 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
    `JIRA_BLOCK_BASE_URL` constants), dead tests, and — being thorough — every import that
    is no longer used anywhere, in both `python/` and `tests/`
 9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
-   `web_app/main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
+   `main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
    and complete. For each route confirm: the response is accurately typed (avoid bare
    `dict[str, Any]` where a more specific return type or model is now available), all query
    parameters are typed with sensible descriptions, and a NumPy-style docstring documents the
@@ -940,10 +940,10 @@ as templates for the rest.
 New-architecture tests are organised one file per concrete unit, mirroring the source layout:
 
 - `tests/adapters/test_<name>_adapter.py` for each adapter in `adapters/`.
-- `tests/services/test_<name>_service.py` for each service in `web_app/services/`.
+- `tests/services/test_<name>_service.py` for each service in `services/`.
 
 The `_adapter`/`_service` suffix makes the layer obvious at a glance. Framework-level tests
-whose source lives directly under `web_app/` (the base ABCs, cache-control middleware, the
+whose source lives directly under the package root (the base ABCs, cache-control middleware, the
 refresh worker, the endpoint/integration tests) and `test_utils.py` stay at the `tests/` root,
 as do the legacy tests for the pre-refactor modules still awaiting the step-8 cleanup.
 
@@ -1074,7 +1074,7 @@ package "Endpoints (main.py)" {
     component [/version\n/health\n/mock-exposures] as EP_SIMPLE
 }
 
-package "Service Layer (web_app/services/)" {
+package "Service Layer (services/)" {
     component [ExposureEntriesService] as SVC1
     component [ExposureFlagsService] as SVC2
     component [ExposuresService] as SVC3

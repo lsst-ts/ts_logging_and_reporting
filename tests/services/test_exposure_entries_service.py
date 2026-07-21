@@ -1,4 +1,4 @@
-from lsst.ts.logging_and_reporting.web_app.services.exposure_entries import (
+from lsst.ts.logging_and_reporting.services.exposure_entries import (
     ExposureEntriesService,
 )
 

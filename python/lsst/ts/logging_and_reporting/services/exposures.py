@@ -28,13 +28,13 @@ import logging
 import pandas as pd
 
 from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_exposures_adapter
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, dayobs_at, make_json_safe
-from lsst.ts.logging_and_reporting.web_app.service import Service
-from lsst.ts.logging_and_reporting.web_app.services.rubin_nights_service import (
+from lsst.ts.logging_and_reporting.service import Service
+from lsst.ts.logging_and_reporting.services.rubin_nights_service import (
     _compute_closed_hours,
     get_open_close_dome,
     get_time_accounting,
 )
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, dayobs_at, make_json_safe
 
 logger = logging.getLogger(__name__)
 

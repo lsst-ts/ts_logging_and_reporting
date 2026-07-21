@@ -33,8 +33,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
+from lsst.ts.logging_and_reporting.service import Service
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
-from lsst.ts.logging_and_reporting.web_app.service import Service
 
 logger = logging.getLogger(__name__)
 

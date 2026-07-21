@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from lsst.ts.logging_and_reporting.web_app.services.block_details import (
+from lsst.ts.logging_and_reporting.services.block_details import (
     ZEPHYR_TEST_CASE_PATH,
     BlockDetailsService,
 )

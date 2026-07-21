@@ -4,8 +4,8 @@ from unittest.mock import Mock
 import pytest
 
 from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter
+from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS
 from lsst.ts.logging_and_reporting.utils import current_dayobs
-from lsst.ts.logging_and_reporting.web_app.cache_ttl import HISTORIC_TTL_REDIS
 
 TODAY = current_dayobs()
 

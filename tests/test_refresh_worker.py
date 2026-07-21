@@ -1,7 +1,7 @@
 import time
 
-import lsst.ts.logging_and_reporting.web_app.refresh_worker as refresh_worker_module
-from lsst.ts.logging_and_reporting.web_app.refresh_worker import LEADER_LOCK_KEY, RefreshWorker
+import lsst.ts.logging_and_reporting.refresh_worker as refresh_worker_module
+from lsst.ts.logging_and_reporting.refresh_worker import LEADER_LOCK_KEY, RefreshWorker
 
 
 class StubAdapter:

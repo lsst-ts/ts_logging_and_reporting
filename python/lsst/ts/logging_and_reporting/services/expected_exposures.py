@@ -29,7 +29,7 @@ from fastapi import HTTPException
 from rubin_sim.sim_archive import NoMatchingSimulationsFoundError
 
 from lsst.ts.logging_and_reporting.adapters.expected_exposures import get_expected_exposures_adapter
-from lsst.ts.logging_and_reporting.web_app.service import Service
+from lsst.ts.logging_and_reporting.service import Service
 
 logger = logging.getLogger(__name__)
 
