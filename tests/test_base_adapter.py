@@ -3,11 +3,11 @@ import time
 
 import pytest
 
+from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.utils import current_dayobs
 from lsst.ts.logging_and_reporting.web_app.base_adapter import (
     DayobsCachedAdapter,
     IdCachedAdapter,
-    MutableDataMixin,
     contiguous_runs,
     dayobs_range,
 )

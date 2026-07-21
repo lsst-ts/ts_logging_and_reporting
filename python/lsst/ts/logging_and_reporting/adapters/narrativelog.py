@@ -28,8 +28,9 @@ import logging
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter
+from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, dayobs_at
-from lsst.ts.logging_and_reporting.web_app.base_adapter import MutableDataMixin, contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapter import contiguous_runs
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)

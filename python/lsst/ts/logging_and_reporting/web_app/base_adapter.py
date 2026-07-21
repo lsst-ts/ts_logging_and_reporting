@@ -40,7 +40,6 @@ from typing import Any
 from lsst.ts.logging_and_reporting.utils import current_dayobs
 from lsst.ts.logging_and_reporting.web_app.cache_ttl import (
     HISTORIC_TTL_REDIS,
-    MUTABLE_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
 
@@ -358,23 +357,6 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
     def refresh_today(self) -> None:
         """Refresh today's cache entry (see `refresh`)."""
         self.refresh(current_dayobs())
-
-
-class MutableDataMixin:
-    """TTL policy for adapters whose records can still change.
-
-    Log messages, tickets, and test cases can be added or edited at
-    any time, so entries get the shorter `MUTABLE_TTL_REDIS` instead
-    of `HISTORIC_TTL_REDIS`, mirroring the mutable endpoint list in
-    ``CacheControlMiddleware``. Works under either cache base class:
-    for dayobs-keyed adapters today's entry keeps `TODAY_TTL_REDIS`;
-    ID-keyed entries have no today.
-    """
-
-    def _ttl(self, key) -> int:
-        if isinstance(key, int) and key == current_dayobs():
-            return TODAY_TTL_REDIS
-        return MUTABLE_TTL_REDIS
 
 
 class IdCachedAdapter(CachedAdapter, ABC):
