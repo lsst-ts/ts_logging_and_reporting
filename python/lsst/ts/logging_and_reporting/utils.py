@@ -240,6 +240,72 @@ def add_or_subtract_dayobs_days(dayobs: int, days: int) -> int:
     return int(new_date.strftime("%Y%m%d"))
 
 
+def dayobs_int_to_date(dayobs: int) -> dt.date:
+    """Convert a YYYYMMDD dayobs integer to a `datetime.date`."""
+    return dt.datetime.strptime(str(dayobs), "%Y%m%d").date()
+
+
+def date_to_dayobs_int(date: dt.date) -> int:
+    """Convert a `datetime.date` to a YYYYMMDD dayobs integer."""
+    return int(date.strftime("%Y%m%d"))
+
+
+def dayobs_range(start_dayobs: int, end_dayobs: int) -> list[int]:
+    """Enumerate all dayobs in ``[start_dayobs, end_dayobs]`` inclusive.
+
+    Parameters
+    ----------
+    start_dayobs : `int`
+        First dayobs of the range, in YYYYMMDD form.
+    end_dayobs : `int`
+        Last dayobs of the range (inclusive), in YYYYMMDD form.
+
+    Returns
+    -------
+    `list` [`int`]
+        Every dayobs in the range, ascending.
+    """
+    start = dayobs_int_to_date(start_dayobs)
+    end = dayobs_int_to_date(end_dayobs)
+    days = []
+    while start <= end:
+        days.append(date_to_dayobs_int(start))
+        start += dt.timedelta(days=1)
+    return days
+
+
+def contiguous_runs(dayobs_list: list[int]) -> list[tuple[int, int]]:
+    """Group dayobs into contiguous ``(start, end)`` runs (inclusive).
+
+    Adjacency is calendar-aware (20250131 and 20250201 are adjacent).
+
+    Parameters
+    ----------
+    dayobs_list : `list` [`int`]
+        Dayobs in YYYYMMDD form, in any order.
+
+    Returns
+    -------
+    `list` [`tuple` [`int`, `int`]]
+        Inclusive ``(start_dayobs, end_dayobs)`` per run, ascending.
+        e.g. ``[20250101, 20250103, 20250104]`` →
+        ``[(20250101, 20250101), (20250103, 20250104)]``.
+    """
+    if not dayobs_list:
+        return []
+    dates = sorted(dayobs_int_to_date(d) for d in set(dayobs_list))
+    runs = []
+    run_start = run_end = dates[0]
+    for date in dates[1:]:
+        if date - run_end == dt.timedelta(days=1):
+            run_end = date
+        else:
+            runs.append((date_to_dayobs_int(run_start), date_to_dayobs_int(run_end)))
+            run_start = run_end = date
+    runs.append((date_to_dayobs_int(run_start), date_to_dayobs_int(run_end)))
+    return runs
+
+
 def hhmmss(decimal_hours):
     if pd.isna(decimal_hours):
         return decimal_hours

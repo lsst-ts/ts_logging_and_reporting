@@ -27,8 +27,8 @@ import logging
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
-from lsst.ts.logging_and_reporting.web_app.base_adapters import DayobsCachedAdapter, contiguous_runs
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, contiguous_runs
+from lsst.ts.logging_and_reporting.web_app.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
