@@ -20,20 +20,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Cached adapter for the Consolidated Database (ConsDB)."""
+"""Cached adapters for the Consolidated Database (ConsDB)."""
 
-import datetime as dt
 import functools
-import logging
-from abc import ABC
-
-from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.adapters.http import SqlClient
+from lsst.ts.logging_and_reporting.adapters.mixins import ConsdbSqlMixin
 from lsst.ts.logging_and_reporting.web_app.base_adapter import InstrumentDayobsCachedAdapter
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
-
-logger = logging.getLogger(__name__)
 
 # Transformed-EFD channels folded into each exposure record via a LEFT
 # JOIN, per instrument. An empty/absent list means no EFD join.
@@ -43,55 +37,7 @@ EFD_FIELDS = {
 }
 
 
-class ConsdbSqlAdapter(SqlClient, InstrumentDayobsCachedAdapter, ABC):
-    """Shared base for the ConsDB instrument adapters.
-
-    Adds request validation on top of the instrument+dayobs cache: the
-    instrument and dayobs are interpolated into raw SQL, so only known
-    instruments and well-formed dayobs are allowed to reach `_fetch_run`.
-    """
-
-    def fetch(self, instrument: str, start_dayobs: int, end_dayobs: int) -> dict[int, list[dict]]:
-        self._validate_instrument(instrument)
-        self._validate_dayobs(start_dayobs)
-        self._validate_dayobs(end_dayobs)
-        return super().fetch(instrument, start_dayobs, end_dayobs)
-
-    def _validate_instrument(self, instrument: str) -> str:
-        """Return the normalised instrument, or raise 422 if unrecognised."""
-        normalised = instrument.lower()
-        if normalised not in self.INSTRUMENTS:
-            raise HTTPException(status_code=422, detail=f"Unknown instrument: {instrument!r}")
-        return normalised
-
-    @staticmethod
-    def _validate_dayobs(dayobs: int) -> None:
-        try:
-            dt.datetime.strptime(str(dayobs), "%Y%m%d")
-        except ValueError:
-            raise HTTPException(status_code=422, detail=f"Invalid dayobs: {dayobs!r}")
-
-    def _rows_from_result(self, result: dict) -> list[dict]:
-        # The quicklook join yields duplicate column names; keep the first
-        # non-null so a join null never clobbers a valid primary value.
-        records = []
-        duplicate_columns = set()
-        for row in result["data"]:
-            record: dict = {}
-            for column, value in zip(result["columns"], row):
-                if column in record:
-                    duplicate_columns.add(column)
-                    if record[column] is None and value is not None:
-                        record[column] = value
-                else:
-                    record[column] = value
-            records.append(record)
-        if duplicate_columns:
-            logger.debug(f"Merged duplicate ConsDB columns: {', '.join(sorted(duplicate_columns))}")
-        return records
-
-
-class ConsdbExposuresAdapter(ConsdbSqlAdapter):
+class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
     """Caches the full exposure record (exposure ⋈ quicklook ⋈ EFD).
 
     One cache entry serves both endpoints: `ExposuresService` projects
@@ -121,7 +67,7 @@ class ConsdbExposuresAdapter(ConsdbSqlAdapter):
         return self._query(" ".join(sql.split()))
 
 
-class ConsdbVisitsAdapter(ConsdbSqlAdapter):
+class ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
     """Caches the raw visit record (visit1 ⋈ visit1_quicklook) per night.
 
     Feeds the visit-map endpoints. Cached un-augmented: the rubin_nights

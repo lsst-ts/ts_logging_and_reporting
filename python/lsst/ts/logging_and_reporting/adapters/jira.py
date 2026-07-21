@@ -29,20 +29,18 @@ the upstream API.
 import datetime as dt
 import functools
 import logging
-from typing import Any
 
 from pytz import timezone
 
 from lsst.ts.logging_and_reporting.adapters.http import RestCachedAdapter, RestClient
+from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin, MutableDataMixin
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
     dayobs_at,
-    get_jira_hostname,
     get_utc_datetime_from_dayobs_str,
 )
 from lsst.ts.logging_and_reporting.web_app.base_adapter import (
     IdCachedAdapter,
-    MutableDataMixin,
     contiguous_runs,
 )
 from lsst.ts.logging_and_reporting.web_app.redis_client import get_redis_client
@@ -55,45 +53,6 @@ TIME_LOST_FIELD = "customfield_10106"
 JQL_DATE_FORMAT = "%Y-%m-%d %H:%M"
 TIMESTAMP_INPUT_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 TIMESTAMP_OUTPUT_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
-def get_system_names(jira_system_field: Any) -> list[str]:
-    """Extract system names from the OBS systems custom field.
-
-    Jira returns the field as nested lists/dicts; every ``name`` value
-    found anywhere in the structure is a system or subsystem name
-    (e.g. ``"Simonyi"``).
-    """
-    systems = []
-
-    def walk(obj):
-        if isinstance(obj, dict):
-            if "name" in obj:
-                systems.append(obj["name"])
-            for value in obj.values():
-                walk(value)
-        elif isinstance(obj, list):
-            for item in obj:
-                walk(item)
-
-    walk(jira_system_field)
-    return systems
-
-
-class JiraApiMixin:
-    """Server resolution and Basic-auth headers for the Jira API."""
-
-    auth_source = "jira"
-
-    @property
-    def server(self) -> str:
-        return self._server_url or f"https://{get_jira_hostname()}"
-
-    def _request_headers(self) -> dict:
-        return {
-            "Authorization": f"Basic {self._get_token()}",
-            "content-type": "application/json",
-        }
 
 
 class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestCachedAdapter):
@@ -186,7 +145,7 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestCachedAdapter):
             "updated": updated.strftime(TIMESTAMP_OUTPUT_FORMAT),
             "created": created.strftime(TIMESTAMP_OUTPUT_FORMAT),
             "status": fields["status"]["name"],
-            "system": get_system_names(fields[OBS_SYSTEMS_FIELD]),
+            "system": self.get_system_names(fields[OBS_SYSTEMS_FIELD]),
             "url": f"{self.server}/browse/{issue['key']}",
             "time_lost": fields[TIME_LOST_FIELD],
             "created_utc": created.astimezone(dt.timezone.utc).isoformat(),
