@@ -25,6 +25,7 @@
 from .almanac import get_almanac_service
 from .block_details import get_block_details_service
 from .data_log import get_data_log_service
+from .expected_exposures import get_expected_exposures_service
 from .exposurelog_service import get_exposure_entries_service, get_exposure_flags_service
 from .exposures import get_exposures_service
 from .jira import get_jira_tickets_service
@@ -35,6 +36,7 @@ __all__ = [
     "get_almanac_service",
     "get_block_details_service",
     "get_data_log_service",
+    "get_expected_exposures_service",
     "get_exposure_entries_service",
     "get_exposure_flags_service",
     "get_exposures_service",

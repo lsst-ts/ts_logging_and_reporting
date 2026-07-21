@@ -50,7 +50,6 @@ from .services.rubin_nights_service import (
 from .services.scheduler_service import (
     build_static_visit_map,
     build_visit_maps_using_builder,
-    get_expected_exposures,
 )
 
 # Auth dependencies (instantiated once for reuse and testing)
@@ -65,6 +64,7 @@ logger = logging.getLogger(__name__)
 refresh_worker = RefreshWorker(
     [
         adapters.get_consdb_adapter(),
+        adapters.get_expected_exposures_adapter(),
         adapters.get_exposurelog_adapter(),
         adapters.get_jira_obs_adapter(),
         adapters.get_narrativelog_adapter(),
@@ -173,22 +173,12 @@ async def read_exposures(
 
 @app.get("/expected-exposures")
 async def read_expected_exposures(
-    request: Request,
     dayObsStart: int,
     dayObsEnd: int,
+    service=Depends(services.get_expected_exposures_service),
 ):
     logger.info(f"Getting expected exposures for start: {dayObsStart}, end: {dayObsEnd} ")
-    try:
-        expected_exposures = get_expected_exposures(
-            dayObsStart,
-            dayObsEnd,
-        )
-
-        return {"sum_exposures": expected_exposures["sum"]}
-
-    except Exception as e:
-        logger.error(f"Error in /expected-exposures: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.handle(dayObsStart, dayObsEnd)
 
 
 @app.get("/data-log")

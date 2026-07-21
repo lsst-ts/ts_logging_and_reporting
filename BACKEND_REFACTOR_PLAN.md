@@ -616,7 +616,7 @@ HTTP layer without touching the adapter or service code.
 | `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
 | `adapters/rubin_nights_visits.py` | `RubinNightsVisitsAdapter` (split from `rubin_nights_service.py`) |
-| `adapters/expected_exposures.py` | `ExpectedExposuresCachedAdapter` (split from `scheduler_service.py`) |
+| `adapters/expected_exposures.py` | ✅ `ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter)` — caches the `nominal_visits` count per dayobs from `rubin_sim.sim_archive.fetch_sim_stats_for_night` (no `RestClient`; it drives the sim archive directly); mutable TTL; registered with the RefreshWorker |
 | `adapters/__init__.py` | ✅ Exists — re-exports the adapter singleton getters (getters only) |
 | `web_app/services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
 | `web_app/services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
@@ -821,12 +821,22 @@ HTTP layer without touching the adapter or service code.
   `augment=False`); `RubinNightsVisitsAdapter` must either include the flag in its cache key
   or cache one form and derive the other — decide during implementation
 
-**`web_app/services/scheduler_service.py`**
+**`web_app/services/expected_exposures.py`** (new; replaces `scheduler_service.py`'s
+`get_expected_exposures()`)
 
-- Replace `get_expected_exposures()` with `ExpectedExposuresService(Service)` using
-  `ExpectedExposuresCachedAdapter`. The adapter caches the per-dayobs `nominal_visits` count from
-  `fetch_sim_stats_for_night()`; `collate_response` sums counts across the range and returns
-  `{"sum_exposures": N}`
+- ✅ `ExpectedExposuresService(Service)` holds `{"expected_exposures": ExpectedExposuresCachedAdapter}`;
+  `collate_response` sums the per-dayobs counts and returns `{"sum_exposures": N}`. The endpoint is
+  thin (`return service.handle(dayObsStart, dayObsEnd)`)
+- `dayObsEnd` is **inclusive** here (the old loop used `while current_date <= end_date`), unlike the
+  exclusive-end convention elsewhere — the adapter fetch keeps `[start, end]` inclusive (no `end-1`)
+- A night with no matching simulation raises `NoMatchingSimulationsFoundError`, which
+  `handle_request` maps to **404** (the sim archive is healthy, the prediction just doesn't exist);
+  everything else falls through to `Service.handle`'s 500. `get_expected_exposures()` stays as dead
+  code in `scheduler_service.py` until the cleanup step
+- `get_mock_exposures()`-style note: none — this endpoint has no mock variant
+
+**`web_app/services/scheduler_service.py`** (visit maps only)
+
 - `build_visit_maps_using_builder()` logic moves into `VisitMapsService.collate_response()`,
   which receives per-night visit data from `RubinNightsVisitsAdapter` and builds the Bokeh figure
 - `build_static_visit_map()` (matplotlib/`maf` PNG rendering for `/static-visit-map`, which
@@ -866,7 +876,9 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
    the final cleanup stage (step 8)
 5. **ConsDB adapter** — SQL-based, more complex than the REST adapters but self-contained
    (mind the exclusive upper bound in its queries)
-6. **Scheduler adapter** — `ExpectedExposuresCachedAdapter`
+6. ✅ **Scheduler adapter** — `ExpectedExposuresCachedAdapter` + `ExpectedExposuresService`
+   (`/expected-exposures`); no-sim → 404, mutable TTL, RefreshWorker-registered. Visit maps stay
+   for step 7.
 7. **`rubin_nights` split** — largest and riskiest; leave last so the pattern is well-established
    before touching the most complex code. Includes the `/exposures` collation
    (dome + time accounting) and both visit-map services

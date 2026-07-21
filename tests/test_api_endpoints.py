@@ -29,6 +29,7 @@ import requests
 from bokeh.plotting import figure
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from rubin_sim.sim_archive import NoMatchingSimulationsFoundError
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
@@ -43,6 +44,7 @@ from lsst.ts.logging_and_reporting.web_app import services as web_services
 from lsst.ts.logging_and_reporting.web_app.main import app, rsp_auth
 from lsst.ts.logging_and_reporting.web_app.services.block_details import ZEPHYR_TEST_CASE_PATH
 from lsst.ts.logging_and_reporting.web_app.services.data_log import DataLogService
+from lsst.ts.logging_and_reporting.web_app.services.expected_exposures import ExpectedExposuresService
 from lsst.ts.logging_and_reporting.web_app.services.exposures import ExposuresService
 
 client = TestClient(app)
@@ -961,13 +963,13 @@ class _StubService:
         return self.result
 
 
-class _StubConsdbAdapter:
-    """ConsDB adapter stand-in that raises when fetched."""
+class _RaisingAdapter:
+    """Adapter stand-in that raises when fetched."""
 
     def __init__(self, error):
         self.error = error
 
-    def fetch(self, instrument, start_dayobs, end_dayobs):
+    def fetch(self, *args):
         raise self.error
 
 
@@ -999,9 +1001,7 @@ def test_exposures_endpoint_returns_service_response(override_service):
 
 
 def test_exposures_endpoint_consdb_failure_returns_502(override_service):
-    service = ExposuresService(
-        adapters={"consdb": _StubConsdbAdapter(requests.ConnectionError("consdb down"))}
-    )
+    service = ExposuresService(adapters={"consdb": _RaisingAdapter(requests.ConnectionError("consdb down"))})
     override_service[web_services.get_exposures_service] = lambda: service
     override_service[rsp_auth] = lambda: "token"
 
@@ -1011,7 +1011,7 @@ def test_exposures_endpoint_consdb_failure_returns_502(override_service):
 
 def test_exposures_endpoint_unknown_instrument_returns_422(override_service):
     service = ExposuresService(
-        adapters={"consdb": _StubConsdbAdapter(HTTPException(status_code=422, detail="Unknown instrument"))}
+        adapters={"consdb": _RaisingAdapter(HTTPException(status_code=422, detail="Unknown instrument"))}
     )
     override_service[web_services.get_exposures_service] = lambda: service
     override_service[rsp_auth] = lambda: "token"
@@ -1030,7 +1030,7 @@ def test_data_log_endpoint_returns_service_response(override_service):
 
 
 def test_data_log_endpoint_consdb_failure_returns_502(override_service):
-    service = DataLogService(adapters={"consdb": _StubConsdbAdapter(requests.ConnectionError("consdb down"))})
+    service = DataLogService(adapters={"consdb": _RaisingAdapter(requests.ConnectionError("consdb down"))})
     override_service[web_services.get_data_log_service] = lambda: service
 
     response = client.get(DATA_LOG_ENDPOINT)
@@ -1471,58 +1471,22 @@ def test_visit_maps_read_visits_exception(
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-def test_expected_exposures_endpoint(monkeypatch):
-    endpoint = "/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102"
-
-    dummy_expected_exposures = {"sum": 220}
-
-    # Patch get_expected_exposures to return dummy data
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
-        lambda dayobs_start, dayobs_end: dummy_expected_exposures,
+def test_expected_exposures_endpoint_returns_service_response(override_service):
+    override_service[web_services.get_expected_exposures_service] = lambda: _StubService(
+        {"sum_exposures": 220}
     )
-
-    # Success path
-    response = client.get(endpoint)
+    response = client.get("/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102")
     assert response.status_code == 200
+    assert response.json() == {"sum_exposures": 220}
 
-    data = response.json()
-    assert "sum_exposures" in data
-    assert data["sum_exposures"] == dummy_expected_exposures["sum"]
 
-    # Error path (generic exception)
-    def raise_error(dayobs_start, dayobs_end):
-        raise Exception("failure")
-
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
-        raise_error,
+def test_expected_exposures_endpoint_no_sim_returns_404(override_service):
+    service = ExpectedExposuresService(
+        adapters={"expected_exposures": _RaisingAdapter(NoMatchingSimulationsFoundError("no sim"))}
     )
-
-    response = client.get(endpoint)
-    assert response.status_code == 500
-    assert response.json()["detail"] == "failure"
-
-
-def test_expected_exposures_endpoint_passes_correct_params(monkeypatch):
-    endpoint = "/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102"
-
-    called = {}
-
-    def fake_service(dayobs_start, dayobs_end):
-        called["start"] = dayobs_start
-        called["end"] = dayobs_end
-        return {"sum": 10}
-
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.web_app.main.get_expected_exposures",
-        fake_service,
-    )
-
-    response = client.get(endpoint)
-
-    assert response.status_code == 200
-    assert called == {"start": 20240101, "end": 20240102}
+    override_service[web_services.get_expected_exposures_service] = lambda: service
+    response = client.get("/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102")
+    assert response.status_code == 404
 
 
 def block_requests_get(zephyr_cases, jira_summaries, zephyr_error=None, jira_error=None):
