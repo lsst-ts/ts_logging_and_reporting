@@ -23,7 +23,7 @@
 """Singleton getters for the cached upstream-source adapters."""
 
 from .almanac import get_almanac_adapter
-from .consdb import get_consdb_adapter
+from .consdb import get_consdb_exposures_adapter, get_consdb_visits_adapter
 from .expected_exposures import get_expected_exposures_adapter
 from .exposurelog import get_exposurelog_adapter
 from .jira import get_jira_block_adapter, get_jira_obs_adapter
@@ -33,7 +33,8 @@ from .zephyr import get_zephyr_adapter
 
 __all__ = [
     "get_almanac_adapter",
-    "get_consdb_adapter",
+    "get_consdb_exposures_adapter",
+    "get_consdb_visits_adapter",
     "get_expected_exposures_adapter",
     "get_exposurelog_adapter",
     "get_jira_block_adapter",
