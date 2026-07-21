@@ -1,5 +1,7 @@
-from lsst.ts.logging_and_reporting.web_app.services.exposurelog_service import (
+from lsst.ts.logging_and_reporting.web_app.services.exposure_entries import (
     ExposureEntriesService,
+)
+from lsst.ts.logging_and_reporting.web_app.services.exposure_flags import (
     ExposureFlagsService,
 )
 

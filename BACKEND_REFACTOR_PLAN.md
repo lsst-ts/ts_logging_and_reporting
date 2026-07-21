@@ -708,11 +708,11 @@ HTTP layer without touching the adapter or service code.
 - Endpoints without a `Service` (`/version`, `/health`, `/mock-exposures`) remain as simple
   route functions
 
-**`web_app/services/exposurelog_service.py`** — ✅ done
+**`web_app/services/exposure_entries.py`** and **`web_app/services/exposure_flags.py`** — ✅ done
 
-- `get_exposure_flags()` and `get_exposurelog_entries()` replaced by
-  `ExposureFlagsService(Service)` and `ExposureEntriesService(Service)`, sharing the cached
-  adapter via `get_exposurelog_adapter()`
+- `get_exposurelog_entries()` and `get_exposure_flags()` replaced by
+  `ExposureEntriesService(Service)` and `ExposureFlagsService(Service)`, one per file, both
+  sharing the cached adapter via `get_exposurelog_adapter()`
 - Services convert the exclusive `dayObsEnd` to the inclusive cache range and filter by
   instrument (and flag values) at collation time
 
