@@ -36,7 +36,7 @@ from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.adapters.jira_block import get_jira_block_adapter
 from lsst.ts.logging_and_reporting.adapters.zephyr import get_zephyr_adapter
-from lsst.ts.logging_and_reporting.service import Service
+from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils import get_jira_hostname
 
 logger = logging.getLogger(__name__)

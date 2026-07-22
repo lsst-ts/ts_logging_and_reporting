@@ -27,8 +27,8 @@ import logging
 
 from rubin_sim.sim_archive import fetch_sim_stats_for_night
 
+from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
-from lsst.ts.logging_and_reporting.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)

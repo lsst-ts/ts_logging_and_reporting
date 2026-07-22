@@ -31,9 +31,9 @@ import logging
 
 import requests
 
+from lsst.ts.logging_and_reporting.adapters.base_adapters import IdCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
-from lsst.ts.logging_and_reporting.base_adapters import IdCachedAdapter
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)

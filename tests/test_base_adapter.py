@@ -3,11 +3,11 @@ import time
 
 import pytest
 
-from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
-from lsst.ts.logging_and_reporting.base_adapters import (
+from lsst.ts.logging_and_reporting.adapters.base_adapters import (
     DayobsCachedAdapter,
     IdCachedAdapter,
 )
+from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.cache_ttl import (
     HISTORIC_TTL_REDIS,
     MUTABLE_TTL_REDIS,
