@@ -28,7 +28,7 @@ import logging
 import pandas as pd
 
 from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_exposures_adapter
-from lsst.ts.logging_and_reporting.service import Service
+from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils import (
     add_or_subtract_dayobs_days,
     make_json_safe,

@@ -27,9 +27,9 @@ import functools
 import logging
 from typing import Any
 
+from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
-from lsst.ts.logging_and_reporting.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, contiguous_runs, dayobs_at
 

@@ -31,8 +31,8 @@ import logging
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
-from lsst.ts.logging_and_reporting.service import Service, flatten_sorted
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
+from lsst.ts.logging_and_reporting.services.base_service import Service
+from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, flatten_sorted
 
 logger = logging.getLogger(__name__)
 
