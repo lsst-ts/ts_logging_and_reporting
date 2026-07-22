@@ -5,7 +5,7 @@ import pytest
 
 from lsst.ts.logging_and_reporting.adapters.rubin_nights_obs_status import RubinNightsObsStatusAdapter
 from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS, TODAY_TTL_REDIS
-from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
 
 @pytest.fixture

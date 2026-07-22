@@ -35,7 +35,7 @@ from lsst.ts.logging_and_reporting.services import (
     scheduler_service,
     zephyr_service,
 )
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days
+from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 
 
 class DummyExposure:

@@ -30,13 +30,13 @@ from astropy.time import Time
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.mixins import EfdClientMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
-from lsst.ts.logging_and_reporting.utils import (
+from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
     contiguous_runs,
     dayobs_at,
     get_utc_datetime_from_dayobs_str,
-    make_json_safe,
 )
+from lsst.ts.logging_and_reporting.utils.serialization import make_json_safe
 
 logger = logging.getLogger(__name__)
 
