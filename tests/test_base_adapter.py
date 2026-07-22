@@ -13,7 +13,7 @@ from lsst.ts.logging_and_reporting.cache_ttl import (
     MUTABLE_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
-from lsst.ts.logging_and_reporting.utils import current_dayobs, dayobs_range
+from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs, dayobs_range
 
 TODAY = current_dayobs()
 

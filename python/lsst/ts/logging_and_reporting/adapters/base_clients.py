@@ -33,7 +33,7 @@ from typing import Any
 
 import requests
 
-from lsst.ts.logging_and_reporting.utils import (
+from lsst.ts.logging_and_reporting.utils.auth import (
     AUTH_SOURCES,
     Server,
     get_auth_header,

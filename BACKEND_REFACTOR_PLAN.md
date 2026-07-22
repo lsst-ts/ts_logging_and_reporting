@@ -302,7 +302,7 @@ DayobsCachedAdapter (ABC)
 └── refresh_today() -> None
       Convenience wrapper: refresh(current dayobs). "Today" is the current
       astronomical dayobs — noon-to-noon UTC, computed as
-      (UTC now − 12 h).date(), via utils.current_dayobs().
+      (UTC now − 12 h).date(), via utils.dayobs.current_dayobs().
 ```
 
 ---
@@ -382,7 +382,7 @@ Service (ABC)
       VisitMapsService) build multi-night figures from the per-night data.
 ```
 
-`utils.py` provides `flatten_sorted(data, sort_field, descending=True)` — flattens
+`utils/collation.py` provides `flatten_sorted(data, sort_field, descending=True)` — flattens
 per-dayobs record lists into one list ordered by a record field.
 
 **Singletons via cached getters:** each adapter module exposes a `functools.cache` getter
@@ -544,7 +544,7 @@ user, so whoever triggered a cache miss would donate their token to populate an 
 all users.
 
 Instead, adapters resolve a service-account token per fetch from the source configured by their
-`auth_source` (`AUTH_SOURCES` in `utils.py`: environment variable such as `ACCESS_TOKEN`, or RSP
+`auth_source` (`AUTH_SOURCES` in `utils/auth.py`: environment variable such as `ACCESS_TOKEN`, or RSP
 notebook utilities) — implemented in `RestClient._get_token()`. Resolving at fetch time
 rather than startup means token rotation needs no restart. No token is passed at request time,
 and endpoints on the new pattern no longer read per-request `Authorization` headers; user
@@ -601,9 +601,10 @@ HTTP layer without touching the adapter or service code.
 | `middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
 | `middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
 | `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
-| `adapters/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils.py`) |
-| `services/base_service.py` | ✅ `Service` ABC (with the `handle()` error wrapper); the `flatten_sorted()` collation helper now lives in `utils.py` |
+| `adapters/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils/dayobs.py`) |
+| `services/base_service.py` | ✅ `Service` ABC (with the `handle()` error wrapper); the `flatten_sorted()` collation helper now lives in `utils/collation.py` |
 | `refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
+| `utils/` | ✅ Utility helpers split by concern (from the former flat `utils.py`): `dayobs.py` (dayobs/date conversions & ranges), `auth.py` (`AUTH_SOURCES`, `Server`, token/header helpers), `serialization.py` (`make_json_safe`, `stringify_special_floats`), `collation.py` (`flatten_sorted`), `misc.py` (parked helpers pending chunk-8 removal). `__init__.py` re-exports every name as a transitional shim so the remaining `import utils as ut` callers keep working; live code imports from the concern submodule |
 | `redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
 | `adapters/base_clients.py` | ✅ `RestClient` — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GET/POST that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). Adapters compose it explicitly with a cache base — `DayobsCachedAdapter` for dayobs-keyed, `IdCachedAdapter` for ID-keyed. ✅ `SqlClient` — `RestClient` subclass adding ConsDB `/consdb/query` execution and row shaping, composed with `InstrumentDayobsCachedAdapter` by the ConsDB adapters. Renamed from `http.py` (the empty `RestCachedAdapter` convenience base was removed) |
 | `adapters/mixins.py` | ✅ Shared adapter mixins: `MutableDataMixin` (mutable-TTL policy), `JiraApiMixin` (Jira Basic-auth headers, server resolution, `get_system_names`), and `ConsdbSqlMixin` (ConsDB instrument/dayobs validation + quicklook-join row dedup) |
@@ -942,10 +943,11 @@ New-architecture tests are organised one file per concrete unit, mirroring the s
 - `tests/adapters/test_<name>_adapter.py` for each adapter in `adapters/`.
 - `tests/services/test_<name>_service.py` for each service in `services/`.
 
-The `_adapter`/`_service` suffix makes the layer obvious at a glance. Framework-level tests
-whose source lives directly under the package root (the base ABCs, cache-control middleware, the
-refresh worker, the endpoint/integration tests) and `test_utils.py` stay at the `tests/` root,
-as do the legacy tests for the pre-refactor modules still awaiting the step-8 cleanup.
+The `_adapter`/`_service` suffix makes the layer obvious at a glance. The `utils/` package has a
+matching `tests/utils/` directory (`test_dayobs.py`, `test_auth.py`, `test_serialization.py`,
+`test_misc.py`). Framework-level tests whose source lives directly under the package root (the base
+ABCs, cache-control middleware, the refresh worker, the endpoint/integration tests) stay at the
+`tests/` root, as do the legacy tests for the pre-refactor modules still awaiting the step-8 cleanup.
 
 ---
 

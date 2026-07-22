@@ -36,7 +36,7 @@ from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAda
 from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin, MutableDataMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
-from lsst.ts.logging_and_reporting.utils import (
+from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
     contiguous_runs,
     dayobs_at,

@@ -39,12 +39,12 @@ from lsst.ts.logging_and_reporting.cache_ttl import (
     MUTABLE_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
-from lsst.ts.logging_and_reporting.utils import (
+from lsst.ts.logging_and_reporting.utils.auth import (
     AUTH_SOURCES,
-    current_dayobs,
     get_jira_hostname,
     retrieve_access_token,
 )
+from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
 logger = logging.getLogger(__name__)
 

@@ -34,7 +34,8 @@ from lsst.ts.logging_and_reporting.services.rubin_nights_service import (
     get_open_close_dome,
     get_time_accounting,
 )
-from lsst.ts.logging_and_reporting.utils import add_or_subtract_dayobs_days, dayobs_at, make_json_safe
+from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days, dayobs_at
+from lsst.ts.logging_and_reporting.utils.serialization import make_json_safe
 
 logger = logging.getLogger(__name__)
 

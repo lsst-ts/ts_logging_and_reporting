@@ -5,7 +5,7 @@ import pytest
 
 from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter
 from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS
-from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
 TODAY = current_dayobs()
 
