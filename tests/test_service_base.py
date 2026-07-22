@@ -2,7 +2,7 @@ import pytest
 import requests
 from fastapi import HTTPException
 
-from lsst.ts.logging_and_reporting.service import Service
+from lsst.ts.logging_and_reporting.services.base_service import Service
 
 
 class StubAdapter:

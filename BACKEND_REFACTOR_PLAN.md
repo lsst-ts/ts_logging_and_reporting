@@ -382,7 +382,7 @@ Service (ABC)
       VisitMapsService) build multi-night figures from the per-night data.
 ```
 
-`service.py` also provides `flatten_sorted(data, sort_field, descending=True)` — flattens
+`utils.py` provides `flatten_sorted(data, sort_field, descending=True)` — flattens
 per-dayobs record lists into one list ordered by a record field.
 
 **Singletons via cached getters:** each adapter module exposes a `functools.cache` getter
@@ -601,8 +601,8 @@ HTTP layer without touching the adapter or service code.
 | `middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
 | `middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
 | `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
-| `base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils.py`) |
-| `service.py` | ✅ `Service` ABC (with the `handle()` error wrapper) and the `flatten_sorted()` collation helper |
+| `adapters/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils.py`) |
+| `services/base_service.py` | ✅ `Service` ABC (with the `handle()` error wrapper); the `flatten_sorted()` collation helper now lives in `utils.py` |
 | `refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
 | `redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
 | `adapters/base_clients.py` | ✅ `RestClient` — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GET/POST that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). Adapters compose it explicitly with a cache base — `DayobsCachedAdapter` for dayobs-keyed, `IdCachedAdapter` for ID-keyed. ✅ `SqlClient` — `RestClient` subclass adding ConsDB `/consdb/query` execution and row shaping, composed with `InstrumentDayobsCachedAdapter` by the ConsDB adapters. Renamed from `http.py` (the empty `RestCachedAdapter` convenience base was removed) |
@@ -888,7 +888,7 @@ HTTP layer without touching the adapter or service code.
 After Step 0 (cache-control middleware + nginx), the main refactor should proceed in this order
 to validate the pattern on simpler cases before tackling the riskiest parts:
 
-1. ✅ **`base_adapters.py` and `service.py` ABCs** — lay the foundation everything else builds on
+1. ✅ **`adapters/base_adapters.py` and `services/base_service.py` ABCs** — lay the foundation everything else builds on
 2. **Simple REST adapters** — ✅ `ExposurelogCachedAdapter` (the pattern-validating vertical
    slice: adapter + services + endpoint switch, done end-to-end),
    ✅ `NarrativelogCachedAdapter`, ✅ `NightReportCachedAdapter`, ✅ `AlmanacCachedAdapter`,

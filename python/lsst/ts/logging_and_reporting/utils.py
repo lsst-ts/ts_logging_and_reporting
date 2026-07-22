@@ -765,3 +765,27 @@ def build_block_response(zephyr_data, jira_data):
         }
 
     return result
+
+
+def flatten_sorted(data: dict[int, list[dict]], sort_field: str, descending: bool = True) -> list[dict]:
+    """Flatten per-dayobs records into one list sorted by a field.
+
+    Parameters
+    ----------
+    data : `dict` [`int`, `list` [`dict`]]
+        Records partitioned by dayobs.
+    sort_field : `str`
+        Record field to sort the flattened list by. Records missing
+        the field sort as empty strings.
+    descending : `bool`, optional
+        Sort order; descending by default (newest first for timestamp
+        fields).
+
+    Returns
+    -------
+    `list` [`dict`]
+        All records in one sorted list.
+    """
+    records = [record for dayobs in sorted(data) for record in data[dayobs]]
+    records.sort(key=lambda record: record.get(sort_field) or "", reverse=descending)
+    return records

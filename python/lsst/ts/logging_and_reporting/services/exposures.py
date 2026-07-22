@@ -28,7 +28,7 @@ import logging
 import pandas as pd
 
 from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_exposures_adapter
-from lsst.ts.logging_and_reporting.service import Service
+from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.services.rubin_nights_service import (
     _compute_closed_hours,
     get_open_close_dome,

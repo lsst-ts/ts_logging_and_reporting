@@ -24,9 +24,9 @@
 
 import functools
 
+from lsst.ts.logging_and_reporting.adapters.base_adapters import InstrumentDayobsCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.base_clients import SqlClient
 from lsst.ts.logging_and_reporting.adapters.mixins import ConsdbSqlMixin
-from lsst.ts.logging_and_reporting.base_adapters import InstrumentDayobsCachedAdapter
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 
 
