@@ -936,7 +936,7 @@ def contains_idle(status: int) -> bool:
     `bool`
         ``True`` if ``IDLE`` bit is set.
     """
-    return bool(status & OBSERVATORY_STATES["DOWNTIME"])
+    return bool(status & OBSERVATORY_STATES["IDLE"])
 
 
 def counts_as_fault_loss(status: int) -> bool:
