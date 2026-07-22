@@ -34,7 +34,7 @@ from fastapi.responses import JSONResponse
 
 from lsst.ts.logging_and_reporting import adapters
 from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
-from lsst.ts.logging_and_reporting.utils import get_access_token
+from lsst.ts.logging_and_reporting.utils.auth import get_access_token
 
 from . import __version__, services
 from .middleware import CacheControlMiddleware

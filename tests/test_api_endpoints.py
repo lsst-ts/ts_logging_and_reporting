@@ -31,7 +31,6 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from rubin_sim.sim_archive import NoMatchingSimulationsFoundError
 
-import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
 from lsst.ts.logging_and_reporting import services as web_services
 from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
@@ -47,6 +46,7 @@ from lsst.ts.logging_and_reporting.services.block_details import ZEPHYR_TEST_CAS
 from lsst.ts.logging_and_reporting.services.data_log import DataLogService
 from lsst.ts.logging_and_reporting.services.expected_exposures import ExpectedExposuresService
 from lsst.ts.logging_and_reporting.services.exposures import ExposuresService
+from lsst.ts.logging_and_reporting.utils.auth import Server
 
 client = TestClient(app)
 
@@ -672,7 +672,7 @@ def mock_get_response():
 
     def response_json_payload():
         called_url = requests.get.call_args[0][0]
-        endpoint = called_url.replace(ut.Server.get_url(), "").split("?")[0]
+        endpoint = called_url.replace(Server.get_url(), "").split("?")[0]
         return SERVICE_ENDPOINT_MOCK_RESPONSES[endpoint]
 
     response_get.json = response_json_payload
@@ -713,7 +713,7 @@ def mock_post_response():
 
     def response_json_payload():
         called_url = requests.post.call_args[0][0]
-        endpoint = called_url.replace(ut.Server.get_url(), "").split("?")[0]
+        endpoint = called_url.replace(Server.get_url(), "").split("?")[0]
         return SERVICE_ENDPOINT_MOCK_RESPONSES[endpoint]
 
     response_post.json = response_json_payload

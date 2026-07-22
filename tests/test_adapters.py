@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from lsst.ts.logging_and_reporting.exposure_log import ExposurelogAdapter
-from lsst.ts.logging_and_reporting.utils import Server
+from lsst.ts.logging_and_reporting.utils.auth import Server
 
 
 def test_exposurelog_adapter():

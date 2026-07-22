@@ -58,7 +58,7 @@ import threading
 import uuid
 from typing import Any
 
-from lsst.ts.logging_and_reporting.utils import current_dayobs
+from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
 from .adapters.base_adapters import DayobsCachedAdapter, InstrumentDayobsCachedAdapter
 from .cache_ttl import TODAY_TTL
