@@ -1,0 +1,1 @@
+Fix bug in IDLE predicate so it correctly selects IDLE states.
