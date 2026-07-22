@@ -29,6 +29,7 @@ shaping — without duplicating it in every adapter.
 """
 
 import datetime as dt
+import functools
 import logging
 from typing import Any
 
@@ -38,7 +39,12 @@ from lsst.ts.logging_and_reporting.cache_ttl import (
     MUTABLE_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
-from lsst.ts.logging_and_reporting.utils import current_dayobs, get_jira_hostname
+from lsst.ts.logging_and_reporting.utils import (
+    AUTH_SOURCES,
+    current_dayobs,
+    get_jira_hostname,
+    retrieve_access_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,3 +152,24 @@ class ConsdbSqlMixin:
         if duplicate_columns:
             logger.debug(f"Merged duplicate ConsDB columns: {', '.join(sorted(duplicate_columns))}")
         return records
+
+
+class EfdClientMixin:
+    """Lazy access to the rubin_nights EFD (InfluxDB) client.
+
+    Shared by the rubin_nights adapters that query the EFD (dome,
+    observatory status). The client resolves its own InfluxDB
+    credentials, so the service-account token only satisfies
+    ``get_clients``' other connections. Built once per process and cached
+    on the instance, so credential discovery does not repeat on every
+    fetch and refresh.
+    """
+
+    @functools.cached_property
+    def _efd_client(self):
+        # Imported lazily so adapters that only need the other mixins do
+        # not require rubin_nights to be installed.
+        from rubin_nights.connections import get_clients
+
+        token = retrieve_access_token(AUTH_SOURCES["rsp"])
+        return get_clients(auth_token=token)["efd"]
