@@ -69,6 +69,7 @@ refresh_worker = RefreshWorker(
         adapters.get_jira_obs_adapter(),
         adapters.get_narrativelog_adapter(),
         adapters.get_nightreport_adapter(),
+        adapters.get_rubin_nights_dome_adapter(),
     ],
     get_redis_client(),
 )
