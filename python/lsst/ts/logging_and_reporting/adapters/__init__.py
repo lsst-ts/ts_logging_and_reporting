@@ -32,6 +32,7 @@ from .jira_obs import get_jira_obs_adapter
 from .narrativelog import get_narrativelog_adapter
 from .nightreport import get_nightreport_adapter
 from .rubin_nights_dome import get_rubin_nights_dome_adapter
+from .rubin_nights_obs_status import get_rubin_nights_obs_status_adapter
 from .zephyr import get_zephyr_adapter
 
 __all__ = [
@@ -45,5 +46,6 @@ __all__ = [
     "get_narrativelog_adapter",
     "get_nightreport_adapter",
     "get_rubin_nights_dome_adapter",
+    "get_rubin_nights_obs_status_adapter",
     "get_zephyr_adapter",
 ]
