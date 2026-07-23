@@ -28,7 +28,6 @@ import pytest
 import requests
 from bokeh.plotting import figure
 from fastapi.testclient import TestClient
-from rubin_nights.connections import get_clients
 
 import lsst.ts.logging_and_reporting.utils as ut
 from lsst.ts.logging_and_reporting import __version__
@@ -800,84 +799,216 @@ def test_exposure_entries_endpoint(mock_requests_get, monkeypatch):
     app.dependency_overrides.pop(rsp_auth, None)
 
 
-def test_exposures_endpoint(mock_requests_get, mock_requests_post, monkeypatch):
+def test_exposures_endpoint_returns_updated_fields(monkeypatch):
     endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
-    _test_endpoint_authentication(endpoint, monkeypatch)
+    exposures = [
+        {"id": 1, "can_see_sky": True, "exp_time": 30},
+        {"id": 2, "can_see_sky": False, "exp_time": 20},
+        {"id": 3, "can_see_sky": True, "exp_time": None},
+    ]
+    time_accounting = {
+        "sum_overhead_with_filter_change": 0.0,
+        "sum_overhead_without_filter_change": 0.0,
+        "sum_visit_gap_with_filter_change": 0.0,
+        "sum_visit_gap_without_filter_change": 0.0,
+    }
 
     with (
+        patch("lsst.ts.logging_and_reporting.web_app.main.get_exposures", return_value=exposures),
         patch("lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome") as mock_open_close,
         patch("lsst.ts.logging_and_reporting.web_app.main.get_time_accounting") as mock_time_accounting,
+        patch("lsst.ts.logging_and_reporting.web_app.main._compute_closed_hours", return_value=7.0),
     ):
-        import pandas as pd
-
         mock_open_close.return_value = pd.DataFrame(
             [
                 {
                     "day_obs": 20250730,
                     "open_time": "2025-07-30T23:11:57.696481",
                     "close_time": "2025-07-31T08:15:31.360361",
+                    "night_hours": 12.0,
                     "open_hours": 9.05935107777778,
+                    "sunset12": "2025-07-30T23:00:00Z",
+                    "sunrise12": "2025-07-31T11:00:00Z",
                 }
             ]
         )
-        mock_time_accounting.return_value = pd.DataFrame(
-            {
-                "exposure_id": [2025073000001],
-                "exposure_name": ["MC_O_20250730_000001"],
-                "exp_time": [30],
-                "img_type": ["science"],
-                "observation_reason": ["BLOCK-365"],
-                "science_program": ["field_survey_science"],
-                "target_name": ["Rubin_SV_225_-40"],
-                "can_see_sky": [True],
-                "band": ["r"],
-                "obs_start": ["2025-07-30T23:33:43.069000"],
-                "physical_filter": ["r_57"],
-                "day_obs": [20250730],
-                "seq_num": [1],
-                "obs_end": ["2025-07-30T23:34:13.999000"],
-                "overhead": [9.0],
-                "zero_point_median": [32.1],
-                "visit_id": [2025071600135],
-                "pixel_scale_median": [0.2],
-                "psf_sigma_median": [1.1],
-                "visit_gap": [3],
-            }
-        )
-        app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-        app.dependency_overrides[get_clients] = lambda: {"efd": Mock()}
+        mock_time_accounting.return_value = time_accounting
 
-        response = client.get(endpoint)
+        _test_endpoint_authentication(endpoint, monkeypatch)
+
+        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
         assert response.status_code == 200
         data = response.json()
         assert "exposures" in data
-        assert data["exposures_count"] == 1
-        assert data["sum_exposure_time"] == 30
-        assert data["on_sky_exposures_count"] == 1
+        assert data["exposures_count"] == 3
+        assert data["sum_exposure_time"] == 50
+        assert data["on_sky_exposures_count"] == 2
+        assert data["total_on_sky_exposure_time"] == 30
         assert data["open_dome_times"] == [
             {
                 "day_obs": 20250730,
                 "open_time": "2025-07-30T23:11:57.696481",
                 "close_time": "2025-07-31T08:15:31.360361",
+                "night_hours": 12.0,
                 "open_hours": 9.05935107777778,
+                "sunset12": "2025-07-30T23:00:00Z",
+                "sunrise12": "2025-07-31T11:00:00Z",
             }
         ]
-        mock_time_accounting.assert_called_once()
-        mock_open_close.assert_called_once()
+        assert data["day_obs_open_dome_hours"] == {
+            "20250730": {
+                "night_hours": 12.0,
+                "open_hours": 9.05935107777778,
+                "sunset12": "2025-07-30T23:00:00Z",
+                "sunrise12": "2025-07-31T11:00:00Z",
+                "closed_hours": 7.0,
+            }
+        }
+        assert data["open_dome_error"] is None
+        assert data["night_on_sky_time_accounting"] == time_accounting
+        assert data["time_accounting_error"] is None
+        assert mock_time_accounting.call_count == 4
+        assert mock_open_close.call_count == 4
 
-        # test that the request succeeds if the
-        # rubin_nights data wasn't available
-        mock_open_close.return_value = pd.DataFrame()
-        mock_time_accounting.return_value = pd.DataFrame()
-        response = client.get(endpoint)
+
+def test_exposures_endpoint_open_dome_aggregation_error(monkeypatch):
+    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+
+    with (
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
+            return_value=[{"id": 1, "can_see_sky": True, "exp_time": 30}],
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome",
+            return_value=pd.DataFrame(
+                [
+                    {
+                        "day_obs": 20250730,
+                        "open_time": "2025-07-30T23:11:57.696481",
+                        "close_time": "2025-07-31T08:15:31.360361",
+                        "night_hours": 12.0,
+                        "open_hours": 9.05935107777778,
+                        "sunset12": "2025-07-30T23:00:00Z",
+                        "sunrise12": "2025-07-31T11:00:00Z",
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main._compute_closed_hours",
+            side_effect=RuntimeError("aggregation failed"),
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
+            return_value={"sum_overhead_with_filter_change": 0.0},
+        ),
+    ):
+        _test_endpoint_authentication(endpoint, monkeypatch)
+
+        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
         assert response.status_code == 200
         data = response.json()
-        assert "exposures" in data
-        assert data["exposures_count"] == 1
-        assert data["open_dome_times"] == []
+        assert len(data["open_dome_times"]) == 1
+        assert data["day_obs_open_dome_hours"] is None
+        assert data["open_dome_error"] == "Failed to aggregate dome open hours"
+        assert data["night_on_sky_time_accounting"] == {"sum_overhead_with_filter_change": 0.0}
+        assert data["time_accounting_error"] is None
 
-        app.dependency_overrides.pop(rsp_auth, None)
-        app.dependency_overrides.pop(get_clients, None)
+
+def test_exposures_endpoint_open_dome_retrieval_error(monkeypatch):
+    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+
+    with (
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
+            return_value=[{"id": 1, "can_see_sky": True, "exp_time": 30}],
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome",
+            side_effect=RuntimeError("efd unavailable"),
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
+            return_value={"sum_overhead_with_filter_change": 0.0},
+        ),
+    ):
+        _test_endpoint_authentication(endpoint, monkeypatch)
+
+        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["open_dome_times"] is None
+        assert data["day_obs_open_dome_hours"] is None
+        assert data["open_dome_error"] == "Failed to retrieve dome open/close times"
+        assert data["night_on_sky_time_accounting"] == {"sum_overhead_with_filter_change": 0.0}
+        assert data["time_accounting_error"] is None
+
+
+def test_exposures_endpoint_time_accounting_error(monkeypatch):
+    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+
+    with (
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
+            return_value=[{"id": 1, "can_see_sky": True, "exp_time": 30}],
+        ),
+        patch("lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome", return_value=pd.DataFrame()),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
+            side_effect=RuntimeError("time accounting failed"),
+        ),
+    ):
+        _test_endpoint_authentication(endpoint, monkeypatch)
+
+        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["open_dome_times"] == []
+        assert data["day_obs_open_dome_hours"] == {}
+        assert data["open_dome_error"] is None
+        assert data["night_on_sky_time_accounting"] is None
+        assert data["time_accounting_error"] == "Failed to compute night time accounting"
+
+
+def test_exposures_endpoint_no_exposures_returns_zeroed_time_accounting(monkeypatch):
+    endpoint = "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam"
+    zeroed_time_accounting = {
+        "sum_overhead_with_filter_change": 0.0,
+        "sum_overhead_without_filter_change": 0.0,
+        "sum_visit_gap_with_filter_change": 0.0,
+        "sum_visit_gap_without_filter_change": 0.0,
+    }
+
+    with (
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_exposures",
+            return_value=[],
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_open_close_dome",
+            side_effect=RuntimeError("efd unavailable"),
+        ),
+        patch(
+            "lsst.ts.logging_and_reporting.web_app.main.get_time_accounting",
+            return_value=zeroed_time_accounting,
+        ),
+    ):
+        _test_endpoint_authentication(endpoint, monkeypatch)
+
+        response = client.get(endpoint, headers={"Authorization": "Bearer header-token"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["exposures"] == []
+        assert data["exposures_count"] == 0
+        assert data["sum_exposure_time"] == 0
+        assert data["on_sky_exposures_count"] == 0
+        assert data["total_on_sky_exposure_time"] == 0
+        assert data["open_dome_times"] is None
+        assert data["day_obs_open_dome_hours"] is None
+        assert data["open_dome_error"] == "Failed to retrieve dome open/close times"
+        assert data["night_on_sky_time_accounting"] == zeroed_time_accounting
+        assert data["time_accounting_error"] is None
 
 
 def test_jira_endpoint_authentication(monkeypatch):
@@ -938,15 +1069,24 @@ def test_jira_tickets_endpoint(mock_requests_get, monkeypatch):
 
 
 def test_almanac_endpoint(monkeypatch):
+    mock_almanac = [
+        {
+            "dayobs": 20240102,
+            "night_hours": 9.5,
+            "elapsed_twilight_hours": 3.25,
+            "twilight_evening_12deg": "2024-01-01 23:00:00",
+            "twilight_morning_12deg": "2024-01-02 08:30:00",
+        }
+    ]
     monkeypatch.setattr(
         "lsst.ts.logging_and_reporting.web_app.main.get_almanac",
-        lambda dayObsStart, dayObsEnd: {"sunset": 123, "sunrise": 456},
+        lambda dayObsStart, dayObsEnd: mock_almanac,
     )
     response = client.get("/almanac?dayObsStart=20240101&dayObsEnd=20240102")
     assert response.status_code == 200
     data = response.json()
     assert "almanac_info" in data
-    assert data["almanac_info"] == {"sunset": 123, "sunrise": 456}
+    assert data["almanac_info"] == mock_almanac
 
 
 def test_context_feed_endpoint(monkeypatch):

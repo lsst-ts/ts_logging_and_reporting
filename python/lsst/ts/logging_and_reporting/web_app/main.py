@@ -23,8 +23,9 @@
 import base64
 import logging
 import re
-from typing import List
+from typing import Any, List
 
+import pandas as pd
 from bokeh.embed import json_item
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -35,6 +36,7 @@ from fastapi.responses import JSONResponse
 from lsst.ts.logging_and_reporting.exceptions import BaseLogrepError, ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils import (
     build_block_response,
+    current_dayobs_utc,
     get_access_token,
     get_jira_hostname,
     make_json_safe,
@@ -52,6 +54,7 @@ from .services.jira_service import get_block_ticket_summaries, get_jira_tickets
 from .services.narrativelog_service import get_messages
 from .services.nightreport_service import get_night_reports
 from .services.rubin_nights_service import (
+    _compute_closed_hours,
     get_context_feed,
     get_obs_status,
     get_open_close_dome,
@@ -119,59 +122,84 @@ async def read_exposures_from_mock_data(request: Request, dayObsStart: int, dayO
 
 @app.get("/exposures")
 async def read_exposures(
-    request: Request,
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
     auth_token: str = Depends(rsp_auth),
-):
+) -> dict[str, Any]:
+    """Return exposures and derived night-summary metrics.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used for the ConsDB exposure query.
+    auth_token : str, optional
+        Authentication token injected from the request context.
+
+    Returns
+    -------
+    dict[str, Any]
+        JSON-serialisable response containing raw exposure records,
+        exposure totals, dome-open summaries, and twilight-windowed
+        time-accounting metrics.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        Raised with status 502 if the underlying ConsDB query fails, or
+        500 for any other unhandled error. Dome-open and time-accounting
+        sub-query failures are reported in the response payload instead.
+    """
     logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
     try:
         exposures = get_exposures(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
         on_sky_exposures = [exp for exp in exposures if exp.get("can_see_sky")]
-        total_exposure_time = sum(exposure["exp_time"] for exposure in exposures)
-        total_on_sky_exposure_time = sum(exp["exp_time"] for exp in on_sky_exposures)
+        total_exposure_time = sum(exp.get("exp_time") or 0 for exp in exposures)
+        total_on_sky_exposure_time = sum(exp.get("exp_time") or 0 for exp in on_sky_exposures)
 
-        open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, auth_token)
+        open_dome_times_records, open_dome_hours_records, open_dome_error = [], {}, None
+        try:
+            open_dome_times = get_open_close_dome(dayObsStart, dayObsEnd, instrument, auth_token)
 
-        exposures_df = get_time_accounting(
-            dayObsStart,
-            dayObsEnd,
-            instrument,
-            exposures,
-            auth_token,
-        )
+            if open_dome_times is not None and not open_dome_times.empty:
+                open_dome_times_records = make_json_safe(open_dome_times.to_dict(orient="records"))
 
-        if not exposures_df.empty:
-            exposures_dict = exposures_df[
-                [
-                    "exposure_id",
-                    "exposure_name",
-                    "exp_time",
-                    "img_type",
-                    "observation_reason",
-                    "science_program",
-                    "target_name",
-                    "can_see_sky",
-                    "band",
-                    "obs_start",
-                    "physical_filter",
-                    "day_obs",
-                    "seq_num",
-                    "obs_end",
-                    "overhead",
-                    "zero_point_median",
-                    "visit_id",
-                    "overhead",
-                    "pixel_scale_median",
-                    "psf_sigma_median",
-                    "visit_gap",
-                ]
-            ].to_dict(orient="records")
+                try:
+                    open_dome_totals = open_dome_times.groupby("day_obs").agg(
+                        {"night_hours": "max", "open_hours": "sum", "sunset12": "first", "sunrise12": "first"}
+                    )
+                    now_utc = pd.Timestamp.now(tz="UTC")
+                    current_dayobs = current_dayobs_utc(now_utc)
+                    open_dome_totals["closed_hours"] = open_dome_totals.apply(
+                        lambda row: _compute_closed_hours(row, current_dayobs, now_utc),
+                        axis=1,
+                    )
+                    open_dome_hours_records = make_json_safe(open_dome_totals.to_dict(orient="index"))
+                except Exception as e:
+                    logger.error(f"Error aggregating open/close dome times: {e}", exc_info=True)
+                    open_dome_hours_records = None
+                    open_dome_error = "Failed to aggregate dome open hours"
 
-            exposures_safe_dict = make_json_safe(exposures_dict)
+        except Exception as e:
+            logger.error(
+                f"Error getting open/close dome times from rubin_nights through EFD: {e}", exc_info=True
+            )
+            open_dome_times_records = None
+            open_dome_hours_records = None
+            open_dome_error = "Failed to retrieve dome open/close times"
 
-            exposures = jsonable_encoder(exposures_safe_dict)
+        night_time_on_sky_sums, time_accounting_error = None, None
+        try:
+            night_time_on_sky_sums = get_time_accounting(
+                dayObsStart, dayObsEnd, instrument, exposures, auth_token
+            )
+        except Exception as e:
+            logger.error(f"Error computing time accounting in /exposures: {e}", exc_info=True)
+            time_accounting_error = "Failed to compute night time accounting"
 
         return {
             "exposures": exposures,
@@ -179,7 +207,11 @@ async def read_exposures(
             "sum_exposure_time": total_exposure_time,
             "on_sky_exposures_count": len(on_sky_exposures),
             "total_on_sky_exposure_time": total_on_sky_exposure_time,
-            "open_dome_times": make_json_safe(open_dome_times.to_dict(orient="records")),
+            "open_dome_times": open_dome_times_records,
+            "day_obs_open_dome_hours": open_dome_hours_records,
+            "open_dome_error": open_dome_error,
+            "night_on_sky_time_accounting": night_time_on_sky_sums,
+            "time_accounting_error": time_accounting_error,
         }
 
     except ConsdbQueryError as ce:

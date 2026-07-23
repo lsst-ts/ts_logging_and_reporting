@@ -68,6 +68,28 @@ def date_hr_min(iso_dt_str):
     return str(dt.datetime.fromisoformat(iso_dt_str))[:16]
 
 
+def current_dayobs_utc(now_utc: pd.Timestamp | dt.datetime) -> int:
+    """Compute the active dayobs for a UTC timestamp.
+
+    Parameters
+    ----------
+    now_utc : pandas.Timestamp or datetime.datetime
+        UTC timestamp to convert.
+
+    Returns
+    -------
+    int
+        Dayobs in ``YYYYMMDD`` form.
+
+    Notes
+    -----
+    A dayobs runs from noon UTC to noon UTC, so subtracting 12 hours
+    and taking the date gives the correct dayobs for any time in that
+    window.
+    """
+    return int((now_utc - dt.timedelta(hours=12)).strftime("%Y%m%d"))
+
+
 def fallback_parameters(day_obs, number_of_days, period, verbose, warning):
     """Given parameters from Times Square, return usable versions of
     all parameters.  If the provide parameters are not usable, return

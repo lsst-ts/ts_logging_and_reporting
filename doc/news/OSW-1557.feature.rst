@@ -1,0 +1,1 @@
+Simply frontend dome times and time accounting calculations by doing them in the backend and utilising the aggregations introduced in rubin-nights > 0.10

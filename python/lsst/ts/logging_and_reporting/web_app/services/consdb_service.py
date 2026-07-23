@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -11,11 +12,28 @@ from lsst.ts.logging_and_reporting.utils import stringify_special_floats
 logger = logging.getLogger(__name__)
 
 
-def convert_row(row):
+def convert_row(row: Any) -> dict[str, Any]:
+    """Convert a table row to a plain Python dictionary.
+
+    Parameters
+    ----------
+    row : object
+        Mapping-like row object, typically from an Astropy table.
+
+    Returns
+    -------
+    dict[str, Any]
+        Row contents with NumPy scalar values converted to native Python
+        scalar types.
+    """
     return {key: (row[key].item() if isinstance(row[key], np.generic) else row[key]) for key in row.keys()}
 
 
-def get_mock_exposures(dayobs_start: int, dayobs_end: int, telescope: str) -> list:
+def get_mock_exposures(
+    dayobs_start: int,
+    dayobs_end: int,
+    telescope: str,
+) -> list[dict[str, Any]]:
     exposure_table = Table.read("data/exposures-lsstcam0413.ecsv")
     exposures = [convert_row(exp) for exp in exposure_table]
     return exposures
@@ -25,9 +43,27 @@ def get_exposures(
     dayobs_start: int,
     dayobs_end: int,
     telescope: str,
-    auth_token: str = None,
-) -> dict:
-    exposures = {}
+    auth_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Query exposure records from ConsDB for a dayobs range.
+
+    Parameters
+    ----------
+    dayobs_start : int
+        Inclusive lower bound of the requested dayobs range.
+    dayobs_end : int
+        Exclusive upper bound of the requested dayobs range.
+    telescope : str
+        ConsDB instrument suffix, for example ``"lsstcam"``.
+    auth_token : str or None, optional
+        Authentication token used when connecting to ConsDB.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Exposure records returned by ConsDB, ordered by ``seq_num``.
+    """
+    exposures = []
     logger.info(f"Getting exposures for start: {dayobs_start}, end: {dayobs_end} and telescope: {telescope}")
     cons_db = ConsdbAdapter(
         server_url=nd_utils.Server.get_url(),
