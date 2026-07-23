@@ -618,16 +618,16 @@ HTTP layer without touching the adapter or service code.
 | `adapters/jira_block.py` | ✅ `JiraBlockAdapter(JiraApiMixin, MutableDataMixin, RestClient, IdCachedAdapter)` — BLOCK ticket summaries by key, mutable TTL, unknown keys cached as `null`; the shared Basic-auth headers and lazy server property live in `JiraApiMixin` (`adapters/mixins.py`) |
 | `adapters/zephyr.py` | ✅ `ZephyrAdapter` (`MutableDataMixin + RestClient + IdCachedAdapter`) — test-case names by BLOCK key, queried directly from the Zephyr Scale REST API (drops the async `ZephyrInterface` dependency: our one call path was a single raw GET); cache keyed by **parent** key so every `_x` suffix variant shares one entry; 404s cached as `null` |
 | `adapters/rubin_nights_dome.py` | `RubinNightsDomeAdapter` (split from `rubin_nights_service.py`) |
-| `adapters/rubin_nights_efd.py` | `RubinNightsEFDAdapter` (split from `rubin_nights_service.py`) |
-| `adapters/rubin_nights_context.py` | `RubinNightsContextAdapter` (split from `rubin_nights_service.py`) |
+| `adapters/rubin_nights_obs_status.py` | ✅ `RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter)` — observatory-status events per dayobs from EFD `select_time_series`, bucketed by `dayobs_at(event time)`, no carry-in (range-independent) |
+| `adapters/rubin_nights_context.py` | ✅ `RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter)` — consolidated context-feed messages per dayobs from `get_consolidated_messages` (needs the full `_clients` dict, not just the EFD); bucketed by `dayobs_at(time)`; the 12-col display shortlist is the `CONTEXT_FEED_COLS` constant, not cached |
 | `adapters/expected_exposures.py` | ✅ `ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter)` — caches the `nominal_visits` count per dayobs from `rubin_sim.sim_archive.fetch_sim_stats_for_night` (no `RestClient`; it drives the sim archive directly); mutable TTL; registered with the RefreshWorker |
 | `adapters/__init__.py` | ✅ Exists — re-exports the adapter singleton getters (getters only) |
 | `services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
 | `services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
 | `services/jira.py` | ✅ `JiraTicketsService` + `get_jira_tickets_service()`; dedupes multi-bucket tickets, derives the range-dependent `isNew` at collation, and holds the instrument include/exclude filters |
 | `services/block_details.py` | ✅ `BlockDetailsService` + `get_block_details_service()`; splits keys by pattern across the two ID-based adapters, reports per-source failures in the response's `errors` field (both failing → 500), and decorates records with source and URL (built lazily from `get_jira_hostname()`) |
-| `services/obs_status_service.py` | `ObsStatusService` (split from `rubin_nights_service.py`) |
-| `services/context_feed_service.py` | `ContextFeedService` (split from `rubin_nights_service.py`) |
+| `services/obs_status.py` | ✅ `ObsStatusService` + `get_obs_status_service()`; carry-in via one leading day, almanac night windows (dayobs `[start+1, end+1]`) for the night-only metrics, `include_entries`/`include_intervals`/metric flags; status/interval helpers live in `utils/obs_status.py`; dayObsEnd inclusive |
+| `services/context_feed.py` | ✅ `ContextFeedService` + `get_context_feed_service()`; flattens the per-dayobs buckets and returns `{"data", "cols"}`, recomputing the window-bounded task-change `timestampProcessEnd` over the assembled range (dayObsEnd inclusive) |
 | `services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `ConsdbVisitsAdapter` (map-building logic split from `scheduler_service.py`) |
 
 ### Modified Files
@@ -798,22 +798,26 @@ HTTP layer without touching the adapter or service code.
 **`services/rubin_nights_service.py`** → **deleted**, replaced by:
 
 - Adapter classes move to `adapters/rubin_nights_*.py` (see new files above):
-  - `RubinNightsDomeAdapter(DayobsCachedAdapter)` — dome open/close times
-  - `RubinNightsEFDAdapter(DayobsCachedAdapter)` — observatory status events
-  - `RubinNightsContextAdapter(DayobsCachedAdapter)` — context feed messages
+  - ✅ `RubinNightsDomeAdapter(RubinNightsClientsMixin, DayobsCachedAdapter)` — dome open/close times
+  - ✅ `RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter)` — observatory
+    status events
+  - ✅ `RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter)` — context feed
+    messages; `RubinNightsClientsMixin` (renamed from `EfdClientMixin`) now exposes the full
+    `_clients` dict the consolidated query needs, with `_efd_client` derived from it
   - Visit data is **not** a rubin_nights split: it is a ConsDB SQL query, so it lives in
     `adapters/consdb_visits.py` as `ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient,
     InstrumentDayobsCachedAdapter)` (see the ConsDB file-map rows), keyed `{instrument}:{dayobs}`.
     ✅ **DONE** — the exposure adapter was renamed `ConsdbExposuresAdapter` and the shared quicklook
     dedup moved onto `ConsdbSqlMixin`
 - Service classes move to three new files:
-  - `services/obs_status_service.py` — `ObsStatusService(Service)` using
-    `RubinNightsEFDAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
+  - ✅ `services/obs_status.py` — `ObsStatusService(Service)` using
+    `RubinNightsObsStatusAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
     intervals, replacing its `get_almanac()` call); the status/interval helper functions
-    (`decode_states`, `contains_*`, `sum_interval_overlap`, `get_availability`, etc.) move
-    with it as module-level utilities
-  - `services/context_feed_service.py` — `ContextFeedService(Service)` using
-    `RubinNightsContextAdapter`
+    (`decode_states`, `contains_*`, `sum_interval_overlap`, `get_availability`, etc.) now live
+    in `utils/obs_status.py`
+  - ✅ `services/context_feed.py` — `ContextFeedService(Service)` using
+    `RubinNightsContextAdapter`; recomputes the task-change `timestampProcessEnd` at collation
+    because rubin_nights bounds it to the query window (chains to the next task change / last message)
   - `services/visit_maps_service.py` — `VisitMapsService(Service)` and
     `StaticVisitMapService(Service)`, both using `ConsdbVisitsAdapter`; each overrides
     `collate_response` to build its output (multi-night Bokeh figure / static PNG) from
@@ -915,6 +919,12 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
    helper functions (`build_block_response`, the `ZEPHYR_BLOCK_BASE_URL`/
    `JIRA_BLOCK_BASE_URL` constants), dead tests, and — being thorough — every import that
    is no longer used anywhere, in both `python/` and `tests/`
+   - **8.1 Summit EFD-transform availability** (not yet fleshed out) — the transformed EFD
+     data (the `exposure_efd` columns the ConsDB exposure query folds in via `LEFT JOIN`,
+     consumed by e.g. the data log) is **not available at the summit deployment**. The
+     `consdb_exposures` adapter will therefore need to behave differently at the summit than
+     at other deployments (e.g. omit or degrade the `exposure_efd` join / columns there).
+     Placeholder note — design TBD.
 9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
    `main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
    and complete. For each route confirm: the response is accurately typed (avoid bare
@@ -1117,7 +1127,7 @@ package "Adapter Layer" {
     }
     package "adapters/rubin_nights_*.py" {
         component [RubinNightsDomeAdapter] as AD_DOME
-        component [RubinNightsEFDAdapter] as AD_EFD
+        component [RubinNightsObsStatusAdapter] as AD_EFD
         component [RubinNightsContextAdapter] as AD_CTX
     }
 }
