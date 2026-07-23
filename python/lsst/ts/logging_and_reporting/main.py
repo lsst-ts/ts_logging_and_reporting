@@ -43,7 +43,6 @@ from .refresh_worker import RefreshWorker
 from .services.consdb_service import get_mock_exposures
 from .services.rubin_nights_service import (
     get_context_feed,
-    get_obs_status,
     get_visits,
 )
 from .services.scheduler_service import (
@@ -288,8 +287,7 @@ async def read_context_feed(
 
 
 @app.get("/obs-status")
-async def read_obs_status(
-    request: Request,
+def read_obs_status(
     dayObsStart: int,
     dayObsEnd: int,
     includeEntries: bool = True,
@@ -299,22 +297,10 @@ async def read_obs_status(
         None,
         alias="metric",
     ),
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(services.get_obs_status_service),
 ):
-    try:
-        return get_obs_status(
-            dayObsStart,
-            dayObsEnd,
-            includeEntries,
-            includeIntervals,
-            nightOnlyMetrics,
-            metrics,
-            auth_token=auth_token,
-        )
-
-    except Exception as e:
-        logger.error(f"Error in /obs-status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    logger.info(f"Getting Observatory Status records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    return service.handle(dayObsStart, dayObsEnd, includeEntries, includeIntervals, nightOnlyMetrics, metrics)
 
 
 def _build_multi_night_visit_map(
