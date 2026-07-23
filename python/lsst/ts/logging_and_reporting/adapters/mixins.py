@@ -34,6 +34,7 @@ import logging
 from typing import Any
 
 from fastapi import HTTPException
+from rubin_nights.connections import get_clients
 
 from lsst.ts.logging_and_reporting.cache_ttl import (
     MUTABLE_TTL_REDIS,
@@ -154,22 +155,19 @@ class ConsdbSqlMixin:
         return records
 
 
-class EfdClientMixin:
-    """Lazy access to the rubin_nights EFD (InfluxDB) client.
+class RubinNightsClientsMixin:
+    """Lazy, process-cached access to the rubin_nights connection clients.
 
-    Shared by the rubin_nights adapters that query the EFD (dome,
-    observatory status). The client resolves its own InfluxDB
-    credentials, so the service-account token only satisfies
-    ``get_clients``' other connections. Built once per process and cached
-    on the instance, so credential discovery does not repeat on every
-    fetch and refresh.
+    Built once so credential discovery does not repeat on every fetch.
+    Adapters that only need the EFD use `_efd_client`; the context feed
+    needs the full dict and uses `_clients`.
     """
 
     @functools.cached_property
-    def _efd_client(self):
-        # Imported lazily so adapters that only need the other mixins do
-        # not require rubin_nights to be installed.
-        from rubin_nights.connections import get_clients
-
+    def _clients(self) -> dict:
         token = retrieve_access_token(AUTH_SOURCES["rsp"])
-        return get_clients(auth_token=token)["efd"]
+        return get_clients(auth_token=token)
+
+    @functools.cached_property
+    def _efd_client(self):
+        return self._clients["efd"]
