@@ -29,7 +29,7 @@ from astropy.time import Time
 from rubin_nights.observatory_status import get_dome_open_close
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
-from lsst.ts.logging_and_reporting.adapters.mixins import EfdClientMixin
+from lsst.ts.logging_and_reporting.adapters.mixins import RubinNightsClientsMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
@@ -41,7 +41,7 @@ from lsst.ts.logging_and_reporting.utils.serialization import make_json_safe
 logger = logging.getLogger(__name__)
 
 
-class RubinNightsDomeAdapter(EfdClientMixin, DayobsCachedAdapter):
+class RubinNightsDomeAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
     """Fetches and caches dome open/close records per dayobs.
 
     There is no per-instrument split — the dome serves every instrument,

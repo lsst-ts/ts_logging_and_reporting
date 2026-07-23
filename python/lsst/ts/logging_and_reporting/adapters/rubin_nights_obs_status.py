@@ -28,7 +28,7 @@ import logging
 from astropy.time import Time
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
-from lsst.ts.logging_and_reporting.adapters.mixins import EfdClientMixin
+from lsst.ts.logging_and_reporting.adapters.mixins import RubinNightsClientsMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
@@ -44,7 +44,7 @@ OBS_STATUS_TOPIC = "lsst.sal.Scheduler.logevent_observatoryStatus"
 OBS_STATUS_FIELDS = ["status", "note", "statusLabels"]
 
 
-class RubinNightsObsStatusAdapter(EfdClientMixin, DayobsCachedAdapter):
+class RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
     """Fetches and caches observatory-status events per dayobs.
 
     Events are ``lsst.sal.Scheduler.logevent_observatoryStatus`` state
