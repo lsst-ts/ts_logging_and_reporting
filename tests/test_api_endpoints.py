@@ -1122,90 +1122,35 @@ def test_almanac_endpoint(monkeypatch, almanac_cache):
     compute_night.assert_not_called()
 
 
-def test_context_feed_endpoint(monkeypatch):
-    endpoint = "/context-feed?dayObsStart=20240101&dayObsEnd=20240102"
+class _CapturingContextFeedService:
+    """Records the positional args passed to handle()."""
 
-    dummy_cols = [
-        "time",
-        "name",
-        "description",
-        "config",
-        "script_salIndex",
-        "salIndex",
-        "finalStatus",
-        "timestampProcessStart",
-        "timestampConfigureEnd",
-        "timestampRunStart",
-        "timestampProcessEnd",
-    ]
-    dummy_data = [
-        {
-            "time": "2024-01-01T01:23:45Z",
-            "name": "ScriptQueue",
-            "description": "Dummy run",
-            "config": "config-string",
-            "script_salIndex": 1,
-            "salIndex": 2,
-            "finalStatus": "SUCCESS",
-            "timestampProcessStart": "2024-01-01T01:00:00Z",
-            "timestampConfigureEnd": "2024-01-01T01:05:00Z",
-            "timestampRunStart": "2024-01-01T01:10:00Z",
-            "timestampProcessEnd": "2024-01-01T01:20:00Z",
-        }
-    ]
+    def __init__(self):
+        self.calls = []
 
-    # Patch before auth check so real function never runs
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.main.get_context_feed",
-        lambda dayObsStart, dayObsEnd, auth_token: (dummy_data, dummy_cols),
-    )
+    def handle(self, *args):
+        self.calls.append(args)
+        return {"data": [], "cols": []}
 
-    # Authentication test --
-    _test_endpoint_authentication(endpoint, monkeypatch)
 
-    # API test --
-    # Override token-fetching dependency
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+def test_context_feed_returns_service_response(override_service):
+    result = {"data": [{"name": "ScriptQueue"}], "cols": ["time", "name"]}
+    override_service[web_services.get_context_feed_service] = lambda: _StubService(result)
 
-    # Make request
-    response = client.get(endpoint)
+    response = client.get("/context-feed?dayObsStart=20240101&dayObsEnd=20240102")
+
     assert response.status_code == 200
+    assert response.json() == result
 
-    # Parse JSON response
-    data = response.json()
-    assert "data" in data
-    assert "cols" in data
-    assert data["cols"] == dummy_cols
 
-    # Verify cols match data cols
-    for record in data["data"]:
-        for col in dummy_cols:
-            assert col in record
+def test_context_feed_passes_parsed_params(override_service):
+    service = _CapturingContextFeedService()
+    override_service[web_services.get_context_feed_service] = lambda: service
 
-    # Remove override
-    app.dependency_overrides.pop(rsp_auth, None)
+    response = client.get("/context-feed?dayObsStart=20240101&dayObsEnd=20240102")
 
-    # Error-path API test --
-    # Simulate a service failure by patching get_context_feed
-    # to raise an Exception
-    def raise_error(dayObsStart, dayObsEnd, auth_token):
-        raise Exception("failure")
-
-    monkeypatch.setattr(
-        "lsst.ts.logging_and_reporting.main.get_context_feed",
-        raise_error,
-    )
-
-    # Override token again
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-
-    # Expect API to return 500 with exception message
-    response = client.get(endpoint)
-    assert response.status_code == 500
-    assert response.json()["detail"] == "failure"
-
-    # Clean up override
-    app.dependency_overrides.pop(rsp_auth, None)
+    assert response.status_code == 200
+    assert service.calls == [(20240101, 20240102)]
 
 
 @pytest.fixture

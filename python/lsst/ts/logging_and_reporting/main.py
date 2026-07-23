@@ -42,7 +42,6 @@ from .redis_client import get_redis_client
 from .refresh_worker import RefreshWorker
 from .services.consdb_service import get_mock_exposures
 from .services.rubin_nights_service import (
-    get_context_feed,
     get_visits,
 )
 from .services.scheduler_service import (
@@ -68,6 +67,7 @@ refresh_worker = RefreshWorker(
         adapters.get_jira_obs_adapter(),
         adapters.get_narrativelog_adapter(),
         adapters.get_nightreport_adapter(),
+        adapters.get_rubin_nights_context_adapter(),
         adapters.get_rubin_nights_dome_adapter(),
         adapters.get_rubin_nights_obs_status_adapter(),
     ],
@@ -269,21 +269,13 @@ def read_nightreport(
 
 
 @app.get("/context-feed")
-async def read_context_feed(
-    request: Request,
+def read_context_feed(
     dayObsStart: int,
     dayObsEnd: int,
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(services.get_context_feed_service),
 ):
-    try:
-        (efd_and_messages, cols) = get_context_feed(dayObsStart, dayObsEnd, auth_token=auth_token)
-        return {
-            "data": efd_and_messages,
-            "cols": cols,
-        }
-    except Exception as e:
-        logger.error(f"Error in /context-feed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    logger.info(f"Getting context feed for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    return service.handle(dayObsStart, dayObsEnd)
 
 
 @app.get("/obs-status")
