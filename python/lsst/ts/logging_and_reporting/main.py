@@ -61,6 +61,9 @@ logger = logging.getLogger(__name__)
 refresh_worker = RefreshWorker(
     [
         adapters.get_consdb_exposures_adapter(),
+        # After consdb_exposures: the overhead adapter reads that cache,
+        # so a cycle warms it from the freshly-refreshed exposures.
+        adapters.get_visit_overhead_adapter(),
         adapters.get_consdb_visits_adapter(),
         adapters.get_expected_exposures_adapter(),
         adapters.get_exposurelog_adapter(),
@@ -137,7 +140,6 @@ async def read_exposures(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(rsp_auth),
     service=Depends(services.get_exposures_service),
 ) -> dict[str, Any]:
     """Return exposures and derived night-summary metrics.
@@ -150,9 +152,6 @@ async def read_exposures(
         Exclusive upper bound of the requested dayobs range.
     instrument : str
         Instrument name used for the ConsDB exposure query.
-    auth_token : str, optional
-        Authentication token injected from the request context, used for
-        the dome and time-accounting sub-queries.
 
     Returns
     -------
@@ -169,7 +168,7 @@ async def read_exposures(
         sub-query failures are reported in the response payload instead.
     """
     logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
-    return service.handle(dayObsStart, dayObsEnd, instrument, auth_token)
+    return service.handle(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/expected-exposures")
