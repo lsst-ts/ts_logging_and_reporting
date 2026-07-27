@@ -26,15 +26,29 @@ import functools
 import logging
 from typing import Any
 
+import numpy as np
 import pandas as pd
+from astropy.time import Time
 
+from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
 from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_exposures_adapter
 from lsst.ts.logging_and_reporting.adapters.rubin_nights_dome import get_rubin_nights_dome_adapter
+from lsst.ts.logging_and_reporting.adapters.visit_overhead import get_visit_overhead_adapter
 from lsst.ts.logging_and_reporting.services.base_service import Service
-from lsst.ts.logging_and_reporting.services.rubin_nights_service import get_time_accounting
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days, dayobs_at
+from lsst.ts.logging_and_reporting.utils.obs_status import almanac_to_unix_ms
 
 logger = logging.getLogger(__name__)
+
+SECONDS_IN_AN_HOUR = 3600
+
+# Empty-range time-accounting result.
+_EMPTY_TIME_ACCOUNTING = {
+    "sum_overhead_with_filter_change": 0.0,
+    "sum_overhead_without_filter_change": 0.0,
+    "sum_visit_gap_with_filter_change": 0.0,
+    "sum_visit_gap_without_filter_change": 0.0,
+}
 
 # Curated column set surfaced by /exposures, projected from the full
 # exposure record the adapter caches.
@@ -125,6 +139,82 @@ def _aggregate_dome_hours(per_day: dict[int, list[dict]]) -> dict[int, dict]:
     return hours
 
 
+def _twilight_windows_by_dayobs(almanac_info: list[dict]) -> dict[int, tuple[int, int]]:
+    """Map each visit dayobs to its 12-degree twilight window (Unix ms).
+
+    The almanac labels a night's record with the dayobs of its *morning*
+    twilight boundary -- one day after the day_obs visits are tagged with
+    -- so each record maps back to ``dayobs - 1`` to match ``day_obs``.
+    """
+    windows = {}
+    for night in almanac_info:
+        visit_dayobs = add_or_subtract_dayobs_days(night["dayobs"], -1)
+        windows[visit_dayobs] = (
+            almanac_to_unix_ms(night["twilight_evening_12deg"]),
+            almanac_to_unix_ms(night["twilight_morning_12deg"]),
+        )
+    return windows
+
+
+def _obs_start_tai_to_utc_ms(obs_start: pd.Series) -> pd.Series:
+    """Convert TAI observation-start timestamps to Unix milliseconds (UTC).
+
+    Missing input values are returned as ``NaN``.
+    """
+    result = pd.Series(np.nan, index=obs_start.index, dtype="float64")
+    valid = obs_start.notna()
+    if valid.any():
+        tai_times = Time(obs_start[valid].astype(str).tolist(), format="isot", scale="tai")
+        result.loc[valid] = tai_times.utc.unix * 1000
+    return result
+
+
+def _compute_filter_changed(visits_sorted: pd.DataFrame) -> pd.Series:
+    """Flag visits whose band differs from the immediately preceding visit."""
+    band_prev = visits_sorted["band"].shift(1)
+    band_changed = (visits_sorted["band"] != band_prev) & ~(visits_sorted["band"].isna() & band_prev.isna())
+    band_changed.iloc[0] = False
+    return band_changed
+
+
+def _sum_on_sky_within_twilight(visits: pd.DataFrame, almanac_info: list[dict]) -> dict[str, float]:
+    """Summarize on-sky overhead and visit-gap hours within twilight.
+
+    Returns four hour-valued sums, split by whether the band changed from
+    the previous visit. Only visits that can see sky and start within
+    their night's 12-degree twilight window are counted. ``overhead`` and
+    ``visit_gap`` are stored in seconds and converted to hours once, at
+    the end, to avoid compounding rounding error.
+    """
+    visits_sorted = visits.sort_values("obs_start")
+
+    windows = _twilight_windows_by_dayobs(almanac_info)
+    window_start_ms = (
+        visits_sorted["day_obs"].map(lambda d: windows.get(d, (np.nan, np.nan))[0]).astype(float)
+    )
+    window_end_ms = visits_sorted["day_obs"].map(lambda d: windows.get(d, (np.nan, np.nan))[1]).astype(float)
+
+    obs_start_utc_ms = _obs_start_tai_to_utc_ms(visits_sorted["obs_start"])
+
+    in_twilight = (obs_start_utc_ms >= window_start_ms) & (obs_start_utc_ms <= window_end_ms)
+    base_mask = visits_sorted["can_see_sky"].fillna(False).astype(bool) & in_twilight
+
+    filter_changed = _compute_filter_changed(visits_sorted)
+    with_change_mask = base_mask & filter_changed
+    without_change_mask = base_mask & ~filter_changed
+
+    overhead = visits_sorted["overhead"].fillna(0)
+    visit_gap = visits_sorted["visit_gap"].fillna(0)
+
+    sums_sec = {
+        "sum_overhead_with_filter_change": float(overhead[with_change_mask].sum()),
+        "sum_overhead_without_filter_change": float(overhead[without_change_mask].sum()),
+        "sum_visit_gap_with_filter_change": float(visit_gap[with_change_mask].sum()),
+        "sum_visit_gap_without_filter_change": float(visit_gap[without_change_mask].sum()),
+    }
+    return {key: round(float(total / SECONDS_IN_AN_HOUR), 2) for key, total in sums_sec.items()}
+
+
 class ExposuresService(Service):
     """Serves /exposures: ConsDB exposures plus night-summary metrics.
 
@@ -135,7 +225,7 @@ class ExposuresService(Service):
     the response rather than failing the request.
     """
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str, auth_token: str) -> dict:
+    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return exposures and night-summary metrics for the range.
 
         Parameters
@@ -147,17 +237,13 @@ class ExposuresService(Service):
             contract — the frontend sends end + 1 day).
         instrument : `str`
             Instrument to query (e.g. ``LSSTCam``).
-        auth_token : `str`
-            Token for the dome and time-accounting queries.
         """
         per_day = self.adapters["consdb"].fetch(
             instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
         )
         response = self.collate_response(per_day)
         response.update(self._dome_hours(day_obs_start, day_obs_end))
-        response.update(
-            self._time_accounting(day_obs_start, day_obs_end, instrument, response["exposures"], auth_token)
-        )
+        response.update(self._time_accounting(day_obs_start, day_obs_end, instrument))
         logger.debug(
             f"Fetched {response['exposures_count']} exposures for dayObsStart: {day_obs_start}, "
             f"dayObsEnd: {day_obs_end} and instrument: {instrument}"
@@ -208,15 +294,26 @@ class ExposuresService(Service):
             "open_dome_error": open_dome_error,
         }
 
-    def _time_accounting(
-        self, day_obs_start: int, day_obs_end: int, instrument: str, exposures: list[dict], auth_token: str
-    ) -> dict:
-        """Twilight-windowed on-sky time accounting for the night."""
+    def _time_accounting(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
+        """Twilight-windowed on-sky time accounting for the range.
+
+        The per-visit overhead comes from the cached overhead adapter and
+        the twilight windows from the almanac adapter; the reduction is
+        computed over the whole range so the filter-change split is
+        correct across night boundaries.
+        """
         night_time_on_sky_sums, time_accounting_error = None, None
         try:
-            night_time_on_sky_sums = get_time_accounting(
-                day_obs_start, day_obs_end, instrument, exposures, auth_token
+            per_day = self.adapters["overhead"].fetch(
+                instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
             )
+            rows = [record for dayobs in sorted(per_day) for record in per_day[dayobs]]
+            if not rows:
+                night_time_on_sky_sums = dict(_EMPTY_TIME_ACCOUNTING)
+            else:
+                almanac = self.adapters["almanac"].fetch(day_obs_start, day_obs_end)
+                almanac_info = [almanac[dayobs] for dayobs in sorted(almanac)]
+                night_time_on_sky_sums = _sum_on_sky_within_twilight(pd.DataFrame(rows), almanac_info)
         except Exception as e:
             logger.error(f"Error computing time accounting in /exposures: {e}", exc_info=True)
             time_accounting_error = "Failed to compute night time accounting"
@@ -233,5 +330,7 @@ def get_exposures_service() -> ExposuresService:
         adapters={
             "consdb": get_consdb_exposures_adapter(),
             "dome": get_rubin_nights_dome_adapter(),
+            "overhead": get_visit_overhead_adapter(),
+            "almanac": get_almanac_adapter(),
         }
     )

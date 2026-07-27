@@ -34,6 +34,7 @@ from .nightreport import get_nightreport_adapter
 from .rubin_nights_context import get_rubin_nights_context_adapter
 from .rubin_nights_dome import get_rubin_nights_dome_adapter
 from .rubin_nights_obs_status import get_rubin_nights_obs_status_adapter
+from .visit_overhead import get_visit_overhead_adapter
 from .zephyr import get_zephyr_adapter
 
 __all__ = [
@@ -49,5 +50,6 @@ __all__ = [
     "get_rubin_nights_context_adapter",
     "get_rubin_nights_dome_adapter",
     "get_rubin_nights_obs_status_adapter",
+    "get_visit_overhead_adapter",
     "get_zephyr_adapter",
 ]
