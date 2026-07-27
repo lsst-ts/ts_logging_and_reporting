@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from lsst.ts.logging_and_reporting.services.rubin_nights_service import (
+from lsst.ts.logging_and_reporting.services.exposures import (
     _compute_filter_changed,
     _obs_start_tai_to_utc_ms,
     _sum_on_sky_within_twilight,
     _twilight_windows_by_dayobs,
-    get_time_accounting,
 )
+from lsst.ts.logging_and_reporting.services.rubin_nights_service import get_time_accounting
 
 MODULE = "lsst.ts.logging_and_reporting.services.rubin_nights_service"
 TWILIGHT_SUM_KEYS = (
