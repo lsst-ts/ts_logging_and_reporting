@@ -621,6 +621,7 @@ HTTP layer without touching the adapter or service code.
 | `adapters/rubin_nights_obs_status.py` | ✅ `RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter)` — observatory-status events per dayobs from EFD `select_time_series`, bucketed by `dayobs_at(event time)`, no carry-in (range-independent) |
 | `adapters/rubin_nights_context.py` | ✅ `RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter)` — consolidated context-feed messages per dayobs from `get_consolidated_messages` (needs the full `_clients` dict, not just the EFD); bucketed by `dayobs_at(time)`; the 12-col display shortlist is the `CONTEXT_FEED_COLS` constant, not cached |
 | `adapters/expected_exposures.py` | ✅ `ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter)` — caches the `nominal_visits` count per dayobs from `rubin_sim.sim_archive.fetch_sim_stats_for_night` (no `RestClient`; it drives the sim archive directly); mutable TTL; registered with the RefreshWorker |
+| `adapters/visit_overhead.py` | ✅ `VisitOverheadAdapter(RubinNightsClientsMixin, InstrumentDayobsCachedAdapter)` — per-visit slew/overhead for the `/exposures` time accounting; runs augment + the kinematic slew model (EFD TMA limits) per night and caches the reduction columns. Composes `ConsdbExposuresAdapter` for the visit sequence, so no second ConsDB query |
 | `adapters/__init__.py` | ✅ Exists — re-exports the adapter singleton getters (getters only) |
 | `services/__init__.py` | ✅ Re-exports the service singleton getters (getters only) |
 | `services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
@@ -720,15 +721,15 @@ HTTP layer without touching the adapter or service code.
 **`services/exposures.py`** and **`services/data_log.py`** (new; replace
 `consdb_service.py`'s `get_exposures()` / `get_data_log()`)
 
-- `ExposuresService(Service)` owns the whole `/exposures` response, so the endpoint is thin
-  (`return service.handle(dayObsStart, dayObsEnd, instrument, auth_token)`):
+- ✅ `ExposuresService(Service)` owns the whole `/exposures` response, so the endpoint is thin
+  (`return service.handle(dayObsStart, dayObsEnd, instrument)` — no auth token; every sub-source
+  is a service-account adapter):
   - the exposures come from `{"consdb": ConsdbExposuresAdapter}`, projected to the curated
     `EXPOSURE_COLUMNS` in `collate_response`, with the exposure/on-sky counts and durations
-  - dome open/close hours and twilight time-accounting are computed in `_dome_hours` /
-    `_time_accounting`, which call the `rubin_nights_service` functions
-    (`get_open_close_dome`, `_compute_closed_hours`, `get_time_accounting`) directly. Those
-    become adapters in the rubin_nights step; the service keeps owning the logic, only swapping
-    the calls for adapter fetches
+  - ✅ dome open/close hours (`_dome_hours`) come from `RubinNightsDomeAdapter`; the per-night
+    aggregation (`_aggregate_dome_hours` / `_compute_closed_hours`) lives on the service. Twilight
+    time-accounting (`_time_accounting`) reads per-visit overhead from `VisitOverheadAdapter` plus
+    twilight windows from `AlmanacCachedAdapter`, then runs the reduction helpers over the range
   - the two sub-computations degrade to `open_dome_error` / `time_accounting_error` in the
     payload rather than failing the request; a ConsDB failure propagates (→ 502 via
     `Service.handle`)
@@ -822,15 +823,17 @@ HTTP layer without touching the adapter or service code.
     `StaticVisitMapService(Service)`, both using `ConsdbVisitsAdapter`; each overrides
     `collate_response` to build its output (multi-night Bokeh figure / static PNG) from
     per-night visit data
-- `/exposures` already owns the dome and time-accounting logic in `ExposuresService`
-  (`_dome_hours` / `_time_accounting` call `get_open_close_dome`, `_compute_closed_hours`,
-  `get_time_accounting`). This step turns the dome fetch into `RubinNightsDomeAdapter` and moves
-  the pure computation helpers to a utility module, so the service reads dome data from an adapter
-  instead of calling `rubin_nights_service`; the twilight windows come from `AlmanacCachedAdapter`
-  in the service's adapter set (replacing the `get_almanac()` call). Once `ObsStatusService` and
-  `ExposuresService` no longer call `get_almanac()`, `almanac_service.py` and the legacy
-  `almanac.py` are dead code but are **deleted in the chunk 8 cleanup sweep**, not here, to keep
-  this chunk's diff focused on the split
+- ✅ `/exposures` owns the dome and time-accounting logic in `ExposuresService`. The dome fetch is
+  now `RubinNightsDomeAdapter` with the per-night aggregation helpers on the service; the
+  time-accounting slew/overhead — the costly kinematic model, which needs the EFD for TMA limits —
+  moved into a new `VisitOverheadAdapter` (`InstrumentDayobsCachedAdapter` + `RubinNightsClientsMixin`)
+  that composes `ConsdbExposuresAdapter` for the visit sequence and caches per-visit overhead rows;
+  the service reads those rows plus twilight windows from `AlmanacCachedAdapter` and runs the
+  reduction over the whole range (so the filter-change split is correct across night boundaries).
+  Only per-visit rows are cacheable, not per-night sums — the reduction is range-dependent.
+  Once `ObsStatusService` and `ExposuresService` no longer call `get_almanac()`, `almanac_service.py`
+  and the legacy `almanac.py` are dead code but are **deleted in the chunk 8 cleanup sweep**, not
+  here, to keep this chunk's diff focused on the split
 - The `augment` flag on `get_visits` is **not** cached. Both map endpoints derive from the same
   raw `visit1`⋈`visit1_quicklook` query; `augment` only decides whether rubin_nights runs its
   local `augment_visits` post-processing (pure numpy/pandas — seeing, predicted zeropoints, moon/LST
@@ -925,6 +928,12 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      `consdb_exposures` adapter will therefore need to behave differently at the summit than
      at other deployments (e.g. omit or degrade the `exposure_efd` join / columns there).
      Placeholder note — design TBD.
+   - **8.2 Concurrency** - ensure that all services that request data from more than
+     one adapter do so in a way which is concurrent, not serial. Do this by
+     ensuring that all services use the _fetch_all helper (even those with just a
+     single adapter) and that this helper is concurrent and does not delay any
+     adapter fetch start. Perhaps we even want to bake this in, change the 
+     handle method to also accept the fetched data as a parameter
 9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
    `main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
    and complete. For each route confirm: the response is accurately typed (avoid bare
