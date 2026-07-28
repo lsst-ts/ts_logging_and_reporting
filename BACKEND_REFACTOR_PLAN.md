@@ -956,6 +956,53 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      perhaps this should simply test the Service.handle and middleware infrastructure
      and any endpoint-specific tests in it should be moved into the specific service
      test
+  - **8.4 Timestamp serialization issue** - The data-log endpoint used to return "NaT" for
+      invalid/missing timestamps. Since we're getting the data ourselves instead of
+      using the rubin_nights get_visits, the data is json rather than pd.DataFrame
+      and has no concept of 'missing timestamp' as opposed to 'missing data'. This
+      is an issue that should be resolved on the frontend, but it does surface
+      an interesting thing we need to check. We should ensure that all services 
+      return json-safe data, and that all adapters also pass json-safe data. This 
+      is mostly a concern of the rubin_nights based adapters, which use DataFrames
+   - **8.5 Align `DayobsCachedAdapter` on a `_fetch_run` contract** — `DayobsCachedAdapter`
+     subclasses currently implement `_fetch_from_source(dayobs_list)`, and each one repeats the
+     same three-part preamble: seed `results` with an empty container per dayobs, loop over
+     `contiguous_runs`, then guard every returned row with `if dayobs in results`. Seven of the
+     nine subclasses do this. Move that loop into `DayobsCachedAdapter._fetch_from_source` and
+     have subclasses implement `_fetch_run(run_start, run_end)` instead, mirroring how
+     `InstrumentDayobsCachedAdapter` already works.
+
+     The return contract should be `dict[int, Any]` — the subclass's own partition for that run —
+     **not** `InstrumentDayobsCachedAdapter`'s flat `list[dict]` scatter-by-`day_obs`. The dict
+     shape is what lets all nine adapters fit: `almanac` and `expected_exposures` cache a
+     non-row value per dayobs (a `dict` and an `int` respectively), `jira_obs` fans one ticket
+     into both its created and updated dayobs, and `rubin_nights_obs_status` /
+     `rubin_nights_context` derive the dayobs from the raw pandas timestamp *before*
+     `make_json_safe` stringifies it, so there is no `day_obs` field left on the emitted record
+     to scatter by. Each of those cases stays inside `_fetch_run` and the base never inspects a
+     row. The base keeps an `_empty_value()` hook (defaulting to `[]`) for the seed, so a quiet
+     night still gets an entry and `_fetch_cached`'s coverage `KeyError` does not fire.
+
+     The main win is not line count (~40 lines across seven adapters) but centralising the
+     out-of-range guard: upstream windows are exclusive at one end and the timestamp-derived
+     adapters can straddle a boundary, so today every adapter independently has to remember to
+     drop rows outside the requested run. That is a silent-wrong-answer bug waiting for the next
+     adapter that forgets it.
+
+     Two things to settle when doing this:
+     - **Name collision.** `DayobsCachedAdapter._fetch_run` would return `dict[int, Any]` while
+       `InstrumentDayobsCachedAdapter._fetch_run` returns `list[dict]` — same name, same
+       conceptual slot, incompatible contracts, and a source mixin supplying `_fetch_run` would
+       silently mean different things depending on which cache base it is mixed with. Prefer
+       converging `InstrumentDayobsCachedAdapter` onto the dict contract too (it keeps the
+       composite-key split and per-instrument grouping, which are genuinely its own;
+       `ConsdbSqlMixin` takes over the `day_obs` bucketing), so that "`_fetch_run` returns your
+       data partitioned by dayobs for one contiguous run" becomes one rule across the whole
+       adapter layer.
+     - **Test migration is the bulk of the diff.** Check `grep -rn "_fetch_from_source" tests/`
+       first — fakes and stubs that override `_fetch_from_source` to exercise the cache loop
+       need the same rework as the adapters themselves.
+
 9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
    `main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
    and complete. For each route confirm: the response is accurately typed (avoid bare
