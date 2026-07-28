@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 import requests
 from fastapi import HTTPException
@@ -18,10 +20,13 @@ class StubAdapter:
 
 class PassthroughService(Service):
     def handle_request(self, start_dayobs, end_dayobs):
-        return self.collate_response(self.fetch_all(start_dayobs, end_dayobs))
+        results = self.fetch_concurrently(
+            {name: (lambda a=a: a.fetch(start_dayobs, end_dayobs)) for name, a in self.adapters.items()}
+        )
+        return self.collate_response(results)
 
     def collate_response(self, data):
-        return {"results": [data[dayobs] for dayobs in sorted(data)]}
+        return {"results": [data[name] for name in sorted(data)]}
 
 
 class TestService:
@@ -29,25 +34,44 @@ class TestService:
         with pytest.raises(TypeError):
             Service(adapters={})
 
-    def test_fetch_all_merges_adapters_per_dayobs(self):
+    def test_handle_request_collates_results_by_name(self):
         service = PassthroughService(
-            adapters={
-                "one": StubAdapter("one", {20250101: "a1", 20250102: "a2"}),
-                "two": StubAdapter("two", {20250101: "b1", 20250102: "b2"}),
-            }
-        )
-        merged = service.fetch_all(20250101, 20250102)
-        assert merged == {
-            20250101: {"one": "a1", "two": "b1"},
-            20250102: {"one": "a2", "two": "b2"},
-        }
-
-    def test_handle_request_collates_sorted_by_dayobs(self):
-        service = PassthroughService(
-            adapters={"one": StubAdapter("one", {20250102: "later", 20250101: "earlier"})}
+            adapters={"one": StubAdapter("one", {20250101: "x"}), "two": StubAdapter("two", {20250101: "y"})}
         )
         response = service.handle_request(20250101, 20250102)
-        assert response == {"results": [{"one": "earlier"}, {"one": "later"}]}
+        assert response == {"results": [{20250101: "x"}, {20250101: "y"}]}
+
+
+class TestFetchConcurrently:
+    def test_returns_each_result_by_name(self):
+        service = PassthroughService(adapters={})
+        assert service.fetch_concurrently({"a": lambda: 1, "b": lambda: 2}) == {"a": 1, "b": 2}
+
+    def test_empty_tasks_returns_empty(self):
+        service = PassthroughService(adapters={})
+        assert service.fetch_concurrently({}) == {}
+
+    def test_captures_exception_without_aborting_others(self):
+        boom = RuntimeError("boom")
+
+        def fail():
+            raise boom
+
+        results = PassthroughService(adapters={}).fetch_concurrently({"ok": lambda: "fine", "bad": fail})
+        assert results["ok"] == "fine"
+        assert results["bad"] is boom
+
+    def test_tasks_run_concurrently(self):
+        # Each task blocks on the barrier until the other arrives, so this
+        # only completes if the two run at once rather than serially.
+        barrier = threading.Barrier(2, timeout=5)
+
+        def task():
+            barrier.wait()
+            return "done"
+
+        results = PassthroughService(adapters={}).fetch_concurrently({"a": task, "b": task})
+        assert results == {"a": "done", "b": "done"}
 
 
 class FailingService(Service):
@@ -85,4 +109,4 @@ class TestHandle:
 
     def test_success_returns_response(self):
         service = PassthroughService(adapters={"one": StubAdapter("one", {20250101: "x"})})
-        assert service.handle(20250101, 20250101) == {"results": [{"one": "x"}]}
+        assert service.handle(20250101, 20250101) == {"results": [{20250101: "x"}]}
