@@ -928,10 +928,10 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      removed (its two live `static_visit_map` viz tests relocated); `test_get_time_accounting.py` renamed
      to `tests/services/test_time_accounting_helpers.py` and trimmed to the live reduction-helper tests;
      `test_dome_hours.py` removed with its `TestDayobsAt` moved to `tests/utils/test_dayobs.py`.
-   - ⬜ **Stage 2 (orphaned root/source modules):** `almanac.py`, `jira.py`, `exposure_log.py`,
-     `consdb.py`, `source_adapters.py`, `efd.py`; plus `/mock-exposures` + `consdb_service.py` (user chose
-     to nuke the mock endpoint too), and helper leftovers (`build_block_response`, the
-     `ZEPHYR_BLOCK_BASE_URL`/`JIRA_BLOCK_BASE_URL` constants).
+   - ✅ **Stage 2 (orphaned root/source modules):** deleted `almanac.py`, `jira.py`, `exposure_log.py`,
+     `consdb.py`, `source_adapters.py`, `efd.py`, `exceptions.py` (all zero-importer after Stage 1), plus
+     `services/consdb_service.py` and the `/mock-exposures` endpoint (user chose to nuke the mock endpoint
+     too). Dropped the legacy `test_adapters.py` and `test_jira.py`. `Request` import removed from `main.py`.
    - ⬜ **Stage 3 (residual dead code + import purge):** drop `rsp_auth`/`get_access_token` from `main.py`
      and the no-op `override_service[rsp_auth]` lines; then a tree-wide sweep for every import no longer
      used anywhere, in both `python/` and `tests/`.

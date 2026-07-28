@@ -25,7 +25,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, List
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -36,7 +36,6 @@ from . import __version__, services
 from .middleware import CacheControlMiddleware
 from .redis_client import get_redis_client
 from .refresh_worker import RefreshWorker
-from .services.consdb_service import get_mock_exposures
 
 # Auth dependencies (instantiated once for reuse and testing)
 rsp_auth = get_access_token()
@@ -115,13 +114,6 @@ async def health():
     Used by kubernetes readiness and liveness probes.
     """
     return JSONResponse(status_code=200, content={"status": "ok"})
-
-
-@app.get("/mock-exposures")
-async def read_exposures_from_mock_data(request: Request, dayObsStart: int, dayObsEnd: int, instrument: str):
-    logger.info("Getting exposures from mock data")
-    exposures = get_mock_exposures(dayObsStart, dayObsEnd, instrument)
-    return {"exposures": exposures}
 
 
 @app.get("/exposures")
