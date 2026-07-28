@@ -1,11 +1,13 @@
 import datetime as dt
 
+import pandas as pd
 import pytest
 
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
     contiguous_runs,
     date_to_dayobs_int,
+    dayobs_at,
     dayobs_int_to_date,
     dayobs_range,
 )
@@ -99,3 +101,30 @@ class TestContiguousRuns:
 
     def test_deduplicates(self):
         assert contiguous_runs([20250101, 20250101, 20250102]) == [(20250101, 20250102)]
+
+
+class TestDayobsAt:
+    def test_after_noon_utc_returns_same_date(self):
+        now = pd.Timestamp("2026-04-09 15:00:00", tz="UTC")
+        assert dayobs_at(now) == 20260409
+
+    def test_before_noon_utc_returns_previous_date(self):
+        # 03:00 UTC April 10 is still dayobs 20260409
+        now = pd.Timestamp("2026-04-10 03:00:00", tz="UTC")
+        assert dayobs_at(now) == 20260409
+
+    def test_exactly_at_noon_utc_returns_same_date(self):
+        now = pd.Timestamp("2026-04-09 12:00:00", tz="UTC")
+        assert dayobs_at(now) == 20260409
+
+    def test_one_second_before_noon_returns_previous_date(self):
+        now = pd.Timestamp("2026-04-09 11:59:59", tz="UTC")
+        assert dayobs_at(now) == 20260408
+
+    def test_month_boundary(self):
+        now = pd.Timestamp("2026-05-01 03:00:00", tz="UTC")
+        assert dayobs_at(now) == 20260430
+
+    def test_year_boundary(self):
+        now = pd.Timestamp("2027-01-01 03:00:00", tz="UTC")
+        assert dayobs_at(now) == 20261231
