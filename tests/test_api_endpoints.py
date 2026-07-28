@@ -37,7 +37,7 @@ from lsst.ts.logging_and_reporting.adapters.jira_obs import get_jira_obs_adapter
 from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
 from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
 from lsst.ts.logging_and_reporting.adapters.zephyr import get_zephyr_adapter
-from lsst.ts.logging_and_reporting.main import app, rsp_auth
+from lsst.ts.logging_and_reporting.main import app
 from lsst.ts.logging_and_reporting.services.block_details import ZEPHYR_TEST_CASE_PATH
 from lsst.ts.logging_and_reporting.services.data_log import DataLogService
 from lsst.ts.logging_and_reporting.services.expected_exposures import ExpectedExposuresService
@@ -990,7 +990,6 @@ def test_exposures_endpoint_returns_service_response(override_service):
         "time_accounting_error": None,
     }
     override_service[web_services.get_exposures_service] = lambda: _StubService(result)
-    override_service[rsp_auth] = lambda: "token"
 
     response = client.get(EXPOSURES_ENDPOINT)
     assert response.status_code == 200
@@ -1000,7 +999,6 @@ def test_exposures_endpoint_returns_service_response(override_service):
 def test_exposures_endpoint_consdb_failure_returns_502(override_service):
     service = ExposuresService(adapters={"consdb": _RaisingAdapter(requests.ConnectionError("consdb down"))})
     override_service[web_services.get_exposures_service] = lambda: service
-    override_service[rsp_auth] = lambda: "token"
 
     response = client.get(EXPOSURES_ENDPOINT)
     assert response.status_code == 502
@@ -1011,7 +1009,6 @@ def test_exposures_endpoint_unknown_instrument_returns_422(override_service):
         adapters={"consdb": _RaisingAdapter(HTTPException(status_code=422, detail="Unknown instrument"))}
     )
     override_service[web_services.get_exposures_service] = lambda: service
-    override_service[rsp_auth] = lambda: "token"
 
     response = client.get(EXPOSURES_ENDPOINT)
     assert response.status_code == 422
@@ -1490,8 +1487,6 @@ def test_missing_required_params_return_422(monkeypatch, missing_param):
 
     endpoint = "/obs-status"
 
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-
     response = client.get(endpoint, params=params)
 
     assert response.status_code == 422
@@ -1517,8 +1512,6 @@ def test_invalid_integer_params_return_422(
     params[param] = value
 
     endpoint = "/obs-status"
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
 
     response = client.get(endpoint, params=params)
 

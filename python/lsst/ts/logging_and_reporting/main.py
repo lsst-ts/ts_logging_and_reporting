@@ -30,15 +30,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from lsst.ts.logging_and_reporting import adapters
-from lsst.ts.logging_and_reporting.utils.auth import get_access_token
 
 from . import __version__, services
 from .middleware import CacheControlMiddleware
 from .redis_client import get_redis_client
 from .refresh_worker import RefreshWorker
-
-# Auth dependencies (instantiated once for reuse and testing)
-rsp_auth = get_access_token()
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),

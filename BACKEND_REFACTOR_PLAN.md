@@ -932,9 +932,13 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      `consdb.py`, `source_adapters.py`, `efd.py`, `exceptions.py` (all zero-importer after Stage 1), plus
      `services/consdb_service.py` and the `/mock-exposures` endpoint (user chose to nuke the mock endpoint
      too). Dropped the legacy `test_adapters.py` and `test_jira.py`. `Request` import removed from `main.py`.
-   - ⬜ **Stage 3 (residual dead code + import purge):** drop `rsp_auth`/`get_access_token` from `main.py`
-     and the no-op `override_service[rsp_auth]` lines; then a tree-wide sweep for every import no longer
-     used anywhere, in both `python/` and `tests/`.
+   - ✅ **Stage 3 (residual dead code + import purge):** dropped `rsp_auth` + its `get_access_token` import
+     from `main.py` (no endpoint depends on it) and the five no-op `[rsp_auth]` override lines in the tests;
+     deleted the fully-dead `utils/misc.py` (`build_block_response`, the BLOCK URL constants, `Timer`,
+     `tic`/`toc`, etc.) and its `test_misc.py`; migrated the one live `get_utc_datetime_from_dayobs_str` test
+     out of the legacy `test_all_sources.py` into `tests/utils/test_dayobs.py` and deleted `test_all_sources.py`
+     (last user of the flat `import utils as ut` shim); gutted `utils/__init__.py` to a bare package marker
+     (all re-exports were dead). Full-tree ruff clean.
    - **8.1 Summit EFD-transform availability** (not yet fleshed out) — the transformed EFD
      data (the `exposure_efd` columns the ConsDB exposure query folds in via `LEFT JOIN`,
      consumed by e.g. the data log) is **not available at the summit deployment**. The
@@ -947,6 +951,11 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      single adapter) and that this helper is concurrent and does not delay any
      adapter fetch start. Perhaps we even want to bake this in, change the 
      handle method to also accept the fetched data as a parameter
+   - **8.3 Refactor test_api_endpoints** - At 1500 LOC it's too big. Split it into several
+     files, one per endpoint. Although, since we actually test at the service level 
+     perhaps this should simply test the Service.handle and middleware infrastructure
+     and any endpoint-specific tests in it should be moved into the specific service
+     test
 9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
    `main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
    and complete. For each route confirm: the response is accurately typed (avoid bare
