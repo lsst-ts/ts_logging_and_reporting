@@ -65,8 +65,8 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
 
     Query parameter names handled:
 
-    - ``dayObs`` — single-day endpoints (e.g. ``/survey-progress-map``)
-    - ``dayObsStart`` + ``dayObsEnd`` — range endpoints (all others)
+    - ``dayObs`` — single-day endpoints
+    - ``dayObsStart`` + ``dayObsEnd`` — range endpoints
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
