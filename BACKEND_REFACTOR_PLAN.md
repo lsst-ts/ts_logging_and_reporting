@@ -939,12 +939,18 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      out of the legacy `test_all_sources.py` into `tests/utils/test_dayobs.py` and deleted `test_all_sources.py`
      (last user of the flat `import utils as ut` shim); gutted `utils/__init__.py` to a bare package marker
      (all re-exports were dead). Full-tree ruff clean.
-   - **8.1 Summit EFD-transform availability** (not yet fleshed out) — the transformed EFD
-     data (the `exposure_efd` columns the ConsDB exposure query folds in via `LEFT JOIN`,
-     consumed by e.g. the data log) is **not available at the summit deployment**. The
-     `consdb_exposures` adapter will therefore need to behave differently at the summit than
-     at other deployments (e.g. omit or degrade the `exposure_efd` join / columns there).
-     Placeholder note — design TBD.
+   - ✅ **8.1 EFD-transform availability** — the transformed EFD data (the `exposure_efd`
+     columns the ConsDB exposure query folds in via `LEFT JOIN`, consumed by the data log)
+     is **not available at the summit or base deployments**. `consdb_exposures.py` now guards
+     the join with `efd_transform_available()`, which checks the deployment identity
+     (`Server.get_url()`, off `EXTERNAL_INSTANCE_URL`) against `EFD_UNAVAILABLE_DEPLOYMENTS`
+     = {summit, base}; on those the join is omitted so the query never references the missing
+     `efd_<instrument>.exposure_efd` table. An unset/unknown deployment defaults to available,
+     keeping dev and tests on the EFD-enabled path. The capability check lives beside
+     `EFD_FIELDS` in the adapter (single-consumer, EFD-folding policy — not `utils`), importing
+     only `Server` for the deployment identity. Nothing downstream references EFD columns by
+     name (`/exposures` projects the EFD-free `EXPOSURE_COLUMNS`; `/data-log` returns whatever
+     columns the record has), so omission degrades cleanly with no service changes.
    - **8.2 Concurrency** - ensure that all services that request data from more than
      one adapter do so in a way which is concurrent, not serial. Do this by
      ensuring that all services use the _fetch_all helper (even those with just a
