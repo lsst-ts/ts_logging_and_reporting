@@ -10,6 +10,7 @@ from lsst.ts.logging_and_reporting.utils.dayobs import (
     dayobs_at,
     dayobs_int_to_date,
     dayobs_range,
+    get_utc_datetime_from_dayobs_str,
 )
 
 
@@ -128,3 +129,13 @@ class TestDayobsAt:
     def test_year_boundary(self):
         now = pd.Timestamp("2027-01-01 03:00:00", tz="UTC")
         assert dayobs_at(now) == 20261231
+
+
+class TestGetUtcDatetimeFromDayobsStr:
+    def test_hyphenated_date(self):
+        actual = get_utc_datetime_from_dayobs_str("2024-10-14")
+        assert actual == dt.datetime(2024, 10, 14, 12, 0, tzinfo=dt.timezone.utc)
+
+    def test_compact_date(self):
+        actual = get_utc_datetime_from_dayobs_str("20241014")
+        assert actual == dt.datetime(2024, 10, 14, 12, 0, tzinfo=dt.timezone.utc)
