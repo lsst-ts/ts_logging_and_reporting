@@ -629,7 +629,8 @@ HTTP layer without touching the adapter or service code.
 | `services/block_details.py` | ✅ `BlockDetailsService` + `get_block_details_service()`; splits keys by pattern across the two ID-based adapters, reports per-source failures in the response's `errors` field (both failing → 500), and decorates records with source and URL (built lazily from `get_jira_hostname()`) |
 | `services/obs_status.py` | ✅ `ObsStatusService` + `get_obs_status_service()`; carry-in via one leading day, almanac night windows (dayobs `[start+1, end+1]`) for the night-only metrics, `include_entries`/`include_intervals`/metric flags; status/interval helpers live in `utils/obs_status.py`; dayObsEnd inclusive |
 | `services/context_feed.py` | ✅ `ContextFeedService` + `get_context_feed_service()`; flattens the per-dayobs buckets and returns `{"data", "cols"}`, recomputing the window-bounded task-change `timestampProcessEnd` over the assembled range (dayObsEnd inclusive) |
-| `services/visit_maps_service.py` | `VisitMapsService` (`/multi-night-visit-maps`) and `StaticVisitMapService` (`/static-visit-map`), both using `ConsdbVisitsAdapter` (map-building logic split from `scheduler_service.py`) |
+| `services/visit_maps.py` | ✅ `VisitMapsService` + `get_visit_maps_service()` (`/multi-night-visit-maps`), using `ConsdbVisitsAdapter`; augments the raw frame (`augment_visits` → `consdb_to_opsim`) and builds the interactive Bokeh figure on read. Holds the interactive map-building helpers moved out of `scheduler_service.py` |
+| `services/static_visit_map.py` | ✅ `StaticVisitMapService` + `get_static_visit_map_service()` (`/static-visit-map`), using `ConsdbVisitsAdapter`; renders the healpix visit-count PNG from the raw columns. Holds the static map-building helpers moved out of `scheduler_service.py` |
 
 ### Modified Files
 
@@ -819,10 +820,12 @@ HTTP layer without touching the adapter or service code.
   - ✅ `services/context_feed.py` — `ContextFeedService(Service)` using
     `RubinNightsContextAdapter`; recomputes the task-change `timestampProcessEnd` at collation
     because rubin_nights bounds it to the query window (chains to the next task change / last message)
-  - `services/visit_maps_service.py` — `VisitMapsService(Service)` and
-    `StaticVisitMapService(Service)`, both using `ConsdbVisitsAdapter`; each overrides
-    `collate_response` to build its output (multi-night Bokeh figure / static PNG) from
-    per-night visit data
+  - ✅ `services/visit_maps.py` — `VisitMapsService(Service)`, and
+    `services/static_visit_map.py` — `StaticVisitMapService(Service)` (one service per
+    file), both using `ConsdbVisitsAdapter`; each overrides `collate_response` to build its
+    output (multi-night Bokeh figure / static PNG) from per-night visit data. The endpoints
+    are plain `def` (FastAPI's threadpool absorbs the blocking render), delegating to
+    `service.handle(...)` — no auth token, matching the other switched endpoints
 - ✅ `/exposures` owns the dome and time-accounting logic in `ExposuresService`. The dome fetch is
   now `RubinNightsDomeAdapter` with the per-night aggregation helpers on the service; the
   time-accounting slew/overhead — the costly kinematic model, which needs the EFD for TMA limits —
@@ -868,14 +871,18 @@ HTTP layer without touching the adapter or service code.
   code in `scheduler_service.py` until the cleanup step
 - `get_mock_exposures()`-style note: none — this endpoint has no mock variant
 
-**`services/scheduler_service.py`** (visit maps only)
+**`services/scheduler_service.py`** — ✅ visit-map code moved out
 
-- `build_visit_maps_using_builder()` logic moves into `VisitMapsService.collate_response()`,
-  which receives per-night visit data from `ConsdbVisitsAdapter` and builds the Bokeh figure
+- `build_visit_maps_using_builder()` and its interactive helpers (`_prepare_visit_maps_data`,
+  `_get_visit_map_config`, the `THEMES`/`VISIT_MAP_PROFILES` constants) moved into
+  `services/visit_maps.py`; `VisitMapsService.collate_response()` reassembles the per-night
+  frame, augments it, and builds the Bokeh figure
 - `build_static_visit_map()` (matplotlib/`maf` PNG rendering for `/static-visit-map`, which
-  replaced the old `/survey-progress-map`) moves into `StaticVisitMapService.collate_response()`
-- Visualisation helpers (`_style_*`, `_add_*`, `_compute_nvisits_bundle`, etc.) remain in the
-  file, called from within the services
+  replaced the old `/survey-progress-map`) and its helpers (`_style_*`, `_add_*`,
+  `_compute_nvisits_bundle`) moved into `services/static_visit_map.py`; `_encode_png_payload`
+  moved there from `main.py`
+- `scheduler_service.py` now holds only the dead `get_expected_exposures()`, deleted with the
+  file in the chunk 8 cleanup sweep
 
 ### Deleted Files / Removed Code
 
@@ -912,9 +919,9 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
 6. ✅ **Scheduler adapter** — `ExpectedExposuresCachedAdapter` + `ExpectedExposuresService`
    (`/expected-exposures`); no-sim → 404, mutable TTL, RefreshWorker-registered. Visit maps stay
    for step 7.
-7. **`rubin_nights` split** — largest and riskiest; leave last so the pattern is well-established
+7. ✅ **`rubin_nights` split** — largest and riskiest; leave last so the pattern is well-established
    before touching the most complex code. Includes the `/exposures` collation
-   (dome + time accounting) and both visit-map services
+   (dome + time accounting), the context feed, and both visit-map services
 8. **Final cleanup** — delete the old adapters and services superseded along the way
    (`jira.py`, `jira_service.py`, `zephyr_service.py`, `almanac.py`/`almanac_service.py`,
    `exposure_log.py`, `consdb.py`, `source_adapters.py`, `rubin_nights_service.py`,

@@ -20,13 +20,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
-import pandas as pd
 import pytest
 import requests
-from bokeh.plotting import figure
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from rubin_sim.sim_archive import NoMatchingSimulationsFoundError
@@ -40,7 +37,6 @@ from lsst.ts.logging_and_reporting.adapters.jira_obs import get_jira_obs_adapter
 from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
 from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
 from lsst.ts.logging_and_reporting.adapters.zephyr import get_zephyr_adapter
-from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.main import app, rsp_auth
 from lsst.ts.logging_and_reporting.services.block_details import ZEPHYR_TEST_CASE_PATH
 from lsst.ts.logging_and_reporting.services.data_log import DataLogService
@@ -1153,51 +1149,34 @@ def test_context_feed_passes_parsed_params(override_service):
     assert service.calls == [(20240101, 20240102)]
 
 
-@pytest.fixture
-def sample_visit_data_for_visit_maps():
-    """Sample visit data for testing
-    multi-night visit maps."""
+class _CapturingService:
+    """Records the arguments passed to handle(), for endpoint wiring tests."""
 
-    base_date = datetime(2024, 1, 1)
-    visits_list = []
+    def __init__(self, result=None):
+        self.calls = []
+        self.result = result or {}
 
-    for day_offset in range(3):
-        day_obs = int((base_date + timedelta(days=day_offset)).strftime("%Y%m%d"))
-        for obs_idx in range(5):
-            visits_list.append(
-                {
-                    "day_obs": day_obs,
-                    "observationStartMJD": 60000.0 + day_offset + obs_idx * 0.1,
-                    "fieldRA": 180.0 + obs_idx,
-                    "fieldDec": -30.0 + obs_idx,
-                    "band": "r",
-                    "rotSkyPos": 45.0,
-                }
-            )
-
-    return pd.DataFrame(visits_list)
+    def handle(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        return self.result
 
 
-@patch("lsst.ts.logging_and_reporting.main.get_visits")
-@patch("lsst.ts.logging_and_reporting.main.build_visit_maps_using_builder")
-def test_visit_maps_full_mode_both_maps(
-    mock_build_visitmaps_using_builder,
-    mock_get_visits,
-    sample_visit_data_for_visit_maps,
-):
-    mock_get_visits.return_value = sample_visit_data_for_visit_maps
+def test_multi_night_visit_maps_returns_service_response(override_service):
+    result = {"interactive": {"target_id": "t", "root_id": "r", "doc": {}}}
+    override_service[web_services.get_visit_maps_service] = lambda: _StubService(result)
 
-    # dummy figure with mock data to return from the builder function
-    dummy_fig = figure(title="Test Figure")
-    dummy_fig.scatter(
-        x=[180.0, 181.0],
-        y=[-30.0, -29.5],
-        size=10,
-        color=["navy", "firebrick"],
+    response = client.get(
+        "/multi-night-visit-maps",
+        params={"dayObsStart": 20240101, "dayObsEnd": 20240104, "instrument": "latiss"},
     )
-    mock_build_visitmaps_using_builder.return_value = dummy_fig
 
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+    assert response.status_code == 200
+    assert response.json() == result
+
+
+def test_multi_night_visit_maps_passes_parsed_params(override_service):
+    service = _CapturingService(result={"interactive": None})
+    override_service[web_services.get_visit_maps_service] = lambda: service
 
     response = client.get(
         "/multi-night-visit-maps",
@@ -1205,216 +1184,38 @@ def test_visit_maps_full_mode_both_maps(
             "dayObsStart": 20240101,
             "dayObsEnd": 20240104,
             "instrument": "latiss",
-            "appletMode": False,
+            "appletMode": True,
         },
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert "interactive" in data
-    assert "target_id" in data["interactive"]
-    assert "root_id" in data["interactive"]
-
-    mock_get_visits.assert_called_once()
-    call_kwargs = mock_get_visits.call_args[1]
-
-    call_kwargs = mock_build_visitmaps_using_builder.call_args[1]
-    assert call_kwargs["applet_mode"] is False
-
-    app.dependency_overrides.pop(rsp_auth, None)
+    assert service.calls == [((20240101, 20240104, "latiss", True), {})]
 
 
-@pytest.fixture
-def sample_visit_data_for_static_map():
-    """Sample visit data for testing static visit maps."""
-
-    return pd.DataFrame(
-        [
-            {
-                "science_program": "BLOCK-365",
-                "s_ra": 180.0,
-                "s_dec": -30.0,
-                "sky_rotation": 45.0,
-                "obs_start_mjd": 60000.1,
-            },
-            {
-                "s_ra": 181.5,
-                "s_dec": -29.5,
-                "sky_rotation": 46.0,
-                "obs_start_mjd": 60000.2,
-                "science_program": "BLOCK-365",
-            },
-        ]
-    )
-
-
-@patch("lsst.ts.logging_and_reporting.main.build_static_visit_map")
-@patch("lsst.ts.logging_and_reporting.main.get_visits")
-def test_static_visit_map_success(
-    mock_get_visits,
-    mock_build_static_visit_map,
-    sample_visit_data_for_static_map,
-):
-    mock_get_visits.return_value = sample_visit_data_for_static_map
-    mock_build_static_visit_map.return_value = b"fake-png-bytes"
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+def test_static_visit_map_returns_service_response(override_service):
+    result = {"static_map": {"mime_type": "image/png", "data": "abc"}}
+    override_service[web_services.get_static_visit_map_service] = lambda: _StubService(result)
 
     response = client.get(
         "/static-visit-map",
-        params={
-            "dayObsStart": 20240101,
-            "dayObsEnd": 20240102,
-            "instrument": "lsstCam",
-        },
+        params={"dayObsStart": 20240101, "dayObsEnd": 20240102, "instrument": "lsstCam"},
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert data["static_map"]["mime_type"] == "image/png"
-    assert data["static_map"]["data"]
-
-    mock_get_visits.assert_called_once_with(
-        20240101, 20240102, "lsstCam", auth_token="dummy-token", augment=False
-    )
-    mock_build_static_visit_map.assert_called_once()
-    map_data = mock_build_static_visit_map.call_args.args[0]
-    assert len(map_data) == len(sample_visit_data_for_static_map)
-
-    app.dependency_overrides.pop(rsp_auth, None)
+    assert response.json() == result
 
 
-@patch("lsst.ts.logging_and_reporting.main._encode_png_payload")
-@patch("lsst.ts.logging_and_reporting.main.get_visits")
-def test_static_visit_map_no_valid_rows(
-    mock_get_visits,
-    mock_encode_png_payload,
-):
-    mock_get_visits.return_value = pd.DataFrame(
-        [
-            {
-                "science_program": "dummy_program",
-                "s_ra": 180.0,
-                "s_dec": -30.0,
-                "sky_rotation": 45.0,
-                "obs_start_mjd": 60000.1,
-            }
-        ]
-    )
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
+def test_static_visit_map_passes_parsed_params(override_service):
+    service = _CapturingService(result={"static_map": None})
+    override_service[web_services.get_static_visit_map_service] = lambda: service
 
     response = client.get(
         "/static-visit-map",
-        params={
-            "dayObsStart": 20240101,
-            "dayObsEnd": 20240102,
-            "instrument": "lsstCam",
-        },
+        params={"dayObsStart": 20240101, "dayObsEnd": 20240102, "instrument": "lsstCam"},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"static_map": None}
-    mock_encode_png_payload.assert_not_called()
-    app.dependency_overrides.pop(rsp_auth, None)
-
-
-@patch("lsst.ts.logging_and_reporting.main.get_visits")
-def test_static_visit_map_get_visits_consdb_error(mock_get_visits):
-    mock_get_visits.side_effect = ConsdbQueryError("consdb down")
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-
-    response = client.get(
-        "/static-visit-map",
-        params={
-            "dayObsStart": 20240101,
-            "dayObsEnd": 20240102,
-            "instrument": "lsstCam",
-        },
-    )
-
-    assert response.status_code == 502
-    assert response.json()["detail"] == "ConsDB query failed"
-
-    app.dependency_overrides.pop(rsp_auth, None)
-
-
-@patch("lsst.ts.logging_and_reporting.main.build_static_visit_map")
-@patch("lsst.ts.logging_and_reporting.main.get_visits")
-def test_static_visit_map_build_failure_returns_500(
-    mock_get_visits,
-    mock_build_static_visit_map,
-    sample_visit_data_for_static_map,
-):
-    mock_get_visits.return_value = sample_visit_data_for_static_map
-    mock_build_static_visit_map.side_effect = RuntimeError("plot failed")
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-
-    response = client.get(
-        "/static-visit-map",
-        params={
-            "dayObsStart": 20240101,
-            "dayObsEnd": 20240102,
-            "instrument": "lsstCam",
-        },
-    )
-
-    assert response.status_code == 500
-    assert response.json()["detail"] == "Failed to generate static visit map"
-
-    app.dependency_overrides.pop(rsp_auth, None)
-
-
-@patch("lsst.ts.logging_and_reporting.main.get_visits")
-def test_visit_maps_no_visits_data(
-    mock_get_visits,
-):
-    # empty visits DataFrame
-    mock_get_visits.return_value = pd.DataFrame()
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-
-    response = client.get(
-        "/multi-night-visit-maps",
-        params={
-            "dayObsStart": 20240101,
-            "dayObsEnd": 20240102,
-            "instrument": "lsstCam",
-        },
-    )
-
-    # Should still return 200 with empty interactive data
-    assert response.status_code == 200
-    data = response.json()
-    assert "interactive" in data
-    assert data["interactive"] is None
-
-    app.dependency_overrides.pop(rsp_auth, None)
-
-
-@patch("lsst.ts.logging_and_reporting.main.get_visits")
-def test_visit_maps_read_visits_exception(
-    mock_get_visits,
-):
-    mock_get_visits.side_effect = Exception("Database connection error")
-
-    app.dependency_overrides[rsp_auth] = lambda: "dummy-token"
-
-    response = client.get(
-        "/multi-night-visit-maps",
-        params={
-            "dayObsStart": 20240101,
-            "dayObsEnd": 20240102,
-            "instrument": "lsstCam",
-        },
-    )
-
-    assert response.status_code == 500
-    assert "Database connection error" in response.json()["detail"]
-
-    app.dependency_overrides.pop(rsp_auth, None)
+    assert service.calls == [((20240101, 20240102, "lsstCam"), {})]
 
 
 def test_expected_exposures_endpoint_returns_service_response(override_service):
