@@ -113,7 +113,7 @@ async def health():
 
 
 @app.get("/exposures")
-async def read_exposures(
+def read_exposures(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -149,7 +149,7 @@ async def read_exposures(
 
 
 @app.get("/expected-exposures")
-async def read_expected_exposures(
+def read_expected_exposures(
     dayObsStart: int,
     dayObsEnd: int,
     service=Depends(services.get_expected_exposures_service),
@@ -159,7 +159,7 @@ async def read_expected_exposures(
 
 
 @app.get("/data-log")
-async def read_data_log(
+def read_data_log(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
