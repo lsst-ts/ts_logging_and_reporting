@@ -32,7 +32,7 @@ from lsst.ts.logging_and_reporting.services import (
     almanac_service,
     jira_service,
     rubin_nights_service,
-    scheduler_service,
+    static_visit_map,
     zephyr_service,
 )
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
@@ -103,15 +103,15 @@ def test_compute_nvisits_bundle_uses_static_map_plot_config(monkeypatch):
         def run_current(self, constraint, map_data):
             captured["run_current_args"] = (constraint, map_data)
 
-    monkeypatch.setattr(scheduler_service.maf, "MetricBundle", DummyMetricBundle)
-    monkeypatch.setattr(scheduler_service.maf, "MetricBundleGroup", DummyMetricBundleGroup)
+    monkeypatch.setattr(static_visit_map.maf, "MetricBundle", DummyMetricBundle)
+    monkeypatch.setattr(static_visit_map.maf, "MetricBundleGroup", DummyMetricBundleGroup)
 
     map_data = [{"s_ra": 10.0, "s_dec": -20.0, "sky_rotation": 45.0, "obs_start_mjd": 60000.0}]
-    scheduler_service._compute_nvisits_bundle(map_data)
+    static_visit_map._compute_nvisits_bundle(map_data)
 
     assert captured["plot_dict"]["title"] == ""
-    assert captured["plot_dict"]["bgcolor"] == scheduler_service.COLOR_BG
-    assert captured["plot_dict"]["badcolor"] == scheduler_service.COLOR_BG
+    assert captured["plot_dict"]["bgcolor"] == static_visit_map.COLOR_BG
+    assert captured["plot_dict"]["badcolor"] == static_visit_map.COLOR_BG
     assert captured["run_current_args"] == ("", map_data)
 
 
@@ -132,9 +132,9 @@ def test_build_static_visit_map_styles_and_adds_graticules(monkeypatch):
     def fake_add_graticules(main_ax):
         graticule_calls.append(main_ax)
 
-    monkeypatch.setattr(scheduler_service, "_compute_nvisits_bundle", lambda map_data: DummyBundle())
-    monkeypatch.setattr(scheduler_service, "_style_figure", fake_style_figure)
-    monkeypatch.setattr(scheduler_service, "_add_graticules", fake_add_graticules)
+    monkeypatch.setattr(static_visit_map, "_compute_nvisits_bundle", lambda map_data: DummyBundle())
+    monkeypatch.setattr(static_visit_map, "_style_figure", fake_style_figure)
+    monkeypatch.setattr(static_visit_map, "_add_graticules", fake_add_graticules)
 
     try:
         visits = pd.DataFrame(
@@ -148,7 +148,7 @@ def test_build_static_visit_map_styles_and_adds_graticules(monkeypatch):
                 }
             ]
         )
-        png_bytes = scheduler_service.build_static_visit_map(visits)
+        png_bytes = static_visit_map.build_static_visit_map(visits)
     finally:
         plt.close(fig)
 

@@ -20,20 +20,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import base64
 import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, List
 
-from bokeh.embed import json_item
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.concurrency import run_in_threadpool
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from lsst.ts.logging_and_reporting import adapters
-from lsst.ts.logging_and_reporting.exceptions import ConsdbQueryError
 from lsst.ts.logging_and_reporting.utils.auth import get_access_token
 
 from . import __version__, services
@@ -41,13 +37,6 @@ from .middleware import CacheControlMiddleware
 from .redis_client import get_redis_client
 from .refresh_worker import RefreshWorker
 from .services.consdb_service import get_mock_exposures
-from .services.rubin_nights_service import (
-    get_visits,
-)
-from .services.scheduler_service import (
-    build_static_visit_map,
-    build_visit_maps_using_builder,
-)
 
 # Auth dependencies (instantiated once for reuse and testing)
 rsp_auth = get_access_token()
@@ -294,40 +283,18 @@ def read_obs_status(
     return service.handle(dayObsStart, dayObsEnd, includeEntries, includeIntervals, nightOnlyMetrics, metrics)
 
 
-def _build_multi_night_visit_map(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
-    appletMode: bool,
-    auth_token: str,
-):
-    """Run blocking map generation logic outside the event loop."""
-    visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token)
-    v_map = None
-
-    if len(visits):
-        v_map = build_visit_maps_using_builder(
-            visits=visits,
-            applet_mode=appletMode,
-        )
-
-    return v_map
-
-
 @app.get("/multi-night-visit-maps")
-async def multi_night_visit_maps(
-    request: Request,
+def multi_night_visit_maps(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
     appletMode: bool = False,
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(services.get_visit_maps_service),
 ):
     """Generate multi-night visit maps using Bokeh.
+
     Parameters
     ----------
-    request : `Request`
-        FastAPI request object.
     dayObsStart : `int`
         Start date in YYYYMMDD format.
     dayObsEnd : `int`
@@ -336,8 +303,6 @@ async def multi_night_visit_maps(
         Instrument name (e.g., 'lsstCam', 'latiss', etc.).
     appletMode : `bool`, optional
         If True, generate maps suitable for applet display. Default is False.
-    auth_token : `str`
-        Authentication token (injected by FastAPI dependency).
 
     Returns
     -------
@@ -349,23 +314,7 @@ async def multi_night_visit_maps(
         f"{dayObsStart}, end: {dayObsEnd} "
         f"and instrument: {instrument} in appletMode: {appletMode}, "
     )
-
-    try:
-        v_map = await run_in_threadpool(
-            _build_multi_night_visit_map,
-            dayObsStart,
-            dayObsEnd,
-            instrument,
-            appletMode,
-            auth_token,
-        )
-        return {
-            "interactive": json_item(v_map) if v_map is not None else None,
-        }
-
-    except Exception as e:
-        logger.error(f"Error in /multi-night-visit-maps: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.handle(dayObsStart, dayObsEnd, instrument, appletMode)
 
 
 @app.get("/block-details")
@@ -377,51 +326,23 @@ def read_block_details(
     return service.handle(keys)
 
 
-def _encode_png_payload(image_bytes):
-    """Serialize PNG bytes into a JSON-safe payload.
-
-    Parameters
-    ----------
-    image_bytes : `bytes`
-        Raw bytes of the PNG image.
-
-    Returns
-    -------
-    `dict` or `None`
-        A dictionary containing the MIME type and base64-encoded
-        data of the image, or `None` if the input is `None`.
-    """
-    if image_bytes is None:
-        return None
-
-    return {
-        "mime_type": "image/png",
-        "data": base64.b64encode(image_bytes).decode("ascii"),
-    }
-
-
 @app.get("/static-visit-map")
-async def static_visit_map(
-    request: Request,
+def static_visit_map(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
-    auth_token: str = Depends(rsp_auth),
+    service=Depends(services.get_static_visit_map_service),
 ):
     """Generate a static visit map for a date range and instrument.
 
     Parameters
     ----------
-    request : `Request`
-        FastAPI request object.
     dayObsStart : `int`
         Start date in YYYYMMDD format.
     dayObsEnd : `int`
         End date in YYYYMMDD format.
     instrument : `str`
         Instrument name, such as ``lsstCam`` or ``latiss``.
-    auth_token : `str`
-        Authentication token injected by the FastAPI dependency.
 
     Returns
     -------
@@ -435,16 +356,4 @@ async def static_visit_map(
         dayObsEnd,
         instrument,
     )
-    try:
-        visits = get_visits(dayObsStart, dayObsEnd, instrument, auth_token=auth_token, augment=False)
-
-        png_bytes = build_static_visit_map(visits)
-
-        return {"static_map": _encode_png_payload(png_bytes) if png_bytes else None}
-
-    except ConsdbQueryError as ce:
-        logger.error("ConsdbQueryError in /static-map: %s", ce, exc_info=True)
-        raise HTTPException(status_code=502, detail="ConsDB query failed")
-    except Exception as e:
-        logger.error("Failed to build visit map: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to generate static visit map")
+    return service.handle(dayObsStart, dayObsEnd, instrument)
