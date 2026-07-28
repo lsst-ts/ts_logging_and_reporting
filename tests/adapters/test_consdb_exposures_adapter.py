@@ -56,6 +56,29 @@ class TestQueryBuilding:
             adapter._fetch_run("lsstcam", 20250101, 20250101)
         assert mock_post.call_args.args[0] == f"{SERVER}/consdb/query"
 
+    @pytest.mark.parametrize(
+        "deployment",
+        [
+            "https://summit-lsp.lsst.codes",
+            "https://base-lsp.lsst.codes",
+        ],
+    )
+    def test_efd_join_omitted_where_transform_unavailable(self, adapter, monkeypatch, deployment):
+        monkeypatch.setenv("EXTERNAL_INSTANCE_URL", deployment)
+        mock_post = consdb_post([])
+        with patch("requests.post", mock_post):
+            adapter._fetch_run("lsstcam", 20250101, 20250101)
+        sql = sent_sql(mock_post)
+        assert "exposure_efd" not in sql
+        assert sql.startswith("SELECT e.*, q.*")
+
+    def test_efd_join_kept_at_efd_available_deployment(self, adapter, monkeypatch):
+        monkeypatch.setenv("EXTERNAL_INSTANCE_URL", "https://usdf-rsp.slac.stanford.edu")
+        mock_post = consdb_post([])
+        with patch("requests.post", mock_post):
+            adapter._fetch_run("lsstcam", 20250101, 20250101)
+        assert "LEFT JOIN efd_lsstcam.exposure_efd" in sent_sql(mock_post)
+
 
 class TestRowShaping:
     def test_zips_columns_and_data_into_records(self, adapter):
