@@ -28,6 +28,7 @@ from lsst.ts.logging_and_reporting.adapters.base_adapters import InstrumentDayob
 from lsst.ts.logging_and_reporting.adapters.base_clients import SqlClient
 from lsst.ts.logging_and_reporting.adapters.mixins import ConsdbSqlMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
+from lsst.ts.logging_and_reporting.utils.auth import Server
 
 # Transformed-EFD channels folded into each exposure record via a LEFT
 # JOIN, per instrument. An empty/absent list means no EFD join.
@@ -35,6 +36,20 @@ EFD_FIELDS = {
     "lsstcam": ["mt_salindex112_temperature_0_mean"],
     "latiss": [],
 }
+
+# Deployments without the transformed-EFD schema; the join is omitted there.
+EFD_UNAVAILABLE_DEPLOYMENTS = {Server.summit, Server.base}
+
+
+def efd_transform_available() -> bool:
+    """Whether this deployment exposes the transformed-EFD schema.
+
+    An unset/unknown deployment defaults to available (dev and tests).
+    """
+    try:
+        return Server.get_url() not in EFD_UNAVAILABLE_DEPLOYMENTS
+    except ValueError:
+        return True
 
 
 class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
@@ -49,7 +64,7 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
     name = "consdb_exposures"
 
     def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> list[dict]:
-        efd_fields = EFD_FIELDS.get(instrument, [])
+        efd_fields = EFD_FIELDS.get(instrument, []) if efd_transform_available() else []
         efd_columns = "".join(f", f.{field}" for field in efd_fields)
         efd_join = (
             f"LEFT JOIN efd_{instrument}.exposure_efd f ON e.exposure_id = f.exposure_id"
