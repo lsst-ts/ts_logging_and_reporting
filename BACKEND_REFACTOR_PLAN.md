@@ -922,13 +922,19 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
 7. ✅ **`rubin_nights` split** — largest and riskiest; leave last so the pattern is well-established
    before touching the most complex code. Includes the `/exposures` collation
    (dome + time accounting), the context feed, and both visit-map services
-8. **Final cleanup** — delete the old adapters and services superseded along the way
-   (`jira.py`, `jira_service.py`, `zephyr_service.py`, `almanac.py`/`almanac_service.py`,
-   `exposure_log.py`, `consdb.py`, `source_adapters.py`, `rubin_nights_service.py`,
-   `scheduler_service.py` remnants) and remove **all** now-unused code they leave behind:
-   helper functions (`build_block_response`, the `ZEPHYR_BLOCK_BASE_URL`/
-   `JIRA_BLOCK_BASE_URL` constants), dead tests, and — being thorough — every import that
-   is no longer used anywhere, in both `python/` and `tests/`
+8. **Final cleanup** — done leaf-first in stages, one commit each:
+   - ✅ **Stage 1 (dead legacy services):** deleted `rubin_nights_service.py`, `scheduler_service.py`,
+     `jira_service.py`, `zephyr_service.py`, `almanac_service.py` and their tests; `test_services.py`
+     removed (its two live `static_visit_map` viz tests relocated); `test_get_time_accounting.py` renamed
+     to `tests/services/test_time_accounting_helpers.py` and trimmed to the live reduction-helper tests;
+     `test_dome_hours.py` removed with its `TestDayobsAt` moved to `tests/utils/test_dayobs.py`.
+   - ⬜ **Stage 2 (orphaned root/source modules):** `almanac.py`, `jira.py`, `exposure_log.py`,
+     `consdb.py`, `source_adapters.py`, `efd.py`; plus `/mock-exposures` + `consdb_service.py` (user chose
+     to nuke the mock endpoint too), and helper leftovers (`build_block_response`, the
+     `ZEPHYR_BLOCK_BASE_URL`/`JIRA_BLOCK_BASE_URL` constants).
+   - ⬜ **Stage 3 (residual dead code + import purge):** drop `rsp_auth`/`get_access_token` from `main.py`
+     and the no-op `override_service[rsp_auth]` lines; then a tree-wide sweep for every import no longer
+     used anywhere, in both `python/` and `tests/`.
    - **8.1 Summit EFD-transform availability** (not yet fleshed out) — the transformed EFD
      data (the `exposure_efd` columns the ConsDB exposure query folds in via `LEFT JOIN`,
      consumed by e.g. the data log) is **not available at the summit deployment**. The
