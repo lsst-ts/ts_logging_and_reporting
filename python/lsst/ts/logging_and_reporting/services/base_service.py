@@ -30,6 +30,8 @@ layer; no Redis interaction occurs here.
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import requests
@@ -44,9 +46,10 @@ class Service(ABC):
     """A thin collator over one or more adapters.
 
     Subclasses define their own typed ``handle_request`` signature;
-    the typical implementation calls each adapter's ``fetch`` (or the
-    `fetch_all` helper), then returns `collate_response` of the merged
-    result.
+    the typical implementation calls its adapter's ``fetch`` directly
+    (single-adapter services) or fans several fetches out through the
+    `fetch_concurrently` helper, then returns `collate_response` of the
+    merged result.
 
     Parameters
     ----------
@@ -87,20 +90,25 @@ class Service(ABC):
             logger.exception(f"{type(self).__name__} request failed")
             raise HTTPException(status_code=500, detail=str(e))
 
-    def fetch_all(self, start_dayobs: int, end_dayobs: int) -> dict[int, dict[str, Any]]:
-        """Fetch the range from every adapter and merge per dayobs.
+    def fetch_concurrently(self, tasks: dict[str, Callable[[], Any]]) -> dict[str, Any]:
+        """Run each fetch thunk on a pool, returning result-or-exception.
 
-        Returns
-        -------
-        `dict` [`int`, `dict` [`str`, `Any`]]
-            For each dayobs, the per-adapter results keyed by adapter
-            name, e.g. ``{20250101: {"consdb": [...], "dome": [...]}}``.
+        ``tasks`` maps a caller-chosen name to a zero-argument fetch
+        callable. Each name maps back to its return value, or to the
+        exception it raised so one failing fetch never aborts the others.
         """
-        merged: dict[int, dict[str, Any]] = {}
-        for name, adapter in self.adapters.items():
-            for dayobs, data in adapter.fetch(start_dayobs, end_dayobs).items():
-                merged.setdefault(dayobs, {})[name] = data
-        return merged
+        if not tasks:
+            return {}
+        results: dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            futures = {executor.submit(task): name for name, task in tasks.items()}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    results[name] = future.result()
+                except Exception as e:
+                    results[name] = e
+        return results
 
     @abstractmethod
     def collate_response(self, data: dict[int, Any]) -> dict:
