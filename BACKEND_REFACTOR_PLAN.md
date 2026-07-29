@@ -951,12 +951,25 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      only `Server` for the deployment identity. Nothing downstream references EFD columns by
      name (`/exposures` projects the EFD-free `EXPOSURE_COLUMNS`; `/data-log` returns whatever
      columns the record has), so omission degrades cleanly with no service changes.
-   - **8.2 Concurrency** - ensure that all services that request data from more than
-     one adapter do so in a way which is concurrent, not serial. Do this by
-     ensuring that all services use the _fetch_all helper (even those with just a
-     single adapter) and that this helper is concurrent and does not delay any
-     adapter fetch start. Perhaps we even want to bake this in, change the 
-     handle method to also accept the fetched data as a parameter
+   - ✅ **8.2 Concurrency** — the three multi-adapter services (`exposures`,
+     `block-details`, `obs-status`) fetched their adapters serially. `Service` now
+     provides `fetch_concurrently(tasks: dict[str, Callable[[], Any]])` (replacing the
+     unused `fetch_all`), which runs named fetch thunks on a `ThreadPoolExecutor` and
+     returns each name mapped to its result **or the exception it raised** — so one
+     failing source degrades or propagates per the caller's own logic instead of aborting
+     the rest. `exposures` fans out consdb/dome/overhead (almanac stays a follow-on inside
+     `_time_accounting`, gated on overhead rows); `block-details` fans out the zephyr/jira
+     id lookups; `obs-status` overlaps the events fetch with the almanac only when
+     night-windowed metrics are requested. Each `_dome_hours`/`_time_accounting`/
+     `_night_windows` helper now takes its fetched result-or-exception rather than fetching.
+     Decisions that diverged from the note above: single-adapter services keep calling
+     `.fetch()` directly (no gain from a threadpool hop, and it would only add indirection);
+     and `handle` was **not** changed to pre-fetch data, because what to fetch is
+     service-specific (heterogeneous args, conditional/dependent fetches) — the helper
+     called from within each `handle_request` is the right seam. Precursor: the
+     `exposures`/`expected-exposures`/`data-log` endpoints were still `async def` calling a
+     blocking `handle`; converted to plain `def` so the blocking work (and its threadpool
+     fan-out) runs in FastAPI's worker pool, not on the event loop.
    - **8.3 Refactor test_api_endpoints** - At 1500 LOC it's too big. Split it into several
      files, one per endpoint. Although, since we actually test at the service level 
      perhaps this should simply test the Service.handle and middleware infrastructure

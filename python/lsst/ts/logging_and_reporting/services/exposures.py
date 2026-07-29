@@ -238,12 +238,21 @@ class ExposuresService(Service):
         instrument : `str`
             Instrument to query (e.g. ``LSSTCam``).
         """
-        per_day = self.adapters["consdb"].fetch(
-            instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
+        inclusive_end = add_or_subtract_dayobs_days(day_obs_end, -1)
+        fetched = self.fetch_concurrently(
+            {
+                "consdb": lambda: self.adapters["consdb"].fetch(instrument, day_obs_start, inclusive_end),
+                "dome": lambda: self.adapters["dome"].fetch(day_obs_start, inclusive_end),
+                "overhead": lambda: self.adapters["overhead"].fetch(instrument, day_obs_start, inclusive_end),
+            }
         )
-        response = self.collate_response(per_day)
-        response.update(self._dome_hours(day_obs_start, day_obs_end))
-        response.update(self._time_accounting(day_obs_start, day_obs_end, instrument))
+        # Exposures are the core payload, so a ConsDB failure fails the
+        # request; dome and time accounting degrade to error fields instead.
+        if isinstance(fetched["consdb"], Exception):
+            raise fetched["consdb"]
+        response = self.collate_response(fetched["consdb"])
+        response.update(self._dome_hours(fetched["dome"]))
+        response.update(self._time_accounting(fetched["overhead"], day_obs_start, day_obs_end))
         logger.debug(
             f"Fetched {response['exposures_count']} exposures for dayObsStart: {day_obs_start}, "
             f"dayObsEnd: {day_obs_end} and instrument: {instrument}"
@@ -266,11 +275,17 @@ class ExposuresService(Service):
             "total_on_sky_exposure_time": sum(exposure.get("exp_time") or 0 for exposure in on_sky),
         }
 
-    def _dome_hours(self, day_obs_start: int, day_obs_end: int) -> dict:
-        """Dome open/close times and per-night open/closed hours."""
+    def _dome_hours(self, dome_result: dict | Exception) -> dict:
+        """Dome open/close times and per-night open/closed hours.
+
+        ``dome_result`` is the dome adapter's per-dayobs sessions, or the
+        exception it raised (degraded to an error field).
+        """
         open_dome_times_records, open_dome_hours_records, open_dome_error = [], {}, None
         try:
-            per_day = self.adapters["dome"].fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
+            if isinstance(dome_result, Exception):
+                raise dome_result
+            per_day = dome_result
             open_dome_times_records = [record for dayobs in sorted(per_day) for record in per_day[dayobs]]
 
             try:
@@ -294,19 +309,22 @@ class ExposuresService(Service):
             "open_dome_error": open_dome_error,
         }
 
-    def _time_accounting(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
+    def _time_accounting(
+        self, overhead_result: dict | Exception, day_obs_start: int, day_obs_end: int
+    ) -> dict:
         """Twilight-windowed on-sky time accounting for the range.
 
-        The per-visit overhead comes from the cached overhead adapter and
-        the twilight windows from the almanac adapter; the reduction is
-        computed over the whole range so the filter-change split is
-        correct across night boundaries.
+        ``overhead_result`` is the overhead adapter's per-visit rows, or
+        the exception it raised (degraded to an error field). The twilight
+        windows come from the almanac adapter (fetched only when there are
+        overhead rows); the reduction runs over the whole range so the
+        filter-change split is correct across night boundaries.
         """
         night_time_on_sky_sums, time_accounting_error = None, None
         try:
-            per_day = self.adapters["overhead"].fetch(
-                instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-            )
+            if isinstance(overhead_result, Exception):
+                raise overhead_result
+            per_day = overhead_result
             rows = [record for dayobs in sorted(per_day) for record in per_day[dayobs]]
             if not rows:
                 night_time_on_sky_sums = dict(_EMPTY_TIME_ACCOUNTING)

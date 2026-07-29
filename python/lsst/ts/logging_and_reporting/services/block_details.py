@@ -73,18 +73,24 @@ class BlockDetailsService(Service):
             "jira": [key for key in keys if JIRA_BLOCK_RE.match(key)],
         }
 
+        fetched = self.fetch_concurrently(
+            {
+                source: (lambda source=source, wanted=wanted: self.adapters[source].fetch_by_ids(wanted))
+                for source, wanted in source_keys.items()
+                if wanted
+            }
+        )
+
         summaries: dict[str, dict] = {"zephyr": {}, "jira": {}}
         errors: dict[str, str] = {}
-        for source, wanted in source_keys.items():
-            if not wanted:
-                continue
-            try:
-                summaries[source] = self.adapters[source].fetch_by_ids(wanted)
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.exception(f"{source} fetch failed in /block-details")
-                errors[source] = str(e)
+        for source, result in fetched.items():
+            if isinstance(result, HTTPException):
+                raise result
+            if isinstance(result, Exception):
+                logger.error(f"{source} fetch failed in /block-details: {result}", exc_info=result)
+                errors[source] = str(result)
+            else:
+                summaries[source] = result
 
         if "zephyr" in errors and "jira" in errors:
             raise HTTPException(status_code=500, detail="Both Zephyr and Jira requests failed.")
