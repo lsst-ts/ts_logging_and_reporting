@@ -24,7 +24,6 @@
 
 import functools
 import logging
-from collections import defaultdict
 
 from astropy.time import Time
 
@@ -62,13 +61,10 @@ class RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
             return {}
         frame = frame.reset_index(names="time")
         frame["time_ms"] = frame["time"].astype("int64") // 1_000_000
-        # Bucket by each event's own dayobs, computed from the raw
-        # timestamps before make_json_safe stringifies them.
         event_dayobs = [dayobs_at(time) for time in frame["time"]]
-        partition: dict[int, list[dict]] = defaultdict(list)
-        for dayobs, record in zip(event_dayobs, make_json_safe(frame.to_dict(orient="records"))):
-            partition[dayobs].append(record)
-        return partition
+        records = make_json_safe(frame.to_dict(orient="records"))
+        partition = self._partition_by_field(list(zip(event_dayobs, records)), key=lambda pair: pair[0])
+        return {dayobs: [pair[1] for pair in pairs] for dayobs, pairs in partition.items()}
 
 
 @functools.cache

@@ -24,7 +24,6 @@
 
 import functools
 import logging
-from collections import defaultdict
 
 from astropy.time import Time
 from rubin_nights.scriptqueue import get_consolidated_messages
@@ -79,15 +78,12 @@ class RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
         if frame is None or frame.empty:
             return {}
         frame = frame[frame.columns.intersection(CONTEXT_FEED_COLS)]
-        # Bucket by raw timestamp before serialization stringifies it.
         event_dayobs = [dayobs_at(time) for time in frame["time"]]
         # stringify keeps NaN/inf as the tokens the frontend expects;
         # make_json_safe then renders timestamps and numpy scalars.
         records = make_json_safe(frame.map(stringify_special_floats).to_dict(orient="records"))
-        partition: dict[int, list[dict]] = defaultdict(list)
-        for dayobs, record in zip(event_dayobs, records):
-            partition[dayobs].append(record)
-        return partition
+        partition = self._partition_by_field(list(zip(event_dayobs, records)), key=lambda pair: pair[0])
+        return {dayobs: [pair[1] for pair in pairs] for dayobs, pairs in partition.items()}
 
 
 @functools.cache

@@ -63,7 +63,7 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
 
     name = "consdb_exposures"
 
-    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> list[dict]:
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
         efd_fields = EFD_FIELDS.get(instrument, []) if efd_transform_available() else []
         efd_columns = "".join(f", f.{field}" for field in efd_fields)
         efd_join = (
@@ -79,7 +79,7 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
             {efd_join}
             WHERE {run_start} <= e.day_obs AND e.day_obs <= {run_end}
         """
-        return self._query(" ".join(sql.split()))
+        return self._partition_by_field(self._query(" ".join(sql.split())))
 
 
 @functools.cache
