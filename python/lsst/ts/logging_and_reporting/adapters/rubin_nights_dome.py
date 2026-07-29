@@ -24,6 +24,7 @@
 
 import functools
 import logging
+from collections import defaultdict
 
 from astropy.time import Time
 from rubin_nights.observatory_status import get_dome_open_close
@@ -33,7 +34,6 @@ from lsst.ts.logging_and_reporting.adapters.mixins import RubinNightsClientsMixi
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
-    contiguous_runs,
     get_utc_datetime_from_dayobs_str,
 )
 from lsst.ts.logging_and_reporting.utils.serialization import make_json_safe
@@ -56,22 +56,18 @@ class RubinNightsDomeAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
 
     name = "rubin_nights_dome"
 
-    def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, list[dict]]:
-        results: dict[int, list[dict]] = {dayobs: [] for dayobs in dayobs_list}
-        for run_start, run_end in contiguous_runs(dayobs_list):
-            logger.debug(f"Fetching dome open/close times for dayobs {run_start}..{run_end}")
-            # get_dome_open_close's dayobs window is [start, end) at noon
-            # UTC, so query to noon after run_end to cover the run.
-            t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
-            t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
-            frame = get_dome_open_close(t_start, t_end, self._efd_client)
-            if frame is None or frame.empty:
-                continue
-            for record in make_json_safe(frame.to_dict(orient="records")):
-                dayobs = int(record["day_obs"])
-                if dayobs in results:
-                    results[dayobs].append(record)
-        return results
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        # get_dome_open_close's dayobs window is [start, end) at noon
+        # UTC, so query to noon after run_end to cover the run.
+        t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
+        t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
+        frame = get_dome_open_close(t_start, t_end, self._efd_client)
+        if frame is None or frame.empty:
+            return {}
+        partition: dict[int, list[dict]] = defaultdict(list)
+        for record in make_json_safe(frame.to_dict(orient="records")):
+            partition[int(record["day_obs"])].append(record)
+        return partition
 
 
 @functools.cache

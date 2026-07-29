@@ -233,24 +233,53 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
         """
         return self._fetch_cached(dayobs_range(start_dayobs, end_dayobs))
 
-    @abstractmethod
     def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, Any]:
-        """Fetch the given (cache-missing) dayobs from upstream.
+        """Fetch the cache-missing dayobs, one `_fetch_run` per run.
+
+        Seeds every requested dayobs with `_empty_value`, then merges in
+        the partition from one range fetch per contiguous run. A run can
+        return a straddling dayobs just outside its bounds (fan-out and
+        timestamp-derived adapters bucket by a record's own date), so
+        any dayobs not in the request is dropped here.
 
         Parameters
         ----------
         dayobs_list : `list` [`int`]
-            Only the dayobs that were not found in the cache. May be
-            non-contiguous; adapters wrapping range-based upstream
-            APIs should group it with `contiguous_runs` and issue one
-            range request per run.
+            The cache-missing dayobs (YYYYMMDD); may be non-contiguous.
 
         Returns
         -------
         `dict` [`int`, `Any`]
-            Processed, frontend-ready, JSON-serialisable data with an
-            entry for every requested dayobs (an empty container for
+            One entry per requested dayobs (the seeded empty value for
             nights with no data).
+        """
+        results: dict[int, Any] = {dayobs: self._empty_value() for dayobs in dayobs_list}
+        for run_start, run_end in contiguous_runs(dayobs_list):
+            logger.debug(f"Fetching {self.name} for dayobs {run_start}..{run_end}")
+            for dayobs, value in self._fetch_run(run_start, run_end).items():
+                if dayobs in results:
+                    results[dayobs] = value
+        return results
+
+    def _empty_value(self) -> Any:
+        """Seed for a dayobs with no data (default: an empty row list)."""
+        return []
+
+    @abstractmethod
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, Any]:
+        """Fetch one contiguous dayobs run, partitioned by dayobs.
+
+        Parameters
+        ----------
+        run_start, run_end : `int`
+            Inclusive bounds of the run, in YYYYMMDD form.
+
+        Returns
+        -------
+        `dict` [`int`, `Any`]
+            The run's JSON-serialisable data keyed by dayobs. Only
+            dayobs with data need appear; the base seeds the rest and
+            drops any that straddle outside the requested range.
         """
         raise NotImplementedError
 

@@ -30,6 +30,7 @@ from rubin_sim.sim_archive import fetch_sim_stats_for_night
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
+from lsst.ts.logging_and_reporting.utils.dayobs import dayobs_range
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,8 @@ class ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter):
 
     name = "expected_exposures"
 
-    def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, int]:
-        return {dayobs: self._nominal_visits(dayobs) for dayobs in dayobs_list}
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, int]:
+        return {dayobs: self._nominal_visits(dayobs) for dayobs in dayobs_range(run_start, run_end)}
 
     def _nominal_visits(self, dayobs: int) -> int:
         logger.debug(f"Fetching expected exposures for dayobs {dayobs}")
