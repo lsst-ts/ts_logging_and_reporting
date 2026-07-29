@@ -24,6 +24,7 @@
 
 import functools
 import logging
+from collections import defaultdict
 
 from astropy.time import Time
 from rubin_nights.scriptqueue import get_consolidated_messages
@@ -33,7 +34,6 @@ from lsst.ts.logging_and_reporting.adapters.mixins import RubinNightsClientsMixi
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
-    contiguous_runs,
     dayobs_at,
     get_utc_datetime_from_dayobs_str,
 )
@@ -72,25 +72,22 @@ class RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
 
     name = "rubin_nights_context"
 
-    def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, list[dict]]:
-        results: dict[int, list[dict]] = {dayobs: [] for dayobs in dayobs_list}
-        for run_start, run_end in contiguous_runs(dayobs_list):
-            logger.debug(f"Fetching context-feed messages for dayobs {run_start}..{run_end}")
-            t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
-            t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
-            frame, _ = get_consolidated_messages(t_start, t_end, self._clients, all_tracebacks=True)
-            if frame is None or frame.empty:
-                continue
-            frame = frame[frame.columns.intersection(CONTEXT_FEED_COLS)]
-            # Bucket by raw timestamp before serialization stringifies it.
-            event_dayobs = [dayobs_at(time) for time in frame["time"]]
-            # stringify keeps NaN/inf as the tokens the frontend expects;
-            # make_json_safe then renders timestamps and numpy scalars.
-            records = make_json_safe(frame.map(stringify_special_floats).to_dict(orient="records"))
-            for dayobs, record in zip(event_dayobs, records):
-                if dayobs in results:
-                    results[dayobs].append(record)
-        return results
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
+        t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
+        frame, _ = get_consolidated_messages(t_start, t_end, self._clients, all_tracebacks=True)
+        if frame is None or frame.empty:
+            return {}
+        frame = frame[frame.columns.intersection(CONTEXT_FEED_COLS)]
+        # Bucket by raw timestamp before serialization stringifies it.
+        event_dayobs = [dayobs_at(time) for time in frame["time"]]
+        # stringify keeps NaN/inf as the tokens the frontend expects;
+        # make_json_safe then renders timestamps and numpy scalars.
+        records = make_json_safe(frame.map(stringify_special_floats).to_dict(orient="records"))
+        partition: dict[int, list[dict]] = defaultdict(list)
+        for dayobs, record in zip(event_dayobs, records):
+            partition[dayobs].append(record)
+        return partition
 
 
 @functools.cache

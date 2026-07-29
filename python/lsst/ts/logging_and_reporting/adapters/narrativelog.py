@@ -25,6 +25,7 @@
 import datetime as dt
 import functools
 import logging
+from collections import defaultdict
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
@@ -33,7 +34,6 @@ from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
-    contiguous_runs,
     dayobs_at,
 )
 
@@ -72,27 +72,24 @@ class NarrativelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapte
         super().__init__(redis, server_url=server_url)
         self._page_limit = page_limit
 
-    def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, list[dict]]:
-        results: dict[int, list[dict]] = {dayobs: [] for dayobs in dayobs_list}
-        for run_start, run_end in contiguous_runs(dayobs_list):
-            logger.debug(f"Fetching Narrative Log messages for dayobs {run_start}..{run_end}")
-            messages = self._get_json_paged(
-                f"{self.server}/narrativelog/messages",
-                params={
-                    "is_human": "either",
-                    "is_valid": "true",
-                    "order_by": "-date_begin",
-                    "min_date_begin": _noon_utc(run_start),
-                    "max_date_begin": _noon_utc(add_or_subtract_dayobs_days(run_end, 1)),
-                },
-                page_limit=self._page_limit,
-            )
-            for message in messages:
-                self._add_instrument(message)
-                dayobs = dayobs_at(dt.datetime.fromisoformat(message["date_begin"]))
-                if dayobs in results:
-                    results[dayobs].append(message)
-        return results
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        messages = self._get_json_paged(
+            f"{self.server}/narrativelog/messages",
+            params={
+                "is_human": "either",
+                "is_valid": "true",
+                "order_by": "-date_begin",
+                "min_date_begin": _noon_utc(run_start),
+                "max_date_begin": _noon_utc(add_or_subtract_dayobs_days(run_end, 1)),
+            },
+            page_limit=self._page_limit,
+        )
+        partition: dict[int, list[dict]] = defaultdict(list)
+        for message in messages:
+            self._add_instrument(message)
+            dayobs = dayobs_at(dt.datetime.fromisoformat(message["date_begin"]))
+            partition[dayobs].append(message)
+        return partition
 
     @staticmethod
     def _add_instrument(message: dict) -> None:

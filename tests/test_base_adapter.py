@@ -30,13 +30,13 @@ class RecordingAdapter(DayobsCachedAdapter):
         self.delay = delay
         self.error = error
 
-    def _fetch_from_source(self, dayobs_list):
-        self.calls.append(list(dayobs_list))
+    def _fetch_run(self, run_start, run_end):
+        self.calls.append((run_start, run_end))
         if self.delay:
             time.sleep(self.delay)
         if self.error is not None:
             raise self.error
-        return {dayobs: f"data-{dayobs}" for dayobs in dayobs_list}
+        return {dayobs: f"data-{dayobs}" for dayobs in dayobs_range(run_start, run_end)}
 
 
 class RecordingIdAdapter(IdCachedAdapter):
@@ -57,7 +57,7 @@ class TestCacheLoop:
         adapter = RecordingAdapter(fake_redis)
         result = adapter.fetch(20250101, 20250103)
         assert result == {d: f"data-{d}" for d in dayobs_range(20250101, 20250103)}
-        assert adapter.calls == [[20250101, 20250102, 20250103]]
+        assert adapter.calls == [(20250101, 20250103)]
         assert fake_redis.get("adapter:recording:20250102") is not None
 
     def test_hot_never_contacts_source(self, fake_redis):
@@ -73,13 +73,14 @@ class TestCacheLoop:
         adapter.fetch(20250102, 20250102)
         adapter.calls.clear()
         adapter.fetch(20250101, 20250103)
-        assert adapter.calls == [[20250101, 20250103]]  # non-contiguous misses
+        # The cached 20250102 splits the misses into two single-day runs.
+        assert adapter.calls == [(20250101, 20250101), (20250103, 20250103)]
 
     def test_values_json_roundtrip(self, fake_redis):
         class StructuredAdapter(RecordingAdapter):
-            def _fetch_from_source(self, dayobs_list):
-                self.calls.append(list(dayobs_list))
-                return {d: {"n": d, "items": [1, 2], "empty": None} for d in dayobs_list}
+            def _fetch_run(self, run_start, run_end):
+                self.calls.append((run_start, run_end))
+                return {d: {"n": d, "items": [1, 2], "empty": None} for d in dayobs_range(run_start, run_end)}
 
         adapter = StructuredAdapter(fake_redis)
         first = adapter.fetch(20250101, 20250101)
@@ -89,9 +90,9 @@ class TestCacheLoop:
 
     def test_cached_null_is_a_hit(self, fake_redis):
         class NullAdapter(RecordingAdapter):
-            def _fetch_from_source(self, dayobs_list):
-                self.calls.append(list(dayobs_list))
-                return {d: None for d in dayobs_list}
+            def _fetch_run(self, run_start, run_end):
+                self.calls.append((run_start, run_end))
+                return {d: None for d in dayobs_range(run_start, run_end)}
 
         adapter = NullAdapter(fake_redis)
         adapter.fetch(20250101, 20250101)
@@ -187,7 +188,7 @@ class TestSingleFlight:
         fake_redis.set("lock:adapter:recording:20250101", "1", ex=0.05)
         result = adapter.fetch(20250101, 20250101)
         assert result == {20250101: "data-20250101"}
-        assert adapter.calls == [[20250101]]
+        assert adapter.calls == [(20250101, 20250101)]
 
     def test_lock_released_after_successful_fetch(self, fake_redis):
         adapter = RecordingAdapter(fake_redis)

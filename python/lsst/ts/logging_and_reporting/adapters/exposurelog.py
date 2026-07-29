@@ -24,13 +24,14 @@
 
 import functools
 import logging
+from collections import defaultdict
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.adapters.base_clients import RestClient
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
-from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days, contiguous_runs
+from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 
 logger = logging.getLogger(__name__)
 
@@ -51,30 +52,24 @@ class ExposurelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapter
         super().__init__(redis, server_url=server_url)
         self._limit = limit
 
-    def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, list[dict]]:
-        results: dict[int, list[dict]] = {dayobs: [] for dayobs in dayobs_list}
-        # The API takes a min/max dayobs range, so issue one request
-        # per contiguous run of missing days.
-        for run_start, run_end in contiguous_runs(dayobs_list):
-            logger.debug(f"Fetching Exposure Log messages for dayobs {run_start}..{run_end}")
-            messages = self._get_json(
-                f"{self.server}/exposurelog/messages",
-                params={
-                    "is_human": "true",
-                    "order_by": "-date_added",
-                    "limit": self._limit,
-                    "min_day_obs": run_start,
-                    # The upstream max_day_obs parameter is exclusive.
-                    "max_day_obs": add_or_subtract_dayobs_days(run_end, 1),
-                },
-            )
-            for message in messages:
-                if message.get("exposure_flag") == "none":
-                    message["exposure_flag"] = "unknown"
-                dayobs = message.get("day_obs")
-                if dayobs in results:
-                    results[dayobs].append(message)
-        return results
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        messages = self._get_json(
+            f"{self.server}/exposurelog/messages",
+            params={
+                "is_human": "true",
+                "order_by": "-date_added",
+                "limit": self._limit,
+                "min_day_obs": run_start,
+                # The upstream max_day_obs parameter is exclusive.
+                "max_day_obs": add_or_subtract_dayobs_days(run_end, 1),
+            },
+        )
+        partition: dict[int, list[dict]] = defaultdict(list)
+        for message in messages:
+            if message.get("exposure_flag") == "none":
+                message["exposure_flag"] = "unknown"
+            partition[message.get("day_obs")].append(message)
+        return partition
 
 
 @functools.cache

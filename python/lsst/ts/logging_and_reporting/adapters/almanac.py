@@ -35,6 +35,7 @@ from astropy.time import Time
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
 from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
+from lsst.ts.logging_and_reporting.utils.dayobs import dayobs_range
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +73,8 @@ class AlmanacCachedAdapter(DayobsCachedAdapter):
         even for today's entry."""
         return HISTORIC_TTL_REDIS
 
-    def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, dict]:
-        return {dayobs: self._compute_night(dayobs) for dayobs in dayobs_list}
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, dict]:
+        return {dayobs: self._compute_night(dayobs) for dayobs in dayobs_range(run_start, run_end)}
 
     def _compute_night(self, dayobs: int) -> dict:
         logger.debug(f"Computing almanac events for dayobs {dayobs}")
