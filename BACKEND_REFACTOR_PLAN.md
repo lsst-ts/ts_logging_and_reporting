@@ -994,8 +994,20 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
       an interesting thing we need to check. We should ensure that all services 
       return json-safe data, and that all adapters also pass json-safe data. This 
       is mostly a concern of the rubin_nights based adapters, which use DataFrames
-   - **8.5 Align `DayobsCachedAdapter` on a `_fetch_run` contract** — `DayobsCachedAdapter`
-     subclasses currently implement `_fetch_from_source(dayobs_list)`, and each one repeats the
+   - ✅ **8.5 Align `DayobsCachedAdapter` on a `_fetch_run` contract** — done in two commits.
+     Commit 1 (`993c344`): the seed / `contiguous_runs` / out-of-range-guard preamble moved off
+     the nine subclasses; each now implements `_fetch_run(run_start, run_end) -> dict[int, Any]`
+     returning just its dayobs partition. Commit 2 (`e42e672`): converged
+     `InstrumentDayobsCachedAdapter` onto the same dict contract — the shared loop+guard live in
+     `CachedAdapter._collate_runs` (used by both dayobs bases), `InstrumentDayobs` keeps only its
+     instrument grouping + composite re-keying, and `_fetch_run` returns `dict[int, list]` for
+     both. Row bucketing is one shared `CachedAdapter._partition_by_field(rows, key=...)` helper
+     (a field name or a computed key); `jira_obs` fan-out and the `obs_status`/`context`
+     timestamp-derived buckets go through it via `(dayobs, record)` pairs. The out-of-range guard
+     the whole item was about now exists in exactly one place. Original notes below.
+
+     **Original design notes:** `DayobsCachedAdapter` subclasses implemented
+     `_fetch_from_source(dayobs_list)`, each repeating the
      same three-part preamble: seed `results` with an empty container per dayobs, loop over
      `contiguous_runs`, then guard every returned row with `if dayobs in results`. Seven of the
      nine subclasses do this. Move that loop into `DayobsCachedAdapter._fetch_from_source` and
@@ -1032,6 +1044,8 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      - **Test migration is the bulk of the diff.** Check `grep -rn "_fetch_from_source" tests/`
        first — fakes and stubs that override `_fetch_from_source` to exercise the cache loop
        need the same rework as the adapters themselves.
+    - **8.6 concurrency 2** - The zephyr scale adapter does sequential queries for each block
+       passed to it. We should fix that
 
 9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
    `main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct

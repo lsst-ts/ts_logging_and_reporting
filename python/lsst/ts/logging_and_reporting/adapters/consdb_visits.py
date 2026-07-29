@@ -40,7 +40,7 @@ class ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapt
 
     name = "consdb_visits"
 
-    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> list[dict]:
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
         sql = f"""
             SELECT v.*, q.*
             FROM cdb_{instrument}.visit1 v
@@ -48,7 +48,7 @@ class ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapt
                 ON v.visit_id = q.visit_id
             WHERE {run_start} <= v.day_obs AND v.day_obs <= {run_end}
         """
-        return self._query(" ".join(sql.split()))
+        return self._partition_by_field(self._query(" ".join(sql.split())))
 
 
 @functools.cache

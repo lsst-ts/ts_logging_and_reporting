@@ -82,31 +82,18 @@ class TestQueryBuilding:
 
 class TestRowShaping:
     def test_zips_columns_and_data_into_records(self, adapter):
-        records = [{"exposure_id": 1, "day_obs": 20250101, "seq_num": 5}]
-        with patch("requests.post", consdb_post(records)):
-            rows = adapter._fetch_run("lsstcam", 20250101, 20250101)
-        assert rows == records
+        result = {"columns": ["exposure_id", "day_obs", "seq_num"], "data": [[1, 20250101, 5]]}
+        assert adapter._rows_from_result(result) == [{"exposure_id": 1, "day_obs": 20250101, "seq_num": 5}]
 
     def test_duplicate_column_keeps_first_non_null(self, adapter):
         # exposure.day_obs valid, quicklook.day_obs null under the same name.
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {
-            "columns": ["exposure_id", "day_obs", "day_obs"],
-            "data": [[1, 20250101, None]],
-        }
-        with patch("requests.post", Mock(return_value=response)):
-            rows = adapter._fetch_run("lsstcam", 20250101, 20250101)
-        assert rows == [{"exposure_id": 1, "day_obs": 20250101}]
+        result = {"columns": ["exposure_id", "day_obs", "day_obs"], "data": [[1, 20250101, None]]}
+        assert adapter._rows_from_result(result) == [{"exposure_id": 1, "day_obs": 20250101}]
 
     def test_duplicate_column_null_does_not_clobber_valid(self, adapter):
         # first copy null, second copy valid -> keep the valid one.
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {"columns": ["exposure_id", "val", "val"], "data": [[1, None, 7]]}
-        with patch("requests.post", Mock(return_value=response)):
-            rows = adapter._fetch_run("lsstcam", 20250101, 20250101)
-        assert rows == [{"exposure_id": 1, "val": 7}]
+        result = {"columns": ["exposure_id", "val", "val"], "data": [[1, None, 7]]}
+        assert adapter._rows_from_result(result) == [{"exposure_id": 1, "val": 7}]
 
 
 class TestFetch:

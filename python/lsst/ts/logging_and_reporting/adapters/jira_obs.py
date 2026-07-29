@@ -29,7 +29,6 @@ the upstream API.
 import datetime as dt
 import functools
 import logging
-from collections import defaultdict
 
 from pytz import timezone
 
@@ -90,18 +89,18 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCac
         return timezone(myself["timeZone"])
 
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
-        partition: dict[int, list[dict]] = defaultdict(list)
+        rows: list[tuple[int, dict]] = []
         for issue in self._search_window(run_start, add_or_subtract_dayobs_days(run_end, 1)):
             record = self._to_record(issue)
             created = dt.datetime.strptime(issue["fields"]["created"], TIMESTAMP_INPUT_FORMAT)
             updated = dt.datetime.strptime(issue["fields"]["updated"], TIMESTAMP_INPUT_FORMAT)
-            buckets = {
+            for dayobs in {
                 dayobs_at(created.astimezone(dt.timezone.utc)),
                 dayobs_at(updated.astimezone(dt.timezone.utc)),
-            }
-            for dayobs in buckets:
-                partition[dayobs].append(record)
-        return partition
+            }:
+                rows.append((dayobs, record))
+        partition = self._partition_by_field(rows, key=lambda r: r[0])
+        return {dayobs: [r[1] for r in records] for dayobs, records in partition.items()}
 
     def _search_window(self, start_dayobs: int, end_dayobs: int) -> list[dict]:
         """Query OBS issues created or updated in ``[start, end)``.
