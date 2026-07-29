@@ -970,11 +970,22 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      `exposures`/`expected-exposures`/`data-log` endpoints were still `async def` calling a
      blocking `handle`; converted to plain `def` so the blocking work (and its threadpool
      fan-out) runs in FastAPI's worker pool, not on the event loop.
-   - **8.3 Refactor test_api_endpoints** - At 1500 LOC it's too big. Split it into several
-     files, one per endpoint. Although, since we actually test at the service level 
-     perhaps this should simply test the Service.handle and middleware infrastructure
-     and any endpoint-specific tests in it should be moved into the specific service
-     test
+   - ✅ **8.3 Refactor test_api_endpoints** — the 1530-line `test_api_endpoints.py` mixed
+     full-stack integration tests (real adapter + service + cache, only HTTP mocked) with
+     thin wiring tests, duplicating coverage the service, adapter, and auth suites already
+     own. Replaced by `tests/test_endpoint_contracts.py` (~280 lines). Rather than one file
+     per endpoint (the tests turned out too thin to justify 16 files), it takes the plan's
+     second steer: every endpoint does the same job — parse query params, forward to
+     `service.handle`, return the result — so it tests exactly that, uniformly, by overriding
+     the service with a stub. A parametrized `FORWARDING` table drives pass-through +
+     parsed-param forwarding for all endpoints; focused tests cover the distinctive params
+     (obs-status bool/list coercion, visit-maps `appletMode`, block-details multi-key),
+     generic 422 validation, and `HTTPException`→status mapping. Dropped as duplication:
+     full-stack payload assertions (→ `tests/services`), cache round-trips (→
+     `tests/adapters`), cold-401 auth checks (service-account token is always present; auth
+     is unit-tested in `tests/utils/test_auth.py`), and the ~590-line mock-response fixture.
+     Factory wiring (`get_<x>_service` injecting the right adapters) is deliberately left
+     untested here (trivial, low-risk; the override replaces the service before it runs).
   - **8.4 Timestamp serialization issue** - The data-log endpoint used to return "NaT" for
       invalid/missing timestamps. Since we're getting the data ourselves instead of
       using the rubin_nights get_visits, the data is json rather than pd.DataFrame
