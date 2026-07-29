@@ -25,7 +25,6 @@
 import datetime as dt
 import functools
 import logging
-from collections import defaultdict
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
@@ -84,12 +83,11 @@ class NarrativelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapte
             },
             page_limit=self._page_limit,
         )
-        partition: dict[int, list[dict]] = defaultdict(list)
         for message in messages:
             self._add_instrument(message)
-            dayobs = dayobs_at(dt.datetime.fromisoformat(message["date_begin"]))
-            partition[dayobs].append(message)
-        return partition
+        return self._partition_by_field(
+            messages, key=lambda row: dayobs_at(dt.datetime.fromisoformat(row["date_begin"]))
+        )
 
     @staticmethod
     def _add_instrument(message: dict) -> None:

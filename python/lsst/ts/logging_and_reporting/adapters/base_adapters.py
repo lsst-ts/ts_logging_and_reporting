@@ -34,6 +34,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Callable
 from typing import Any
 
 from lsst.ts.logging_and_reporting.cache_ttl import (
@@ -82,6 +83,50 @@ class CachedAdapter:
 
     def _fetch_from_source(self, keys: list) -> dict:
         raise NotImplementedError
+
+    def _empty_value(self) -> Any:
+        """Seed for a key with no data (default: an empty row list)."""
+        return []
+
+    @staticmethod
+    def _partition_by_field(rows: list, key: str | Callable = "day_obs") -> dict[Any, list]:
+        """Bucket rows by a field value or a computed key.
+
+        Parameters
+        ----------
+        rows : `list`
+            Flat list of rows (typically dicts).
+        key : `str` or `Callable`, optional
+            Either a field name (looked up via ``row.get``) or a callable
+            that takes a row and returns the partition key. A row that
+            yields ``None`` from a string field lands under ``None``.
+
+        Returns
+        -------
+        `dict` [`Any`, `list`]
+            Rows grouped by key; partition values are the original rows.
+        """
+        partition: dict[Any, list] = defaultdict(list)
+        for row in rows:
+            k = key(row) if callable(key) else row.get(key)
+            partition[k].append(row)
+        return partition
+
+    def _collate_runs(
+        self, dayobs_list: list[int], fetch_run: Callable[[int, int], dict[int, Any]]
+    ) -> dict[int, Any]:
+        """Seed each dayobs, then fill from one ``fetch_run`` per run.
+
+        Issues one fetch per contiguous run and merges each run's dayobs
+        partition back in.
+        """
+        results: dict[int, Any] = {dayobs: self._empty_value() for dayobs in dayobs_list}
+        for run_start, run_end in contiguous_runs(dayobs_list):
+            logger.debug(f"Fetching {self.name} for dayobs {run_start}..{run_end}")
+            for dayobs, value in fetch_run(run_start, run_end).items():
+                if dayobs in results:
+                    results[dayobs] = value
+        return results
 
     def _cache_key(self, key) -> str:
         """The Redis key for one entry, namespaced by adapter name.
@@ -209,7 +254,7 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
     """Base class for all dayobs-driven adapters.
 
     Implements `fetch` as a Redis cache loop over the dayobs range;
-    subclasses set ``name`` and implement `_fetch_from_source`.
+    subclasses set ``name`` and implement `_fetch_run`.
     """
 
     name: str = "dayobs"
@@ -234,36 +279,8 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
         return self._fetch_cached(dayobs_range(start_dayobs, end_dayobs))
 
     def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, Any]:
-        """Fetch the cache-missing dayobs, one `_fetch_run` per run.
-
-        Seeds every requested dayobs with `_empty_value`, then merges in
-        the partition from one range fetch per contiguous run. A run can
-        return a straddling dayobs just outside its bounds (fan-out and
-        timestamp-derived adapters bucket by a record's own date), so
-        any dayobs not in the request is dropped here.
-
-        Parameters
-        ----------
-        dayobs_list : `list` [`int`]
-            The cache-missing dayobs (YYYYMMDD); may be non-contiguous.
-
-        Returns
-        -------
-        `dict` [`int`, `Any`]
-            One entry per requested dayobs (the seeded empty value for
-            nights with no data).
-        """
-        results: dict[int, Any] = {dayobs: self._empty_value() for dayobs in dayobs_list}
-        for run_start, run_end in contiguous_runs(dayobs_list):
-            logger.debug(f"Fetching {self.name} for dayobs {run_start}..{run_end}")
-            for dayobs, value in self._fetch_run(run_start, run_end).items():
-                if dayobs in results:
-                    results[dayobs] = value
-        return results
-
-    def _empty_value(self) -> Any:
-        """Seed for a dayobs with no data (default: an empty row list)."""
-        return []
+        """Collate the cache-missing dayobs, one `_fetch_run` per run."""
+        return self._collate_runs(dayobs_list, self._fetch_run)
 
     @abstractmethod
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, Any]:
@@ -363,8 +380,9 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
     an upstream is per-instrument (so all instruments cannot share one
     dayobs key) but still dayobs-driven. Owns the cache mechanics only:
     subclasses provide ``_fetch_run(instrument, run_start, run_end)``
-    whose rows each carry a ``day_obs`` field, and may add request
-    validation by overriding `fetch`.
+    returning the run's rows partitioned by dayobs (via
+    `_partition_by_field`), and may add request validation by overriding
+    `fetch`.
     """
 
     # Instruments this app serves: the RefreshWorker warms each for
@@ -416,28 +434,28 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
         return TODAY_TTL_REDIS if dayobs == current_dayobs() else HISTORIC_TTL_REDIS
 
     def _fetch_from_source(self, keys: list[str]) -> dict[str, list[dict]]:
-        results: dict[str, list[dict]] = {key: [] for key in keys}
         # Composite keys may span instruments, each with its own schema:
-        # fetch one instrument's contiguous runs at a time, then bucket
-        # the returned rows back by their day_obs.
+        # collate one instrument's runs at a time (sharing the dayobs loop
+        # and out-of-range guard), then re-key the per-dayobs partition to
+        # the composite cache key.
         by_instrument: dict[str, list[int]] = defaultdict(list)
         for key in keys:
             instrument, dayobs = self._split_key(key)
             by_instrument[instrument].append(dayobs)
+        results: dict[str, list[dict]] = {}
         for instrument, dayobs_list in by_instrument.items():
-            for run_start, run_end in contiguous_runs(dayobs_list):
-                logger.debug(f"Fetching {self.name} for {instrument} dayobs {run_start}..{run_end}")
-                for record in self._fetch_run(instrument, run_start, run_end):
-                    key = self._compose_key(instrument, record.get("day_obs"))
-                    if key in results:
-                        results[key].append(record)
+            per_day = self._collate_runs(
+                dayobs_list, lambda run_start, run_end, i=instrument: self._fetch_run(i, run_start, run_end)
+            )
+            for dayobs, rows in per_day.items():
+                results[self._compose_key(instrument, dayobs)] = rows
         return results
 
     @abstractmethod
-    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> list[dict]:
-        """Return one instrument's rows for a contiguous dayobs run.
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        """Return one instrument's rows for a run, partitioned by dayobs.
 
-        Provided by a source mixin (e.g. `SqlClient`-backed). Each row
-        must carry a ``day_obs`` so it can be bucketed to its cache key.
+        Provided by a source-backed subclass; end with `_partition_by_field`
+        to bucket the flat rows (each carrying ``day_obs``) by dayobs.
         """
         raise NotImplementedError

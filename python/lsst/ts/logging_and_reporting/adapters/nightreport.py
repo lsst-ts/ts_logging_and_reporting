@@ -24,7 +24,6 @@
 
 import functools
 import logging
-from collections import defaultdict
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
@@ -57,10 +56,7 @@ class NightReportCachedAdapter(RestClient, DayobsCachedAdapter):
             },
             page_limit=self._page_limit,
         )
-        partition: dict[int, list[dict]] = defaultdict(list)
-        for report in reports:
-            partition[report.get("day_obs")].append(report)
-        return partition
+        return self._partition_by_field(reports)
 
 
 @functools.cache

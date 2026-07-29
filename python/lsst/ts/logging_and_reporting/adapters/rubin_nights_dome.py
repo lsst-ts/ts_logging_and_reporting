@@ -24,7 +24,6 @@
 
 import functools
 import logging
-from collections import defaultdict
 
 from astropy.time import Time
 from rubin_nights.observatory_status import get_dome_open_close
@@ -64,10 +63,9 @@ class RubinNightsDomeAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
         frame = get_dome_open_close(t_start, t_end, self._efd_client)
         if frame is None or frame.empty:
             return {}
-        partition: dict[int, list[dict]] = defaultdict(list)
-        for record in make_json_safe(frame.to_dict(orient="records")):
-            partition[int(record["day_obs"])].append(record)
-        return partition
+        return self._partition_by_field(
+            make_json_safe(frame.to_dict(orient="records")), key=lambda row: int(row["day_obs"])
+        )
 
 
 @functools.cache

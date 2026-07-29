@@ -24,7 +24,6 @@
 
 import functools
 import logging
-from collections import defaultdict
 from typing import Any
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import DayobsCachedAdapter
@@ -64,12 +63,10 @@ class ExposurelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapter
                 "max_day_obs": add_or_subtract_dayobs_days(run_end, 1),
             },
         )
-        partition: dict[int, list[dict]] = defaultdict(list)
         for message in messages:
             if message.get("exposure_flag") == "none":
                 message["exposure_flag"] = "unknown"
-            partition[message.get("day_obs")].append(message)
-        return partition
+        return self._partition_by_field(messages)
 
 
 @functools.cache
