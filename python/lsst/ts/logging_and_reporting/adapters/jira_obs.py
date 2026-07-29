@@ -29,6 +29,7 @@ the upstream API.
 import datetime as dt
 import functools
 import logging
+from collections import defaultdict
 
 from pytz import timezone
 
@@ -38,7 +39,6 @@ from lsst.ts.logging_and_reporting.adapters.mixins import JiraApiMixin, MutableD
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
-    contiguous_runs,
     dayobs_at,
     get_utc_datetime_from_dayobs_str,
 )
@@ -89,22 +89,19 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCac
         myself = self._get_json(f"{self.server}/rest/api/latest/myself")
         return timezone(myself["timeZone"])
 
-    def _fetch_from_source(self, dayobs_list: list[int]) -> dict[int, list[dict]]:
-        results: dict[int, list[dict]] = {dayobs: [] for dayobs in dayobs_list}
-        for run_start, run_end in contiguous_runs(dayobs_list):
-            logger.debug(f"Fetching OBS Jira tickets for dayobs {run_start}..{run_end}")
-            for issue in self._search_window(run_start, add_or_subtract_dayobs_days(run_end, 1)):
-                record = self._to_record(issue)
-                created = dt.datetime.strptime(issue["fields"]["created"], TIMESTAMP_INPUT_FORMAT)
-                updated = dt.datetime.strptime(issue["fields"]["updated"], TIMESTAMP_INPUT_FORMAT)
-                buckets = {
-                    dayobs_at(created.astimezone(dt.timezone.utc)),
-                    dayobs_at(updated.astimezone(dt.timezone.utc)),
-                }
-                for dayobs in buckets:
-                    if dayobs in results:
-                        results[dayobs].append(record)
-        return results
+    def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        partition: dict[int, list[dict]] = defaultdict(list)
+        for issue in self._search_window(run_start, add_or_subtract_dayobs_days(run_end, 1)):
+            record = self._to_record(issue)
+            created = dt.datetime.strptime(issue["fields"]["created"], TIMESTAMP_INPUT_FORMAT)
+            updated = dt.datetime.strptime(issue["fields"]["updated"], TIMESTAMP_INPUT_FORMAT)
+            buckets = {
+                dayobs_at(created.astimezone(dt.timezone.utc)),
+                dayobs_at(updated.astimezone(dt.timezone.utc)),
+            }
+            for dayobs in buckets:
+                partition[dayobs].append(record)
+        return partition
 
     def _search_window(self, start_dayobs: int, end_dayobs: int) -> list[dict]:
         """Query OBS issues created or updated in ``[start, end)``.
