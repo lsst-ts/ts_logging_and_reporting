@@ -61,9 +61,24 @@ class ObsStatusService(Service):
         night_only_metrics: bool = True,
         requested_metrics: list[str] | None = None,
     ) -> dict:
-        entries = self.collate_response(
-            self.adapters["obs_status"].fetch(add_or_subtract_dayobs_days(day_obs_start, -1), day_obs_end)
-        )
+        # The almanac is only needed for night-windowed metrics; fetch it
+        # alongside the events when it is, otherwise just the events.
+        need_almanac = bool(requested_metrics) and night_only_metrics
+        tasks = {
+            "obs_status": lambda: self.adapters["obs_status"].fetch(
+                add_or_subtract_dayobs_days(day_obs_start, -1), day_obs_end
+            ),
+        }
+        if need_almanac:
+            tasks["almanac"] = lambda: self.adapters["almanac"].fetch(
+                add_or_subtract_dayobs_days(day_obs_start, 1),
+                add_or_subtract_dayobs_days(day_obs_end, 1),
+            )
+        fetched = self.fetch_concurrently(tasks)
+
+        if isinstance(fetched["obs_status"], Exception):
+            raise fetched["obs_status"]
+        entries = self.collate_response(fetched["obs_status"])
 
         response: dict[str, Any] = {}
         if include_entries:
@@ -76,7 +91,9 @@ class ObsStatusService(Service):
 
         if requested_metrics:
             if night_only_metrics:
-                windows = self._night_windows(day_obs_start, day_obs_end)
+                if isinstance(fetched["almanac"], Exception):
+                    raise fetched["almanac"]
+                windows = self._night_windows(fetched["almanac"])
             else:
                 windows = build_ms_dayobs_intervals(day_obs_start, day_obs_end)
             metrics = {}
@@ -109,17 +126,13 @@ class ObsStatusService(Service):
             entries.extend(data[dayobs])
         return entries
 
-    def _night_windows(self, day_obs_start: int, day_obs_end: int) -> list[dict]:
+    def _night_windows(self, almanac: dict) -> list[dict]:
         """Night twilight windows for each observing night in the range.
 
-        The almanac record for observing night N is keyed under N + 1 (its
-        morning boundary), so the night windows for ``[start, end]`` come
-        from almanac dayobs ``[start + 1, end + 1]``.
+        ``almanac`` is the almanac adapter's per-dayobs records for
+        ``[start + 1, end + 1]`` — night N is keyed under its morning
+        boundary N + 1 (the offset applied when the fetch is scheduled).
         """
-        almanac = self.adapters["almanac"].fetch(
-            add_or_subtract_dayobs_days(day_obs_start, 1),
-            add_or_subtract_dayobs_days(day_obs_end, 1),
-        )
         records = [almanac[dayobs] for dayobs in sorted(almanac)]
         return build_ms_night_intervals(records)
 
