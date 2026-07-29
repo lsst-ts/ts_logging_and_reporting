@@ -4,8 +4,10 @@ import time
 import pytest
 
 from lsst.ts.logging_and_reporting.adapters.base_adapters import (
+    CachedAdapter,
     DayobsCachedAdapter,
     IdCachedAdapter,
+    InstrumentDayobsCachedAdapter,
 )
 from lsst.ts.logging_and_reporting.adapters.mixins import MutableDataMixin
 from lsst.ts.logging_and_reporting.cache_ttl import (
@@ -50,6 +52,21 @@ class RecordingIdAdapter(IdCachedAdapter):
     def _fetch_from_source(self, ids):
         self.calls.append(list(ids))
         return {id_: f"detail-{id_}" for id_ in ids}
+
+
+class RecordingInstrumentAdapter(InstrumentDayobsCachedAdapter):
+    """InstrumentDayobsCachedAdapter returning one row per dayobs."""
+
+    name = "recording_instrument"
+    POLL_INTERVAL = 0.005
+
+    def __init__(self, redis):
+        super().__init__(redis)
+        self.calls = []
+
+    def _fetch_run(self, instrument, run_start, run_end):
+        self.calls.append((instrument, run_start, run_end))
+        return {dayobs: [{"day_obs": dayobs}] for dayobs in dayobs_range(run_start, run_end)}
 
 
 class TestCacheLoop:
@@ -142,6 +159,59 @@ class TestTtlPolicy:
         adapter = MutableAdapter(fake_redis)
         adapter.fetch(TODAY, TODAY)
         assert fake_redis.ttls[f"adapter:recording:{TODAY}"] == TODAY_TTL_REDIS
+
+    def test_instrument_keys_get_today_ttl(self, fake_redis):
+        adapter = RecordingInstrumentAdapter(fake_redis)
+        adapter.fetch("lsstcam", TODAY, TODAY)
+        assert fake_redis.ttls[f"adapter:recording_instrument:lsstcam:{TODAY}"] == TODAY_TTL_REDIS
+
+    def test_instrument_keys_get_historic_ttl(self, fake_redis):
+        adapter = RecordingInstrumentAdapter(fake_redis)
+        adapter.fetch("lsstcam", 20200101, 20200101)
+        assert fake_redis.ttls["adapter:recording_instrument:lsstcam:20200101"] == HISTORIC_TTL_REDIS
+
+    def test_mutable_mixin_keeps_today_ttl_for_instrument_keys(self, fake_redis):
+        class MutableInstrumentAdapter(MutableDataMixin, RecordingInstrumentAdapter):
+            pass
+
+        adapter = MutableInstrumentAdapter(fake_redis)
+        adapter.fetch("lsstcam", TODAY, TODAY)
+        assert fake_redis.ttls[f"adapter:recording_instrument:lsstcam:{TODAY}"] == TODAY_TTL_REDIS
+
+    def test_mutable_mixin_shortens_historical_instrument_ttl(self, fake_redis):
+        class MutableInstrumentAdapter(MutableDataMixin, RecordingInstrumentAdapter):
+            pass
+
+        adapter = MutableInstrumentAdapter(fake_redis)
+        adapter.fetch("lsstcam", 20200101, 20200101)
+        assert fake_redis.ttls["adapter:recording_instrument:lsstcam:20200101"] == MUTABLE_TTL_REDIS
+
+
+class TestIsToday:
+    """The hook every TTL policy reads a key through."""
+
+    def test_dayobs_key(self, fake_redis):
+        adapter = RecordingAdapter(fake_redis)
+        assert adapter._is_today(TODAY) is True
+        assert adapter._is_today(20200101) is False
+
+    def test_composite_instrument_key(self, fake_redis):
+        adapter = RecordingInstrumentAdapter(fake_redis)
+        assert adapter._is_today(f"lsstcam:{TODAY}") is True
+        assert adapter._is_today("lsstcam:20200101") is False
+
+    def test_id_key_is_never_today(self, fake_redis):
+        adapter = RecordingIdAdapter(fake_redis)
+        assert adapter._is_today("BLOCK-1") is False
+        # An ID that happens to look like today's dayobs is still an ID.
+        assert adapter._is_today(str(TODAY)) is False
+
+    def test_key_shape_must_answer(self, fake_redis):
+        class NoKeyShapeAdapter(CachedAdapter):
+            name = "no_key_shape"
+
+        with pytest.raises(NotImplementedError):
+            NoKeyShapeAdapter(fake_redis)._ttl("any-key")
 
 
 class TestRefresh:

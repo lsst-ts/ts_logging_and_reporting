@@ -45,7 +45,6 @@ from lsst.ts.logging_and_reporting.utils.auth import (
     get_jira_hostname,
     retrieve_access_token,
 )
-from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +55,13 @@ class MutableDataMixin:
     Log messages, tickets, and test cases can be added or edited at
     any time, so entries get the shorter `MUTABLE_TTL_REDIS` instead
     of `HISTORIC_TTL_REDIS`, mirroring the mutable endpoint list in
-    ``CacheControlMiddleware``. Works under either cache base class:
-    for dayobs-keyed adapters today's entry keeps `TODAY_TTL_REDIS`;
-    ID-keyed entries have no today.
+    ``CacheControlMiddleware``. Works under any cache base class: the
+    base answers `_is_today` for its own key shape, so today's entry
+    keeps `TODAY_TTL_REDIS` wherever a today exists.
     """
 
     def _ttl(self, key) -> int:
-        if isinstance(key, int) and key == current_dayobs():
-            return TODAY_TTL_REDIS
-        return MUTABLE_TTL_REDIS
+        return TODAY_TTL_REDIS if self._is_today(key) else MUTABLE_TTL_REDIS
 
 
 class JiraApiMixin:

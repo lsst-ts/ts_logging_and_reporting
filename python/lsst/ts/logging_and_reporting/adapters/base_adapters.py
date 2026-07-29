@@ -53,8 +53,9 @@ class CachedAdapter:
     Shared by `DayobsCachedAdapter` (integer dayobs keys),
     `IdCachedAdapter` (string ID keys), and
     `InstrumentDayobsCachedAdapter` (instrument+dayobs keys). Subclasses
-    set ``name``, provide ``_ttl`` and ``_fetch_from_source``, and add
-    the public accessor for their key shape (``fetch``/``fetch_by_ids``).
+    set ``name``, provide ``_is_today`` and ``_fetch_from_source``, and
+    add the public accessor for their key shape
+    (``fetch``/``fetch_by_ids``).
 
     The ``redis`` client is duck-typed: anything providing ``get``,
     ``set(..., nx=, ex=)``, ``delete``, and ``exists`` with redis-py
@@ -78,8 +79,19 @@ class CachedAdapter:
     def __init__(self, redis: Any):
         self._redis = redis
 
-    def _ttl(self, key) -> int:
+    def _is_today(self, key) -> bool:
+        """Whether ``key`` covers the current dayobs.
+
+        The single point at which TTL policy interrogates a key; each
+        key-shape subclass answers for its own key form.
+        """
         raise NotImplementedError
+
+    def _ttl(self, key) -> int:
+        """Today's entry gets the short TTL, everything else the
+        historic one. Adapters with different lifetimes override this
+        (or mix in `MutableDataMixin`)."""
+        return TODAY_TTL_REDIS if self._is_today(key) else HISTORIC_TTL_REDIS
 
     def _fetch_from_source(self, keys: list) -> dict:
         raise NotImplementedError
@@ -300,11 +312,8 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
         """
         raise NotImplementedError
 
-    def _ttl(self, dayobs: int) -> int:
-        """TTL for a dayobs entry: today's TTL for today, historic
-        otherwise. Adapters with different lifetimes override this
-        (or mix in `MutableDataMixin`)."""
-        return TODAY_TTL_REDIS if dayobs == current_dayobs() else HISTORIC_TTL_REDIS
+    def _is_today(self, dayobs: int) -> bool:
+        return dayobs == current_dayobs()
 
     def refresh(self, dayobs: int) -> None:
         """Refresh one dayobs' cache entry, fetch-then-overwrite.
@@ -367,10 +376,11 @@ class IdCachedAdapter(CachedAdapter, ABC):
         """
         raise NotImplementedError
 
-    def _ttl(self, id_: str) -> int:
-        """Fixed lifetime — ID-keyed data has no today/historic
-        split. Adapters with mutable records override this."""
-        return HISTORIC_TTL_REDIS
+    def _is_today(self, id_: str) -> bool:
+        """Always False — ID-keyed records have no today/historic
+        split, so they take the fixed historic lifetime (or the
+        mutable one, via `MutableDataMixin`)."""
+        return False
 
 
 class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
@@ -428,10 +438,8 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
         instrument, dayobs = key.rsplit(":", 1)
         return instrument, int(dayobs)
 
-    def _ttl(self, key: str) -> int:
-        """Today's entry gets the short TTL, past nights the historic one."""
-        _, dayobs = self._split_key(key)
-        return TODAY_TTL_REDIS if dayobs == current_dayobs() else HISTORIC_TTL_REDIS
+    def _is_today(self, key: str) -> bool:
+        return self._split_key(key)[1] == current_dayobs()
 
     def _fetch_from_source(self, keys: list[str]) -> dict[str, list[dict]]:
         # Composite keys may span instruments, each with its own schema:

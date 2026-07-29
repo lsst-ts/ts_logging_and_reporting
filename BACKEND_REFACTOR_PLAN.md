@@ -196,9 +196,10 @@ use `**kwargs`.
 
 The cache machinery every adapter extends: a Redis cache loop with per-key single-flight locks,
 generic over the key type (int dayobs, string id, or composite `"{instrument}:{dayobs}"`). It
-owns `_cache_key` (`"adapter:{name}:{key}"`), `_store` (JSON + `_ttl`), the single-flight
-`_fetch_cached` loop, and `name`. Subclasses set `name`, implement `_fetch_from_source` and
-`_ttl`, and add the public accessor for their key shape (`fetch` / `fetch_by_ids`). Promoted
+owns `_cache_key` (`"adapter:{name}:{key}"`), `_store` (JSON + `_ttl`), the today/historic
+`_ttl` policy, the single-flight `_fetch_cached` loop, and `name`. Subclasses set `name`,
+implement `_fetch_from_source` and `_is_today` (the one point at which TTL policy reads a
+key), and add the public accessor for their key shape (`fetch` / `fetch_by_ids`). Promoted
 from the former private `_SingleFlightCache`; the old one-subclass `BaseAdapter` interface is
 removed.
 
@@ -210,8 +211,8 @@ The three key-shape subclasses are `DayobsCachedAdapter`, `IdCachedAdapter`, and
 ### `DayobsCachedAdapter` (ABC, extends `CachedAdapter`)
 
 The dayobs-keyed adapter every log/report/almanac source extends. Adds the dayobs `fetch`, the
-`RefreshWorker` hooks (`refresh` / `refresh_today`), and the today/historic `_ttl`; the cache
-loop itself is inherited from `CachedAdapter`.
+`RefreshWorker` hooks (`refresh` / `refresh_today`), and `_is_today` for integer dayobs keys;
+the cache loop and the TTL policy it feeds are inherited from `CachedAdapter`.
 
 ```
 DayobsCachedAdapter (ABC)
@@ -271,7 +272,19 @@ DayobsCachedAdapter (ABC)
 │     Serialises data as JSON and writes to Redis with _ttl(dayobs). All adapter
 │     implementations must return JSON-serialisable data from _fetch_from_source.
 │
+├── _is_today(dayobs: int) -> bool
+│     Whether the key covers the current dayobs. The one point at which TTL
+│     policy interrogates a key, so each key-shape subclass answers for its own
+│     key form: DayobsCachedAdapter compares the key directly,
+│     InstrumentDayobsCachedAdapter compares the dayobs half of the composite
+│     key, IdCachedAdapter always returns False (ID-keyed records have no
+│     today/historic split). Inherited from CachedAdapter as a stub that raises,
+│     so a new key shape must answer rather than silently inheriting "never
+│     today" and handing live data a 30-day TTL.
+│
 ├── _ttl(dayobs: int) -> int
+│     Lives on CachedAdapter and is shared by every key shape, reading the key
+│     only through _is_today.
 │     Short TTL if dayobs is today; long TTL (e.g. 30 days) otherwise. The short
 │     TTL must comfortably exceed the RefreshWorker interval (e.g. 15 minutes
 │     against the 5-minute interval) so today's entry cannot expire between
