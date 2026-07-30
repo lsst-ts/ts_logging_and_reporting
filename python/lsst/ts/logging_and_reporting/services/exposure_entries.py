@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 class ExposureEntriesService(Service):
     """Collates Exposure Log entries for /exposure-entries."""
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return exposure log entries for the range and instrument.
 
         Parameters
