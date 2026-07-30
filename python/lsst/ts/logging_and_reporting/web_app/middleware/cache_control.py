@@ -20,12 +20,18 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import datetime, timezone
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Short TTL for responses that include today (matches RefreshWorker interval)
+from lsst.ts.logging_and_reporting.utils import current_dayobs_utc
+
+logger = logging.getLogger("uvicorn.error")
+
+# Short TTL for responses that include today
+# Matches RefreshWorker interval - see doc/BACKEND_REFACTOR_PLAN.md
 _TODAY_MAX_AGE = 300
 # Long TTL for fully historical responses
 _HISTORICAL_MAX_AGE = 86400
@@ -38,18 +44,9 @@ _ALWAYS_SHORT_PATHS = frozenset(
         "/block-details",
         "/exposure-entries",
         "/narrative-log",
+        "/jira-tickets",
     }
 )
-
-
-def _today_dayobs() -> int:
-    """Return the current astronomical dayobs as an integer YYYYMMDD.
-
-    A dayobs runs noon-to-noon UTC, so subtracting 12 hours and taking
-    the date gives the correct dayobs for any UTC timestamp.
-    """
-    now_utc = datetime.now(tz=timezone.utc)
-    return int((now_utc - timedelta(hours=12)).strftime("%Y%m%d"))
 
 
 class CacheControlMiddleware(BaseHTTPMiddleware):
@@ -67,8 +64,7 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     Endpoints without dayobs parameters (``/version``, ``/health``)
     are left untouched.
 
-    Some endpoints (``/exposure-flags``, ``/block-details``,
-    ``/exposure-entries``, ``/narrative-log``) always receive the short
+    Some endpoints (see _ALWAYS_SHORT_PATHS) always receive the short
     TTL because they contain mutable data regardless of dayobs.
 
     Query parameter names handled:
@@ -105,14 +101,14 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             start = int(start_raw) if start_raw else None
             end = int(end_raw) if end_raw else None
         except (ValueError, TypeError):
-            print("There's an error getting start/end dayobs")
+            logger.error("There's an error getting start/end dayobs")
             return response
 
         # If only one bound is present, treat it as both
         start = start if start is not None else end
         end = end if end is not None else start
 
-        today = _today_dayobs()
+        today = current_dayobs_utc(datetime.now(timezone.utc))
         max_age = _TODAY_MAX_AGE if start <= today <= end else _HISTORICAL_MAX_AGE
 
         response.headers["Cache-Control"] = f"public, max-age={max_age}"
