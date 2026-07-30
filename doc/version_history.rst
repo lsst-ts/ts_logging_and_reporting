@@ -1,3 +1,12 @@
+v0.15.1 (2026-07-30)
+====================
+
+Performance Enhancement
+-----------------------
+
+- Added ``CacheControlMiddleware`` to set ``Cache-Control`` response headers, enabling caching at the browser and nginx proxy layers. (`OSW-2415 <https://rubinobs.atlassian.net//browse/OSW-2415>`_)
+
+
 v0.15.0 (2026-07-23)
 ====================
 
