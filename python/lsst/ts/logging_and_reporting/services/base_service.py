@@ -76,10 +76,10 @@ class Service(ABC):
             raise
         except requests.RequestException as e:
             logger.exception(f"{type(self).__name__} upstream request failed")
-            raise HTTPException(status_code=502, detail=f"Upstream query failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Upstream query failed: {e}") from e
         except Exception as e:
             logger.exception(f"{type(self).__name__} request failed")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     def fetch_concurrently(self, tasks: dict[str, Callable[[], Any]]) -> dict[str, Any]:
         """Run each fetch thunk on a pool, returning result-or-exception.

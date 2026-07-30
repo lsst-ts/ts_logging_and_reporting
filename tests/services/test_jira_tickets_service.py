@@ -1,4 +1,7 @@
-from lsst.ts.logging_and_reporting.services.jira import JiraTicketsService
+from lsst.ts.logging_and_reporting.services.jira import (
+    JiraTicketsService,
+    filter_tickets_by_instrument,
+)
 
 
 class StubAdapter:
@@ -84,3 +87,31 @@ class TestJiraTicketsService:
         service, _ = make_service(payload)
         response = service.handle_request(20250101, 20250102, "LSSTCam")
         assert {t["key"] for t in response["issues"]} == {"OBS-SIM", "OBS-NONE"}
+
+
+class TestFilterTicketsByInstrument:
+    def test_include_keeps_only_matching_systems(self):
+        tickets = [
+            make_ticket(key="OBS-SIM", systems=("Simonyi",)),
+            make_ticket(key="OBS-AUX", systems=("AuxTel",)),
+        ]
+        result = filter_tickets_by_instrument(tickets, instrument="LSSTCam")
+        assert [t["key"] for t in result] == ["OBS-SIM"]
+
+    def test_include_matches_on_instrument_name_or_mapped_value(self):
+        tickets = [
+            make_ticket(key="OBS-NAME", systems=("LSSTCam",)),
+            make_ticket(key="OBS-MAPPED", systems=("Simonyi",)),
+            make_ticket(key="OBS-NEITHER", systems=("AuxTel",)),
+        ]
+        result = filter_tickets_by_instrument(tickets, instrument="LSSTCam")
+        assert {t["key"] for t in result} == {"OBS-NAME", "OBS-MAPPED"}
+
+    def test_exclude_drops_matching_systems_and_keeps_the_rest(self):
+        tickets = [
+            make_ticket(key="OBS-SIM", systems=("Simonyi",)),
+            make_ticket(key="OBS-AUX", systems=("AuxTel",)),
+            make_ticket(key="OBS-NONE", systems=()),
+        ]
+        result = filter_tickets_by_instrument(tickets, instrument="LSSTCam", exclude=True)
+        assert {t["key"] for t in result} == {"OBS-AUX", "OBS-NONE"}

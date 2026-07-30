@@ -74,9 +74,10 @@ class DataLogService(Service):
 
     def collate_response(self, data: dict[int, list[dict]]) -> dict:
         records = [record for dayobs in sorted(data) for record in data[dayobs]]
-        # A DataFrame turns missing numeric values into NaN; stringify
-        # renders NaN/inf as strings, and make_json_safe clears the
-        # remaining numpy scalar types so the result is JSON-native.
+        # Records for different days can have different keys (e.g. an
+        # EFD-joined column only present on some rows); the DataFrame gives
+        # every row every column, missing ones as NaN, which stringify then
+        # renders as a JSON-safe string.
         safe = pd.DataFrame(records).map(stringify_special_floats)
         return {"data_log": make_json_safe(safe.to_dict(orient="records"))}
 

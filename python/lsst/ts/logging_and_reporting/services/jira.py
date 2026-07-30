@@ -52,9 +52,9 @@ INSTRUMENT_EXCLUDE_MAP = {
 }
 
 
-def filter_tickets_with_instrument_match(tickets, instrument):
-    """Filters a list of JIRA tickets to **include** only those
-    associated with a specified instrument.
+def filter_tickets_by_instrument(tickets, instrument, exclude=False):
+    """Filters a list of JIRA tickets by instrument system match.
+
     For each ticket, checks if any of the system names in the ticket's
     'system' field contains (string includes) the instrument name
     or its corresponding value from the INSTRUMENTS dictionary.
@@ -65,12 +65,15 @@ def filter_tickets_with_instrument_match(tickets, instrument):
         List of JIRA ticket dictionaries,
         each containing at least 'system' and 'key' fields.
     instrument : `str`
-        The instrument name to filter (include) tickets by.
+        The instrument name to filter tickets by.
+    exclude : `bool`
+        If True, return tickets that do **not** match the instrument;
+        if False (default), return tickets that match.
 
     Returns
     -------
     filtered_tickets : `list[dict]`
-        Filtered list of tickets that match the instrument.
+        The filtered list of tickets.
     """
 
     def matches(ticket):
@@ -78,36 +81,9 @@ def filter_tickets_with_instrument_match(tickets, instrument):
         search_terms = (instrument, INSTRUMENTS[instrument])
         return any(term in system for term in search_terms for system in obj_system_list)
 
+    if exclude:
+        return [ticket for ticket in tickets if not matches(ticket)]
     return [ticket for ticket in tickets if matches(ticket)]
-
-
-def filter_tickets_without_instrument_match(tickets, instrument):
-    """Filters a list of JIRA tickets to **exclude** those
-    associated with a specified instrument.
-    For each ticket, checks if none of the system names in the ticket's
-    'system' field contains (string includes) the instrument name
-    or its corresponding value from the INSTRUMENTS dictionary.
-
-    Parameters
-    ----------
-    tickets : `list[dict]`
-        List of JIRA ticket dictionaries,
-        each containing at least 'system' and 'key' fields.
-    instrument : `str`
-        The instrument name to filter (exclude) tickets by.
-
-    Returns
-    -------
-    filtered_tickets : `list[dict]`
-        Filtered list of tickets that do not match the instrument.
-    """
-
-    def not_matches(ticket):
-        obj_system_list = ticket["system"]
-        search_terms = (instrument, INSTRUMENTS[instrument])
-        return not any(term in system for term in search_terms for system in obj_system_list)
-
-    return [ticket for ticket in tickets if not_matches(ticket)]
 
 
 class JiraTicketsService(Service):
@@ -147,9 +123,9 @@ class JiraTicketsService(Service):
 
         if instrument in INSTRUMENT_EXCLUDE_MAP:
             for excluded_instrument in INSTRUMENT_EXCLUDE_MAP[instrument]:
-                tickets = filter_tickets_without_instrument_match(tickets, instrument=excluded_instrument)
+                tickets = filter_tickets_by_instrument(tickets, instrument=excluded_instrument, exclude=True)
         else:
-            tickets = filter_tickets_with_instrument_match(tickets, instrument=instrument)
+            tickets = filter_tickets_by_instrument(tickets, instrument=instrument)
 
         response = self.collate_response(tickets)
         logger.debug(

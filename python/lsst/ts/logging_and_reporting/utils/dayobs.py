@@ -60,35 +60,6 @@ def current_dayobs() -> int:
     return dayobs_at(dt.datetime.now(dt.timezone.utc))
 
 
-def datetime_to_dayobs(datetime) -> str:
-    """Convert a datetime object to dayobs.
-    Round to the date of the start of the observing night.
-    Both the input datetime and output dayobs are in the same timezone.
-    Format of dayobs is
-
-    Parameters
-    ----------
-    datetime : `datetime.datetime`
-        The date-time.
-
-    Returns
-    -------
-    dayobs : `str`
-        The dayobs, as a string, e.g. 2023-12-25 (YYYY-MM-DD)
-    """
-    if isinstance(datetime, dt.datetime):
-        dodate = (datetime - dt.timedelta(hours=12)).date()
-    else:
-        dodate = datetime
-    return dodate.strftime("%Y-%m-%d")
-
-
-def dayobs_str(dayobs: int) -> str:
-    """Convert a YYYYMMDD dayobs integer to a ``YYYY-MM-DD`` string."""
-    dos = str(dayobs)
-    return f"{dos[0:4]}-{dos[4:6]}-{dos[6:8]}"
-
-
 def dayobs_int(dayobs: str) -> int:
     """Convert a ``YYYY-MM-DD`` dayobs string to a YYYYMMDD integer."""
     return int(str(dayobs).replace("-", ""))
@@ -113,9 +84,6 @@ def get_utc_datetime_from_dayobs_str(dayobs):
         hour=12, minute=0, second=0, tzinfo=pytz.UTC
     )
     return datetime
-
-
-dayobs2dt = get_utc_datetime_from_dayobs_str
 
 
 def add_or_subtract_dayobs_days(dayobs: int, days: int) -> int:
