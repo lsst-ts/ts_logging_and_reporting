@@ -24,6 +24,7 @@ where = [ "python" ]
 
 [project.scripts]
 run_logging_and_reporting = "lsst.ts.logging_and_reporting.run_logging_and_reporting:run_logging_and_reporting"
+run_refresh_worker = "lsst.ts.logging_and_reporting.run_refresh_worker:run_refresh_worker"
 
 [tool.setuptools_scm]
 

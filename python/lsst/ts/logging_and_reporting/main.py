@@ -22,19 +22,14 @@
 
 import logging
 import os
-from contextlib import asynccontextmanager
 from typing import Any, List
 
 from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from lsst.ts.logging_and_reporting import adapters
-
 from . import __version__, services
 from .middleware import CacheControlMiddleware
-from .redis_client import get_redis_client
-from .refresh_worker import RefreshWorker
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -42,39 +37,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-refresh_worker = RefreshWorker(
-    [
-        adapters.get_consdb_exposures_adapter(),
-        # After consdb_exposures: the overhead adapter reads that cache,
-        # so a cycle warms it from the freshly-refreshed exposures.
-        adapters.get_visit_overhead_adapter(),
-        adapters.get_consdb_visits_adapter(),
-        adapters.get_expected_exposures_adapter(),
-        adapters.get_exposurelog_adapter(),
-        adapters.get_jira_obs_adapter(),
-        adapters.get_narrativelog_adapter(),
-        adapters.get_nightreport_adapter(),
-        adapters.get_rubin_nights_context_adapter(),
-        adapters.get_rubin_nights_dome_adapter(),
-        adapters.get_rubin_nights_obs_status_adapter(),
-    ],
-    get_redis_client(),
-)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    refresh_worker.start()
-    yield
-    refresh_worker.stop()
-
-
 app = FastAPI(
     root_path="/nightlydigest/api",
     docs_url="/docs",
     openapi_url="/openapi.json",
     redoc_url=None,
-    lifespan=lifespan,
 )
 
 origins = [
