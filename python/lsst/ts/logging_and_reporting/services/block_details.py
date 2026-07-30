@@ -58,7 +58,7 @@ class BlockDetailsService(Service):
     request fails only when both sources fail.
     """
 
-    def handle_request(self, keys: list[str]) -> dict:
+    def handle(self, keys: list[str]) -> dict:
         """Return summary, source, and URL per resolvable BLOCK key.
 
         Parameters

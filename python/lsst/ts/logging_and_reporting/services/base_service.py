@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 class Service(ABC):
     """A thin collator over one or more adapters.
 
-    Subclasses define their own typed ``handle_request`` signature;
-    the typical implementation calls its adapter's ``fetch`` directly
+    Subclasses define their own typed ``handle`` signature; the
+    typical implementation calls its adapter's ``fetch`` directly
     (single-adapter services) or fans several fetches out through the
     `fetch_concurrently` helper, then returns `collate_response` of the
     merged result.
@@ -64,8 +64,8 @@ class Service(ABC):
         self.adapters = adapters
 
     @abstractmethod
-    def handle_request(self, *args: Any) -> dict:
-        """Handle one endpoint request.
+    def handle(self, *args: Any) -> dict:
+        """Do the work of one endpoint request.
 
         Each subclass defines its own typed signature (the base class
         deliberately does not prescribe parameters): fetch from the
@@ -73,14 +73,14 @@ class Service(ABC):
         """
         raise NotImplementedError
 
-    def handle(self, *args: Any, **kwargs: Any) -> dict:
-        """Call `handle_request`, converting errors to HTTP responses.
+    def handle_request(self, *args: Any, **kwargs: Any) -> dict:
+        """Call `handle`, converting errors to HTTP responses.
 
         Upstream request failures map to 502 Bad Gateway; anything
         else unexpected maps to 500.
         """
         try:
-            return self.handle_request(*args, **kwargs)
+            return self.handle(*args, **kwargs)
         except HTTPException:
             raise
         except requests.RequestException as e:

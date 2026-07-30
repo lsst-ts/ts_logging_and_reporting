@@ -46,7 +46,7 @@ FLAG_VALUES = {"questionable", "junk"}
 class ExposureFlagsService(Service):
     """Collates flagged exposures for /exposure-flags."""
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return flagged exposures for the range and instrument.
 
         Parameters

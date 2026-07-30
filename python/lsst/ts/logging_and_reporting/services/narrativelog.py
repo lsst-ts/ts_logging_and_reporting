@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class NarrativeLogService(Service):
     """Collates Narrative Log messages for /narrative-log."""
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return narrative log messages for the range and instrument.
 
         Parameters

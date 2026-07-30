@@ -282,7 +282,7 @@ class StaticVisitMapService(Service):
     augmentation is needed.
     """
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Build the static visit map for the range.
 
         Parameters

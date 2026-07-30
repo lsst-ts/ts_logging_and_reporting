@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class NightReportService(Service):
     """Collates Night Report records for /night-reports."""
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
         """Return night reports for the dayobs range.
 
         Parameters

@@ -113,7 +113,7 @@ def filter_tickets_without_instrument_match(tickets, instrument):
 class JiraTicketsService(Service):
     """Collates OBS Jira tickets for /jira-tickets."""
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return OBS tickets for the range and instrument.
 
         Parameters
