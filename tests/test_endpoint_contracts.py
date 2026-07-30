@@ -23,7 +23,7 @@
 """Contract tests for the API endpoints.
 
 Each endpoint's job is uniform: declare its query params, forward them
-to ``service.handle``, and return the result. These tests cover exactly
+to ``service.handle_request``, and return the result. These tests cover exactly
 that -- param parsing, forwarding, pass-through, and status mapping --
 by overriding the service with a stub. Response payloads and collation
 are covered in ``tests/services``; upstream parsing and caching in
@@ -49,17 +49,17 @@ class StubService:
     def __init__(self, result):
         self.result = result
 
-    def handle(self, *args, **kwargs):
+    def handle_request(self, *args, **kwargs):
         return self.result
 
 
 class CapturingService:
-    """Records the positional args ``handle`` is called with."""
+    """Records the positional args ``handle_request`` is called with."""
 
     def __init__(self):
         self.calls = []
 
-    def handle(self, *args):
+    def handle_request(self, *args):
         self.calls.append(args)
         return SENTINEL
 
@@ -269,7 +269,7 @@ def test_missing_or_invalid_params_return_422(url):
 @pytest.mark.parametrize("status", [404, 422, 502])
 def test_service_httpexception_surfaces_as_status(status):
     class Raising:
-        def handle(self, *args):
+        def handle_request(self, *args):
             raise HTTPException(status_code=status, detail="boom")
 
     app.dependency_overrides[web_services.get_obs_status_service] = lambda: Raising()

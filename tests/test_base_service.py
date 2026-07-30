@@ -19,7 +19,7 @@ class StubAdapter:
 
 
 class PassthroughService(Service):
-    def handle_request(self, start_dayobs, end_dayobs):
+    def handle(self, start_dayobs, end_dayobs):
         results = self.fetch_concurrently(
             {name: (lambda a=a: a.fetch(start_dayobs, end_dayobs)) for name, a in self.adapters.items()}
         )
@@ -34,11 +34,11 @@ class TestService:
         with pytest.raises(TypeError):
             Service(adapters={})
 
-    def test_handle_request_collates_results_by_name(self):
+    def test_handle_collates_results_by_name(self):
         service = PassthroughService(
             adapters={"one": StubAdapter("one", {20250101: "x"}), "two": StubAdapter("two", {20250101: "y"})}
         )
-        response = service.handle_request(20250101, 20250102)
+        response = service.handle(20250101, 20250102)
         assert response == {"results": [{20250101: "x"}, {20250101: "y"}]}
 
 
@@ -79,34 +79,34 @@ class FailingService(Service):
         super().__init__(adapters={})
         self.error = error
 
-    def handle_request(self):
+    def handle(self):
         raise self.error
 
     def collate_response(self, data):
         return {}
 
 
-class TestHandle:
+class TestHandleRequest:
     def test_unexpected_error_becomes_500(self):
         service = FailingService(ValueError("upstream exploded"))
         with pytest.raises(HTTPException) as exc_info:
-            service.handle()
+            service.handle_request()
         assert exc_info.value.status_code == 500
         assert "upstream exploded" in exc_info.value.detail
 
     def test_http_exception_passes_through(self):
         service = FailingService(HTTPException(status_code=401, detail="no token"))
         with pytest.raises(HTTPException) as exc_info:
-            service.handle()
+            service.handle_request()
         assert exc_info.value.status_code == 401
 
     def test_upstream_request_failure_becomes_502(self):
         service = FailingService(requests.ConnectionError("upstream unreachable"))
         with pytest.raises(HTTPException) as exc_info:
-            service.handle()
+            service.handle_request()
         assert exc_info.value.status_code == 502
         assert "upstream unreachable" in exc_info.value.detail
 
     def test_success_returns_response(self):
         service = PassthroughService(adapters={"one": StubAdapter("one", {20250101: "x"})})
-        assert service.handle(20250101, 20250101) == {"results": [{20250101: "x"}]}
+        assert service.handle_request(20250101, 20250101) == {"results": [{20250101: "x"}]}

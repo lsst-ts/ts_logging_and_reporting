@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class ExpectedExposuresService(Service):
     """Sums the expected (simulated) visit count over a dayobs range."""
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
         """Return the summed expected-exposure count for the range.
 
         Parameters

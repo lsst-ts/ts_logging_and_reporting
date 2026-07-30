@@ -81,7 +81,7 @@ def make_service(per_day, dome=None, overhead=None, almanac=None):
 class TestCollation:
     def test_projects_curated_columns(self):
         per_day = {20250101: [{"exposure_id": 1, "seq_num": 1, "exp_time": 10, "extra_col": "drop me"}]}
-        response = make_service(per_day).handle(20250101, 20250102, "LSSTCam")
+        response = make_service(per_day).handle_request(20250101, 20250102, "LSSTCam")
         exposure = response["exposures"][0]
         assert "extra_col" not in exposure
         assert exposure["exposure_id"] == 1
@@ -95,7 +95,7 @@ class TestCollation:
                 {"exposure_id": 3, "seq_num": 3, "can_see_sky": True, "exp_time": 5},
             ]
         }
-        response = make_service(per_day).handle(20250101, 20250102, "LSSTCam")
+        response = make_service(per_day).handle_request(20250101, 20250102, "LSSTCam")
         assert response["exposures_count"] == 3
         assert response["sum_exposure_time"] == 35
         assert response["on_sky_exposures_count"] == 2
@@ -106,7 +106,7 @@ class TestCollation:
             20250102: [{"exposure_id": 4, "seq_num": 1}],
             20250101: [{"exposure_id": 2, "seq_num": 2}, {"exposure_id": 1, "seq_num": 1}],
         }
-        response = make_service(per_day).handle(20250101, 20250103, "LSSTCam")
+        response = make_service(per_day).handle_request(20250101, 20250103, "LSSTCam")
         assert [exposure["exposure_id"] for exposure in response["exposures"]] == [1, 2, 4]
 
 
@@ -123,7 +123,7 @@ class TestExclusiveEnd:
                 "almanac": StubAlmanacAdapter(),
             }
         )
-        service.handle(20250101, 20250103, "LSSTCam")
+        service.handle_request(20250101, 20250103, "LSSTCam")
         # Dayobs adapters get the inclusive end (exclusive end - 1 day).
         assert consdb.calls == [("LSSTCam", 20250101, 20250102)]
         assert dome.calls == [(20250101, 20250102)]
@@ -134,7 +134,7 @@ class TestGracefulDegradation:
     def test_dome_failure_reports_error_and_keeps_exposures(self):
         per_day = {20250101: [{"exposure_id": 1, "seq_num": 1, "exp_time": 10}]}
         dome = StubDomeAdapter(error=RuntimeError("dome down"))
-        response = make_service(per_day, dome).handle(20250101, 20250102, "LSSTCam")
+        response = make_service(per_day, dome).handle_request(20250101, 20250102, "LSSTCam")
         assert response["open_dome_error"] == "Failed to retrieve dome open/close times"
         assert response["exposures_count"] == 1
 
@@ -142,7 +142,7 @@ class TestGracefulDegradation:
         per_day = {20250101: [{"exposure_id": 1, "seq_num": 1, "exp_time": 10}]}
         dome = StubDomeAdapter({20250730: [{"day_obs": 20250730, "night_hours": 12.0, "open_hours": 9.0}]})
         with patch(f"{EXPOSURES}._aggregate_dome_hours", side_effect=RuntimeError("aggregation failed")):
-            response = make_service(per_day, dome).handle(20250101, 20250102, "LSSTCam")
+            response = make_service(per_day, dome).handle_request(20250101, 20250102, "LSSTCam")
         assert response["open_dome_error"] == "Failed to aggregate dome open hours"
         assert response["day_obs_open_dome_hours"] is None
         assert len(response["open_dome_times"]) == 1  # retrieval succeeded
@@ -150,14 +150,14 @@ class TestGracefulDegradation:
     def test_time_accounting_failure_reports_error(self):
         per_day = {20250101: [{"exposure_id": 1, "seq_num": 1, "exp_time": 10}]}
         overhead = StubOverheadAdapter(error=RuntimeError("overhead down"))
-        response = make_service(per_day, overhead=overhead).handle(20250101, 20250102, "LSSTCam")
+        response = make_service(per_day, overhead=overhead).handle_request(20250101, 20250102, "LSSTCam")
         assert response["time_accounting_error"] == "Failed to compute night time accounting"
         assert response["night_on_sky_time_accounting"] is None
 
     def test_time_accounting_empty_when_no_overhead_rows(self):
         per_day = {20250101: [{"exposure_id": 1, "seq_num": 1, "exp_time": 10}]}
         almanac = StubAlmanacAdapter()
-        response = make_service(per_day, almanac=almanac).handle(20250101, 20250102, "LSSTCam")
+        response = make_service(per_day, almanac=almanac).handle_request(20250101, 20250102, "LSSTCam")
         assert response["night_on_sky_time_accounting"] == {
             "sum_overhead_with_filter_change": 0.0,
             "sum_overhead_without_filter_change": 0.0,
@@ -193,7 +193,7 @@ class TestGracefulDegradation:
                 }
             }
         )
-        response = make_service(per_day, overhead=overhead, almanac=almanac).handle(
+        response = make_service(per_day, overhead=overhead, almanac=almanac).handle_request(
             20260409, 20260410, "LSSTCam"
         )
         accounting = response["night_on_sky_time_accounting"]
@@ -218,7 +218,7 @@ class TestDomeAggregation:
             "sunrise12": "2025-07-31T11:00:00+00:00",
         }
         dome = StubDomeAdapter({20250730: [session]})
-        response = make_service(per_day, dome).handle(20250101, 20250102, "LSSTCam")
+        response = make_service(per_day, dome).handle_request(20250101, 20250102, "LSSTCam")
 
         assert response["open_dome_times"] == [session]
         night = response["day_obs_open_dome_hours"][20250730]

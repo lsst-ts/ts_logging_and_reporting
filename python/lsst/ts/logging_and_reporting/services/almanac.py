@@ -107,7 +107,7 @@ def _compute_elapsed_twilight_hours(
 class AlmanacService(Service):
     """Collates per-night almanac records for /almanac."""
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
         """Return almanac records for the dayobs range.
 
         Parameters

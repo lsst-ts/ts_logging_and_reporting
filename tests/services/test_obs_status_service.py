@@ -155,12 +155,12 @@ class TestHandleRequest:
         # The events adapter is queried from the day before the range,
         # so the carry-in event before the range start is available.
         service = make_service(buckets={20250101: [], 20250102: []})
-        service.handle(20250102, 20250102)
+        service.handle_request(20250102, 20250102)
         assert service.adapters["obs_status"].fetch_calls == [(20250101, 20250102)]
 
     def test_includes_entries_and_availability_by_default(self):
         service = make_service(buckets={20250101: [ev(FAULT, 0)], 20250102: [ev(0, ONE_HOUR_MS)]})
-        response = service.handle(20250102, 20250102)
+        response = service.handle_request(20250102, 20250102)
         assert response["entries"] == [ev(FAULT, 0), ev(0, ONE_HOUR_MS)]
         assert response["availability"]["available_from"] == 20260225
         assert "intervals" not in response
@@ -168,12 +168,12 @@ class TestHandleRequest:
 
     def test_entries_omitted_when_disabled(self):
         service = make_service(buckets={20250101: [], 20250102: []})
-        response = service.handle(20250102, 20250102, include_entries=False)
+        response = service.handle_request(20250102, 20250102, include_entries=False)
         assert "entries" not in response
 
     def test_include_intervals(self):
         service = make_service(buckets={20250101: [ev(FAULT, 0)], 20250102: [ev(0, ONE_HOUR_MS)]})
-        response = service.handle(20250102, 20250102, include_intervals=True)
+        response = service.handle_request(20250102, 20250102, include_intervals=True)
         assert len(response["intervals"]) == 1
         assert response["intervals"][0]["start_state"] == FAULT
 
@@ -191,7 +191,7 @@ class TestHandleRequest:
                 "almanac": StubAlmanacAdapter(almanac),
             }
         )
-        response = service.handle(20250102, 20250102, requested_metrics=["fault_loss"])
+        response = service.handle_request(20250102, 20250102, requested_metrics=["fault_loss"])
         assert response["metrics"]["fault_loss"] == 1.0
         # Night windows come from almanac dayobs [start + 1, end + 1].
         assert service.adapters["almanac"].fetch_calls == [(20250103, 20250103)]
@@ -204,7 +204,7 @@ class TestHandleRequest:
                 "almanac": StubAlmanacAdapter(),
             }
         )
-        response = service.handle(
+        response = service.handle_request(
             20250102, 20250102, night_only_metrics=False, requested_metrics=["fault_loss"]
         )
         assert "fault_loss" in response["metrics"]
@@ -212,7 +212,7 @@ class TestHandleRequest:
 
     def test_unknown_metric_ignored(self):
         service = make_service(buckets={20250101: [], 20250102: []})
-        response = service.handle(20250102, 20250102, requested_metrics=["bogus"])
+        response = service.handle_request(20250102, 20250102, requested_metrics=["bogus"])
         assert response["metrics"] == {}
 
 

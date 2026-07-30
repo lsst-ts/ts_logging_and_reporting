@@ -25,12 +25,12 @@ def make_service(buckets=None):
 class TestHandleRequest:
     def test_fetches_inclusive_range(self):
         service = make_service()
-        service.handle(20250101, 20250103)
+        service.handle_request(20250101, 20250103)
         assert service.adapters["context"].fetch_calls == [(20250101, 20250103)]
 
     def test_returns_data_and_constant_cols(self):
         service = make_service(buckets={20250101: [row("t0", name="a")]})
-        response = service.handle(20250101, 20250101)
+        response = service.handle_request(20250101, 20250101)
         assert response["cols"] == CONTEXT_FEED_COLS
         assert [record["name"] for record in response["data"]] == ["a"]
 

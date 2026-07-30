@@ -28,7 +28,7 @@ def visit(day_obs, s_ra=10.0):
 class TestHandleRequest:
     def test_fetches_range_with_exclusive_end_converted(self):
         service = make_service()
-        service.handle(20250101, 20250104, "LSSTCam")
+        service.handle_request(20250101, 20250104, "LSSTCam")
         # dayObsEnd is exclusive, so the inclusive fetch stops at end - 1.
         assert service.adapters["consdb"].fetch_calls == [("LSSTCam", 20250101, 20250103)]
 

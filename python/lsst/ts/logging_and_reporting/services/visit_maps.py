@@ -274,7 +274,7 @@ class VisitMapsService(Service):
     the opsim conversion the Bokeh builder needs run here, on read.
     """
 
-    def handle_request(
+    def handle(
         self, day_obs_start: int, day_obs_end: int, instrument: str, applet_mode: bool = False
     ) -> dict:
         """Build the interactive visit map for the range.

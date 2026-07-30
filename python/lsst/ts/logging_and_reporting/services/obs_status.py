@@ -279,7 +279,7 @@ class ObsStatusService(Service):
     convention used by most endpoints.
     """
 
-    def handle_request(
+    def handle(
         self,
         day_obs_start: int,
         day_obs_end: int,

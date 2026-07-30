@@ -111,7 +111,7 @@ def read_exposures(
         sub-query failures are reported in the response payload instead.
     """
     logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
-    return service.handle(dayObsStart, dayObsEnd, instrument)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/expected-exposures")
@@ -121,7 +121,7 @@ def read_expected_exposures(
     service=Depends(services.get_expected_exposures_service),
 ):
     logger.info(f"Getting expected exposures for start: {dayObsStart}, end: {dayObsEnd} ")
-    return service.handle(dayObsStart, dayObsEnd)
+    return service.handle_request(dayObsStart, dayObsEnd)
 
 
 @app.get("/data-log")
@@ -132,7 +132,7 @@ def read_data_log(
     service=Depends(services.get_data_log_service),
 ):
     logger.info(f"Getting data log for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
-    return service.handle(dayObsStart, dayObsEnd, instrument)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/jira-tickets")
@@ -145,7 +145,7 @@ def read_jira_tickets(
     logger.info(
         f"Getting jira tickets for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}"
     )
-    return service.handle(dayObsStart, dayObsEnd, instrument)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/almanac")
@@ -155,7 +155,7 @@ def read_almanac(
     service=Depends(services.get_almanac_service),
 ):
     logger.info(f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
-    return service.handle(dayObsStart, dayObsEnd)
+    return service.handle_request(dayObsStart, dayObsEnd)
 
 
 @app.get("/narrative-log")
@@ -169,7 +169,7 @@ def read_narrative_log(
         f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
-    return service.handle(dayObsStart, dayObsEnd, instrument)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/exposure-flags")
@@ -183,7 +183,7 @@ def read_exposure_flags(
         f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
-    return service.handle(dayObsStart, dayObsEnd, instrument)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/exposure-entries")
@@ -197,7 +197,7 @@ def read_exposure_entries(
         f"Getting Exposure Log entries for dayObsStart: {dayObsStart}, "
         f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
     )
-    return service.handle(dayObsStart, dayObsEnd, instrument)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
 @app.get("/night-reports")
@@ -207,7 +207,7 @@ def read_night_reports(
     service=Depends(services.get_night_report_service),
 ):
     logger.info(f"Getting Night Report records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
-    return service.handle(dayObsStart, dayObsEnd)
+    return service.handle_request(dayObsStart, dayObsEnd)
 
 
 @app.get("/context-feed")
@@ -217,7 +217,7 @@ def read_context_feed(
     service=Depends(services.get_context_feed_service),
 ):
     logger.info(f"Getting context feed for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
-    return service.handle(dayObsStart, dayObsEnd)
+    return service.handle_request(dayObsStart, dayObsEnd)
 
 
 @app.get("/obs-status")
@@ -234,7 +234,9 @@ def read_obs_status(
     service=Depends(services.get_obs_status_service),
 ):
     logger.info(f"Getting Observatory Status records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
-    return service.handle(dayObsStart, dayObsEnd, includeEntries, includeIntervals, nightOnlyMetrics, metrics)
+    return service.handle_request(
+        dayObsStart, dayObsEnd, includeEntries, includeIntervals, nightOnlyMetrics, metrics
+    )
 
 
 @app.get("/multi-night-visit-maps")
@@ -268,7 +270,7 @@ def read_multi_night_visit_maps(
         f"{dayObsStart}, end: {dayObsEnd} "
         f"and instrument: {instrument} in appletMode: {appletMode}, "
     )
-    return service.handle(dayObsStart, dayObsEnd, instrument, appletMode)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument, appletMode)
 
 
 @app.get("/block-details")
@@ -277,7 +279,7 @@ def read_block_details(
     service=Depends(services.get_block_details_service),
 ):
     logger.info(f"Getting BLOCK details from Zephyr/Jira for: {keys}")
-    return service.handle(keys)
+    return service.handle_request(keys)
 
 
 @app.get("/static-visit-map")
@@ -310,4 +312,4 @@ def read_static_visit_map(
         dayObsEnd,
         instrument,
     )
-    return service.handle(dayObsStart, dayObsEnd, instrument)
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)

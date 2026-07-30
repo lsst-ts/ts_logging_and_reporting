@@ -40,7 +40,7 @@ class ContextFeedService(Service):
     dayObsEnd is **inclusive** here.
     """
 
-    def handle_request(self, day_obs_start: int, day_obs_end: int) -> dict:
+    def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
         records = self.collate_response(self.adapters["context"].fetch(day_obs_start, day_obs_end))
         return {"data": records, "cols": CONTEXT_FEED_COLS}
 
