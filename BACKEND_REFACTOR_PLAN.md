@@ -73,18 +73,18 @@ The current endpoint degrades gracefully — if one source fails its error is re
 response `errors` field, and the request hard-fails only when both sources fail. The service
 must preserve this behaviour.
 
-**Background refresh on a dedicated daemon thread**
-A `RefreshWorker` runs on its own daemon thread (adapters are synchronous, so a thread keeps
-blocking fetches off the event loop). On a configurable interval (default: 5 minutes) it calls
+**Background refresh in a dedicated process**
+A `RefreshWorker` runs in its own process (entrypoint `run_refresh_worker`, deployed as its own
+container), sharing only Redis with the API service. On a configurable interval (default: 5 minutes) it calls
 `refresh(today)` on each registered `CachedAdapter`. `refresh()` fetches fresh data first and
 then overwrites the cache entry in place (a single Redis `SET`) — it never deletes the entry
 ahead of the fetch, so requests arriving mid-refresh are served the previous (at most
 one-interval-old) value rather than falling into a cold-miss window. The cache is thus always
 warm and user requests for today never trigger an external fetch directly.
 
-Three further behaviours cover startup, rollover, and multi-process deployments:
+Three further behaviours cover startup, rollover, and deployment:
 
-- *Immediate first cycle* — the worker refreshes on `start()` (on the worker thread) rather than
+- *Immediate first cycle* — the worker refreshes as soon as `run()` is called rather than
   waiting out the first interval, so today's entries are warm right after a deploy or restart.
 - *Finalisation at dayobs rollover* — the worker tracks the dayobs it refreshed last cycle; when
   today advances past it (12:00 UTC), it refreshes the previous dayobs one final time before
@@ -94,12 +94,11 @@ Three further behaviours cover startup, rollover, and multi-process deployments:
   (a fetch that starts just before rollover storing slightly-truncated data as historical) would
   go uncorrected. Sources whose historical data genuinely mutates (exposure/narrative log edits)
   still rely on their all-short-TTL override; finalisation doesn't change that story.
-- *Leader lease across processes* — request threads never duplicate the worker (it is a singleton
-  per process), but multiple processes (`uvicorn --workers`, k8s replicas) would each start one.
-  Each cycle begins by acquiring/renewing a Redis leader lease (`SET NX EX`, TTL = 2× interval);
-  only the leaseholder refreshes, others skip the cycle. Duplicate refreshes would be harmless
-  (fetch-then-overwrite is idempotent) but waste upstream calls. A dead leader's lease expires
-  and another instance takes over within about one cycle; `stop()` releases the lease early.
+- *Single instance guaranteed by the deployment* — the worker does no cross-instance
+  coordination: uniqueness is an infrastructure property (one `refresh-worker` container in
+  docker-compose, one replica in Kubernetes), independent of how many API processes run. A
+  second instance would be harmless in effect (fetch-then-overwrite is idempotent) but would
+  waste upstream calls. `SIGTERM`/`SIGINT` stop the loop after the in-flight cycle finishes.
 
 **Cache stampede protection**
 Concurrent requests that miss the same cache entry must not each trigger their own upstream
@@ -403,47 +402,45 @@ per-dayobs record lists into one list ordered by a record field.
 module likewise (`get_exposure_entries_service()`). The `adapters` and `services`
 package `__init__`s re-export the getters (getters only, not the classes), so `main.py`
 imports the two namespaces rather than individual modules: endpoints inject services with
-`Depends(services.get_..._service)`, and the `RefreshWorker` list is built from
-`adapters.get_..._adapter()` calls — composition is distributed to the modules rather than
-centralised in `main.py`, so adapters shared by several services have one natural owner.
+`Depends(services.get_..._service)`, and the `RefreshWorker` list in `run_refresh_worker.py`
+is built from `adapters.get_..._adapter()` calls — composition is distributed to the modules
+rather than centralised in one place, so adapters shared by several services have one natural
+owner.
 
 ---
 
 ### `RefreshWorker`
 
-Lives in its own module (`refresh_worker.py`). Runs on a dedicated daemon thread. Holds
-references to all `CachedAdapter` singletons and periodically calls `refresh(today)` on each.
+Lives in its own module (`refresh_worker.py`), driven by the `run_refresh_worker` entrypoint
+in its own process. Holds references to all `CachedAdapter` singletons and periodically calls
+`refresh(today)` on each.
 
 ```
 RefreshWorker
 │
-├── __init__(adapters: list[CachedAdapter], redis: Redis, interval_seconds: int = 300)
-│     redis is used only for the leader lease (TTL = 2 × interval).
+├── __init__(adapters: list[CachedAdapter], interval_seconds: int = 300)
 │
-├── start() -> None
-│     Starts the daemon thread. Called once at application startup. The first
-│     refresh cycle runs immediately (on the worker thread, so startup is not
-│     blocked) rather than after the first interval.
+├── run() -> None
+│     Blocks the calling thread, running cycles until stop() is called: an
+│     immediate first cycle, then one per interval (interruptible wait).
+│     Each cycle:
+│       1. If today's dayobs has advanced since the last cycle, refresh the
+│          previous dayobs once more (finalisation: complete night stored
+│          with the long historical TTL).
+│       2. Call refresh(today) on each adapter, logging failures per-adapter
+│          without aborting the loop.
+│     A cycle never raises — failures are logged and the cycle retried next
+│     interval, so the loop cannot die.
 │
-├── stop() -> None
-│     Signals the thread to stop cleanly and releases the leader lease if
-│     held, so another instance can take over immediately. Called at
-│     application shutdown.
-│
-└── _run() -> None
-      Immediate first cycle, then one per interval (interruptible wait).
-      Each cycle:
-        1. Acquire or renew the leader lease (SET NX EX); if another instance
-           holds it, skip the cycle.
-        2. If today's dayobs has advanced since the last cycle, refresh the
-           previous dayobs once more (finalisation: complete night stored
-           with the long historical TTL).
-        3. Call refresh(today) on each adapter, logging failures per-adapter
-           without aborting the loop.
-      A cycle never raises — failures (e.g. transient Redis connectivity in
-      the leadership check) are logged and the cycle retried next interval,
-      so the worker thread cannot die.
+└── stop() -> None
+      Signals the loop to finish; run() returns once the in-flight cycle
+      completes. Called from the entrypoint's SIGTERM/SIGINT handler.
 ```
+
+`run_refresh_worker.py` is the process entrypoint (`[project.scripts]`): it builds the adapter
+list, installs the signal handlers, and calls `run()`. In docker-compose it is the
+`refresh-worker` service — same image as the backend, `docker/refresh_worker.sh` as its
+command.
 
 ---
 
@@ -451,9 +448,9 @@ RefreshWorker
 
 ```
 Startup (singletons come from functools.cache getters in their own modules):
-  refresh_worker = RefreshWorker([get_exposurelog_adapter(), ...], get_redis_client())
-  # started/stopped by the FastAPI lifespan; the immediate first cycle
-  # warms today's entries
+  # In the refresh-worker process (run_refresh_worker):
+  RefreshWorker([get_exposurelog_adapter(), ...]).run()
+  # the immediate first cycle warms today's entries
 
 Request: GET /exposure-entries?dayObsStart=20250101&dayObsEnd=20250108&instrument=LSSTCam
   1. DayobsValidationMiddleware validates params
@@ -540,7 +537,7 @@ as Prometheus and Grafana if desired.
 The codebase's dependencies (rubin_sim, rubin_scheduler, schedview, astroplan, astropy, requests)
 are all synchronous scientific Python libraries that cannot be made async. Even with async
 adapters, all computation involving these libraries would require `run_in_executor` wrapping —
-async syntax over fundamentally synchronous work. The `RefreshWorker` thread would also require
+async syntax over fundamentally synchronous work. The `RefreshWorker` loop would also require
 careful event loop management that sync adapters avoid entirely. FastAPI endpoint handlers will
 call sync adapter methods via `run_in_threadpool` where needed, consistent with the existing
 pattern in the codebase.
@@ -616,7 +613,7 @@ HTTP layer without touching the adapter or service code.
 | `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
 | `adapters/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils/dayobs.py`) |
 | `services/base_service.py` | ✅ `Service` ABC (with the `handle()` error wrapper); the `flatten_sorted()` collation helper now lives in `utils/collation.py` |
-| `refresh_worker.py` | ✅ `RefreshWorker` (daemon thread, leader lease, rollover finalisation) |
+| `refresh_worker.py` | ✅ `RefreshWorker` (blocking refresh loop, rollover finalisation), run by the `run_refresh_worker.py` process entrypoint |
 | `utils/` | ✅ Utility helpers split by concern (from the former flat `utils.py`): `dayobs.py` (dayobs/date conversions & ranges), `auth.py` (`AUTH_SOURCES`, `Server`, token/header helpers), `serialization.py` (`make_json_safe`, `stringify_special_floats`), `collation.py` (`flatten_sorted`), `misc.py` (parked helpers pending chunk-8 removal). `__init__.py` re-exports every name as a transitional shim so the remaining `import utils as ut` callers keep working; live code imports from the concern submodule |
 | `redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
 | `adapters/base_clients.py` | ✅ `RestClient` — server URL resolution, per-fetch service-account token from `AUTH_SOURCES`, and JSON GET/POST that raise on failure (replaces the legacy `protected_get`/`protected_post` tuple-returning helpers). Adapters compose it explicitly with a cache base — `DayobsCachedAdapter` for dayobs-keyed, `IdCachedAdapter` for ID-keyed. ✅ `SqlClient` — `RestClient` subclass adding ConsDB `/consdb/query` execution and row shaping, composed with `InstrumentDayobsCachedAdapter` by the ConsDB adapters. Renamed from `http.py` (the empty `RestCachedAdapter` convenience base was removed) |
@@ -710,7 +707,8 @@ HTTP layer without touching the adapter or service code.
 
 **`main.py`** — partially done
 
-- ✅ `RefreshWorker` started/stopped via the FastAPI lifespan
+- ✅ `RefreshWorker` moved out of the app entirely — it runs in the separate `refresh-worker`
+  container (`run_refresh_worker`), so `main.py` has no lifespan hook
 - ✅ Logging configured once via `logging.basicConfig` from the `LOG_LEVEL` env var (default
   INFO), format including the logger name; new modules use `logging.getLogger(__name__)`
 - ✅ `/exposure-flags` and `/exposure-entries` switched: plain `def` endpoints (FastAPI's
@@ -1279,7 +1277,7 @@ package "External Data Sources" {
     component [rubin_sim] as EXT_SIM
 }
 
-component [RefreshWorker\n(daemon thread)] as WORKER
+component [RefreshWorker\n(separate process)] as WORKER
 
 ' Request flow through middleware
 Client --> MW_ERR

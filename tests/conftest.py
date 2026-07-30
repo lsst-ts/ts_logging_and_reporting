@@ -17,7 +17,7 @@ class FakeRedis:
     Supports the subset the caching layer uses: get, set (with nx/ex),
     delete, and exists, with real time-based expiry (float ``ex`` is
     accepted so tests can use tiny TTLs). Thread-safe, since the
-    single-flight and RefreshWorker tests exercise it concurrently.
+    single-flight tests exercise it concurrently.
     The last TTL passed for each key is recorded in ``ttls`` so tests
     can assert on TTL policy.
     """
