@@ -30,7 +30,10 @@ import functools
 import logging
 from typing import Any
 
-from lsst.ts.logging_and_reporting.adapters.narrativelog import get_narrativelog_adapter
+from lsst.ts.logging_and_reporting.adapters.narrativelog import (
+    NarrativelogCachedAdapter,
+    get_narrativelog_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.collation import flatten_sorted
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
@@ -40,6 +43,11 @@ logger = logging.getLogger(__name__)
 
 class NarrativeLogService(Service):
     """Collates Narrative Log messages for /narrative-log."""
+
+    def __init__(self, narrativelog_adapter: NarrativelogCachedAdapter | None = None) -> None:
+        self.narrativelog_adapter = (
+            narrativelog_adapter if narrativelog_adapter is not None else get_narrativelog_adapter()
+        )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return narrative log messages for the range and instrument.
@@ -54,9 +62,7 @@ class NarrativeLogService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.adapters["narrativelog"].fetch(
-            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-        )
+        per_day = self.narrativelog_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
         filtered = {
             dayobs: [m for m in messages if m.get("instrument") == instrument]
             for dayobs, messages in per_day.items()
@@ -85,4 +91,4 @@ class NarrativeLogService(Service):
 
 @functools.cache
 def get_narrative_log_service() -> NarrativeLogService:
-    return NarrativeLogService(adapters={"narrativelog": get_narrativelog_adapter()})
+    return NarrativeLogService()

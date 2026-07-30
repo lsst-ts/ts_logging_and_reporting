@@ -14,7 +14,7 @@ class StubConsdbAdapter:
 
 
 def make_service(per_day):
-    return DataLogService(adapters={"consdb": StubConsdbAdapter(per_day)})
+    return DataLogService(consdb_adapter=StubConsdbAdapter(per_day))
 
 
 class TestDataLog:
@@ -43,5 +43,5 @@ class TestDataLog:
 
     def test_converts_exclusive_end_to_inclusive_before_fetch(self):
         adapter = StubConsdbAdapter({})
-        DataLogService(adapters={"consdb": adapter}).handle_request(20250101, 20250103, "LSSTCam")
+        DataLogService(consdb_adapter=adapter).handle_request(20250101, 20250103, "LSSTCam")
         assert adapter.calls == [("LSSTCam", 20250101, 20250102)]

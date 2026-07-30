@@ -71,7 +71,7 @@ def make_record(dayobs):
 
 def make_service(payload):
     adapter = StubAdapter(payload)
-    return AlmanacService(adapters={"almanac": adapter}), adapter
+    return AlmanacService(almanac_adapter=adapter), adapter
 
 
 class TestAlmanacService:

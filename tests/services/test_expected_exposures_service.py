@@ -21,7 +21,7 @@ class StubAdapter:
 
 
 def make_service(per_day=None, error=None):
-    return ExpectedExposuresService(adapters={"expected_exposures": StubAdapter(per_day, error)})
+    return ExpectedExposuresService(expected_exposures_adapter=StubAdapter(per_day, error))
 
 
 class TestExpectedExposures:
@@ -35,7 +35,7 @@ class TestExpectedExposures:
 
     def test_bounds_passed_to_adapter_inclusive(self):
         adapter = StubAdapter({20250101: 1})
-        ExpectedExposuresService(adapters={"expected_exposures": adapter}).handle_request(20250101, 20250103)
+        ExpectedExposuresService(expected_exposures_adapter=adapter).handle_request(20250101, 20250103)
         assert adapter.calls == [(20250101, 20250103)]
 
     def test_no_matching_simulation_maps_to_404(self):

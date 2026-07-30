@@ -19,6 +19,9 @@ class StubAdapter:
 
 
 class PassthroughService(Service):
+    def __init__(self, adapters):
+        self.adapters = adapters
+
     def handle(self, start_dayobs, end_dayobs):
         results = self.fetch_concurrently(
             {name: (lambda a=a: a.fetch(start_dayobs, end_dayobs)) for name, a in self.adapters.items()}
@@ -32,7 +35,7 @@ class PassthroughService(Service):
 class TestService:
     def test_base_class_is_abstract(self):
         with pytest.raises(TypeError):
-            Service(adapters={})
+            Service()
 
     def test_handle_collates_results_by_name(self):
         service = PassthroughService(
@@ -76,7 +79,6 @@ class TestFetchConcurrently:
 
 class FailingService(Service):
     def __init__(self, error):
-        super().__init__(adapters={})
         self.error = error
 
     def handle(self):

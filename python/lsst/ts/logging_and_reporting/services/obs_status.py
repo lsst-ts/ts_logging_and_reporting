@@ -33,8 +33,9 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
+from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter, get_almanac_adapter
 from lsst.ts.logging_and_reporting.adapters.rubin_nights_obs_status import (
+    RubinNightsObsStatusAdapter,
     get_rubin_nights_obs_status_adapter,
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
@@ -279,6 +280,16 @@ class ObsStatusService(Service):
     convention used by most endpoints.
     """
 
+    def __init__(
+        self,
+        obs_status_adapter: RubinNightsObsStatusAdapter | None = None,
+        almanac_adapter: AlmanacCachedAdapter | None = None,
+    ) -> None:
+        self.obs_status_adapter = (
+            obs_status_adapter if obs_status_adapter is not None else get_rubin_nights_obs_status_adapter()
+        )
+        self.almanac_adapter = almanac_adapter if almanac_adapter is not None else get_almanac_adapter()
+
     def handle(
         self,
         day_obs_start: int,
@@ -292,12 +303,12 @@ class ObsStatusService(Service):
         # alongside the events when it is, otherwise just the events.
         need_almanac = bool(requested_metrics) and night_only_metrics
         tasks = {
-            "obs_status": lambda: self.adapters["obs_status"].fetch(
+            "obs_status": lambda: self.obs_status_adapter.fetch(
                 add_or_subtract_dayobs_days(day_obs_start, -1), day_obs_end
             ),
         }
         if need_almanac:
-            tasks["almanac"] = lambda: self.adapters["almanac"].fetch(
+            tasks["almanac"] = lambda: self.almanac_adapter.fetch(
                 add_or_subtract_dayobs_days(day_obs_start, 1),
                 add_or_subtract_dayobs_days(day_obs_end, 1),
             )
@@ -366,9 +377,4 @@ class ObsStatusService(Service):
 
 @functools.cache
 def get_obs_status_service() -> ObsStatusService:
-    return ObsStatusService(
-        adapters={
-            "obs_status": get_rubin_nights_obs_status_adapter(),
-            "almanac": get_almanac_adapter(),
-        }
-    )
+    return ObsStatusService()

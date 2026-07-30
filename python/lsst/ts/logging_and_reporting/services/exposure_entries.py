@@ -31,7 +31,10 @@ import functools
 import logging
 from typing import Any
 
-from lsst.ts.logging_and_reporting.adapters.exposurelog import get_exposurelog_adapter
+from lsst.ts.logging_and_reporting.adapters.exposurelog import (
+    ExposurelogCachedAdapter,
+    get_exposurelog_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.collation import flatten_sorted
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
@@ -41,6 +44,11 @@ logger = logging.getLogger(__name__)
 
 class ExposureEntriesService(Service):
     """Collates Exposure Log entries for /exposure-entries."""
+
+    def __init__(self, exposurelog_adapter: ExposurelogCachedAdapter | None = None) -> None:
+        self.exposurelog_adapter = (
+            exposurelog_adapter if exposurelog_adapter is not None else get_exposurelog_adapter()
+        )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return exposure log entries for the range and instrument.
@@ -55,9 +63,7 @@ class ExposureEntriesService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.adapters["exposurelog"].fetch(
-            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-        )
+        per_day = self.exposurelog_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
         filtered = {
             dayobs: [m for m in messages if m.get("instrument") == instrument]
             for dayobs, messages in per_day.items()
@@ -81,4 +87,4 @@ class ExposureEntriesService(Service):
 
 @functools.cache
 def get_exposure_entries_service() -> ExposureEntriesService:
-    return ExposureEntriesService(adapters={"exposurelog": get_exposurelog_adapter()})
+    return ExposureEntriesService()

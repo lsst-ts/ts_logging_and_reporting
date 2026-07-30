@@ -29,7 +29,7 @@ def make_message(
 
 def make_service(payload):
     adapter = StubAdapter(payload)
-    return NarrativeLogService(adapters={"narrativelog": adapter}), adapter
+    return NarrativeLogService(narrativelog_adapter=adapter), adapter
 
 
 class TestNarrativeLogService:

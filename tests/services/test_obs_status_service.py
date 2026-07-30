@@ -126,12 +126,10 @@ class StubAlmanacAdapter:
         return self.records
 
 
-def make_service(buckets=None, almanac=None):
+def make_service(buckets=None, almanac=None, obs_status_adapter=None, almanac_adapter=None):
     return ObsStatusService(
-        adapters={
-            "obs_status": StubObsStatusAdapter(buckets or {}),
-            "almanac": StubAlmanacAdapter(almanac),
-        }
+        obs_status_adapter=obs_status_adapter or StubObsStatusAdapter(buckets or {}),
+        almanac_adapter=almanac_adapter or StubAlmanacAdapter(almanac),
     )
 
 
@@ -154,9 +152,10 @@ class TestHandleRequest:
     def test_fetches_one_leading_day(self):
         # The events adapter is queried from the day before the range,
         # so the carry-in event before the range start is available.
-        service = make_service(buckets={20250101: [], 20250102: []})
+        obs_status_adapter = StubObsStatusAdapter({20250101: [], 20250102: []})
+        service = make_service(obs_status_adapter=obs_status_adapter)
         service.handle_request(20250102, 20250102)
-        assert service.adapters["obs_status"].fetch_calls == [(20250101, 20250102)]
+        assert obs_status_adapter.fetch_calls == [(20250101, 20250102)]
 
     def test_includes_entries_and_availability_by_default(self):
         service = make_service(buckets={20250101: [ev(FAULT, 0)], 20250102: [ev(0, ONE_HOUR_MS)]})
@@ -185,30 +184,28 @@ class TestHandleRequest:
                 "twilight_morning_12deg": "1970-01-01 10:00:00",
             }
         }
+        almanac_adapter = StubAlmanacAdapter(almanac)
         service = ObsStatusService(
-            adapters={
-                "obs_status": StubObsStatusAdapter(buckets),
-                "almanac": StubAlmanacAdapter(almanac),
-            }
+            obs_status_adapter=StubObsStatusAdapter(buckets),
+            almanac_adapter=almanac_adapter,
         )
         response = service.handle_request(20250102, 20250102, requested_metrics=["fault_loss"])
         assert response["metrics"]["fault_loss"] == 1.0
         # Night windows come from almanac dayobs [start + 1, end + 1].
-        assert service.adapters["almanac"].fetch_calls == [(20250103, 20250103)]
+        assert almanac_adapter.fetch_calls == [(20250103, 20250103)]
 
     def test_dayobs_metric_skips_almanac(self):
         buckets = {20250101: [ev(FAULT, 0)], 20250102: [ev(0, ONE_HOUR_MS)]}
+        almanac_adapter = StubAlmanacAdapter()
         service = ObsStatusService(
-            adapters={
-                "obs_status": StubObsStatusAdapter(buckets),
-                "almanac": StubAlmanacAdapter(),
-            }
+            obs_status_adapter=StubObsStatusAdapter(buckets),
+            almanac_adapter=almanac_adapter,
         )
         response = service.handle_request(
             20250102, 20250102, night_only_metrics=False, requested_metrics=["fault_loss"]
         )
         assert "fault_loss" in response["metrics"]
-        assert service.adapters["almanac"].fetch_calls == []
+        assert almanac_adapter.fetch_calls == []
 
     def test_unknown_metric_ignored(self):
         service = make_service(buckets={20250101: [], 20250102: []})
