@@ -5,13 +5,17 @@ import pytest
 
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
+    almanac_to_unix_ms,
     contiguous_runs,
     date_to_dayobs_int,
     dayobs_at,
     dayobs_int_to_date,
     dayobs_range,
+    dayobs_to_unix_ms,
     get_utc_datetime_from_dayobs_str,
 )
+
+ONE_HOUR_UNIX_MS = 3_600_000
 
 
 class TestAddOrSubtractDayobsDays:
@@ -139,3 +143,25 @@ class TestGetUtcDatetimeFromDayobsStr:
     def test_compact_date(self):
         actual = get_utc_datetime_from_dayobs_str("20241014")
         assert actual == dt.datetime(2024, 10, 14, 12, 0, tzinfo=dt.timezone.utc)
+
+
+class TestDayobsToUnixMs:
+    def test_default_hour_is_noon_utc(self):
+        assert dayobs_to_unix_ms(19700101) == 12 * ONE_HOUR_UNIX_MS
+
+    def test_hour_is_configurable(self):
+        assert dayobs_to_unix_ms(19700101, hour=0) == 0
+        assert dayobs_to_unix_ms(19700101, hour=3) == 3 * ONE_HOUR_UNIX_MS
+
+    def test_matches_datetime_timestamp(self):
+        expected = int(dt.datetime(2025, 6, 15, 12, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        assert dayobs_to_unix_ms(20250615) == expected
+
+
+class TestAlmanacToUnixMs:
+    def test_converts_almanac_timestamp_string(self):
+        assert almanac_to_unix_ms("1970-01-02 00:00:00") == 24 * ONE_HOUR_UNIX_MS
+
+    def test_matches_datetime_timestamp(self):
+        expected = int(dt.datetime(2025, 6, 15, 3, 30, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        assert almanac_to_unix_ms("2025-06-15 03:30:00") == expected
