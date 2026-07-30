@@ -1,3 +1,4 @@
+import logging
 import threading
 
 import pytest
@@ -89,12 +90,14 @@ class FailingService(Service):
 
 
 class TestHandleRequest:
-    def test_unexpected_error_becomes_500(self):
-        service = FailingService(ValueError("upstream exploded"))
-        with pytest.raises(HTTPException) as exc_info:
-            service.handle_request()
+    def test_unexpected_error_becomes_500(self, caplog):
+        service = FailingService(ValueError("Service exploded"))
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(HTTPException) as exc_info:
+                service.handle_request()
         assert exc_info.value.status_code == 500
-        assert "upstream exploded" in exc_info.value.detail
+        assert exc_info.value.detail == "Internal error in FailingService"
+        assert "Service exploded" in caplog.text
 
     def test_http_exception_passes_through(self):
         service = FailingService(HTTPException(status_code=401, detail="no token"))
@@ -102,12 +105,14 @@ class TestHandleRequest:
             service.handle_request()
         assert exc_info.value.status_code == 401
 
-    def test_upstream_request_failure_becomes_502(self):
+    def test_upstream_request_failure_becomes_502(self, caplog):
         service = FailingService(requests.ConnectionError("upstream unreachable"))
-        with pytest.raises(HTTPException) as exc_info:
-            service.handle_request()
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(HTTPException) as exc_info:
+                service.handle_request()
         assert exc_info.value.status_code == 502
-        assert "upstream unreachable" in exc_info.value.detail
+        assert exc_info.value.detail == "Upstream failure in FailingService"
+        assert "upstream unreachable" in caplog.text
 
     def test_success_returns_response(self):
         service = PassthroughService(adapters={"one": StubAdapter("one", {20250101: "x"})})
