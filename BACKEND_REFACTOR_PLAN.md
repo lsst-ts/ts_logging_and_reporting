@@ -620,7 +620,7 @@ HTTP layer without touching the adapter or service code.
 | `cache_ttl.py` | ✅ All cache lifetimes in one place: `HISTORIC_TTL`/`HISTORIC_TTL_REDIS`, `TODAY_TTL`/`TODAY_TTL_REDIS`, `MUTABLE_TTL`/`MUTABLE_TTL_REDIS` — client `max-age` and Redis TTL per data kind; the `RefreshWorker` default interval is `TODAY_TTL` |
 | `middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers from the `cache_ttl` constants based on whether today's dayobs is in the requested range (mutable-data endpoints get `MUTABLE_TTL` on historical ranges) |
 | `middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
-| `middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
+| `middleware/dayobs_validation.py` | ✅ `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips requests that don't match a registered route (so it never shadows a 404/405), and non-numeric values are left for FastAPI's own type coercion |
 | `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
 | `adapters/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils/dayobs.py`) |
 | `services/base_service.py` | ✅ `Service` ABC (with the `handle_request()` error wrapper); the `flatten_sorted()` collation helper now lives in `utils/collation.py` |
@@ -722,16 +722,18 @@ HTTP layer without touching the adapter or service code.
   container (`run_refresh_worker`), so `main.py` has no lifespan hook
 - ✅ Logging configured once via `logging.basicConfig` from the `LOG_LEVEL` env var (default
   INFO), format including the logger name; new modules use `logging.getLogger(__name__)`
-- ✅ `/exposure-flags` and `/exposure-entries` switched: plain `def` endpoints (FastAPI's
-  threadpool handles the blocking fetch) that inject their service via
-  `Depends(get_..._service)` and delegate to `service.handle_request(...)`
-- ⬜ Remaining data endpoints switch to the same pattern as their chunks land
-- ⬜ Register the remaining middleware classes (error handling first, then public access, then
-  dayobs validation, then cache control)
+- ✅ Every data endpoint switched: plain `def` endpoints (FastAPI's threadpool handles the
+  blocking fetch) that inject their service via `Depends(get_..._service)` and delegate to
+  `service.handle_request(...)`. `/version` and `/health` stay `async def` (no blocking work).
+- ✅ `DayobsValidationMiddleware` and `CacheControlMiddleware` registered (in that nesting order,
+  innermost first, so CORS still wraps a short-circuited validation response); the
+  per-route `dependencies=[Depends(validate_dayobs_range)]` approach was tried first and then
+  replaced by the middleware once it became clear per-route wiring could silently be forgotten
+  on a new endpoint
+- ⬜ `error_handling.py` and `public_access.py` middleware remain unimplemented
 - Singleton instantiation lives in the adapter/service modules as cached getters, not in
   `main.py`; main only imports getters
-- Endpoints without a `Service` (`/version`, `/health`, `/mock-exposures`) remain as simple
-  route functions
+- Endpoints without a `Service` (`/version`, `/health`) remain as simple route functions
 
 **`services/exposure_entries.py`** and **`services/exposure_flags.py`** — ✅ done
 

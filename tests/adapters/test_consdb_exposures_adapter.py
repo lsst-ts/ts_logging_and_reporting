@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import Mock, patch
 
 import pytest
@@ -143,6 +144,26 @@ class TestValidation:
         with pytest.raises(HTTPException) as exc:
             adapter.fetch("lsstcam", 20259999, 20250101)
         assert exc.value.status_code == 422
+
+    def test_validate_instrument_accepts_known_instrument(self, adapter):
+        assert adapter._validate_instrument("LSSTCam") == "lsstcam"
+
+    def test_validate_instrument_rejects_unknown_and_logs(self, adapter, caplog):
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(HTTPException) as exc:
+                adapter._validate_instrument("lsstComCam")
+        assert exc.value.status_code == 422
+        assert "Rejected unknown instrument: 'lsstComCam'" in caplog.text
+
+    def test_validate_dayobs_accepts_well_formed_dayobs(self, adapter):
+        adapter._validate_dayobs(20250101)
+
+    def test_validate_dayobs_rejects_malformed_and_logs(self, adapter, caplog):
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(HTTPException) as exc:
+                adapter._validate_dayobs(20259999)
+        assert exc.value.status_code == 422
+        assert "Rejected malformed dayobs: 20259999" in caplog.text
 
 
 class TestTtl:

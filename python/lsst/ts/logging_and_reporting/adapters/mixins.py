@@ -122,6 +122,7 @@ class ConsdbSqlMixin:
         """Return the normalised instrument, or raise 422 if unrecognised."""
         normalised = instrument.lower()
         if normalised not in self.INSTRUMENTS:
+            logger.warning(f"Rejected unknown instrument: {instrument!r}")
             raise HTTPException(status_code=422, detail=f"Unknown instrument: {instrument!r}")
         return normalised
 
@@ -129,8 +130,9 @@ class ConsdbSqlMixin:
     def _validate_dayobs(dayobs: int) -> None:
         try:
             dt.datetime.strptime(str(dayobs), "%Y%m%d")
-        except ValueError:
-            raise HTTPException(status_code=422, detail=f"Invalid dayobs: {dayobs!r}")
+        except ValueError as e:
+            logger.warning(f"Rejected malformed dayobs: {dayobs!r}")
+            raise HTTPException(status_code=422, detail=f"Invalid dayobs: {dayobs!r}") from e
 
     def _rows_from_result(self, result: dict) -> list[dict]:
         # The quicklook join yields duplicate column names; keep the first

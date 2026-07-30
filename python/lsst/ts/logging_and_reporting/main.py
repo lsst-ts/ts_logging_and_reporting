@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import __version__, services
-from .middleware import CacheControlMiddleware
+from .middleware import CacheControlMiddleware, DayobsValidationMiddleware
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -50,6 +50,7 @@ origins = [
     "http://nightlydigest-nginx-service",  # Kubernetes service name
 ]
 
+app.add_middleware(DayobsValidationMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
