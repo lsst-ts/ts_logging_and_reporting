@@ -30,6 +30,8 @@ are covered in ``tests/services``; upstream parsing and caching in
 ``tests/adapters``.
 """
 
+import re
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -263,6 +265,42 @@ def test_block_details_forwards_all_keys():
 )
 def test_missing_or_invalid_params_return_422(url):
     response = client.get(url)
+    assert response.status_code == 422
+
+
+DAYOBS_CASES = [(getter, url) for getter, url, _ in FORWARDING if "dayObsStart" in url]
+DAYOBS_IDS = [id_ for id_ in FORWARDING_IDS if id_ != "block-details"]
+
+
+@pytest.mark.parametrize(("getter", "url"), DAYOBS_CASES, ids=DAYOBS_IDS)
+def test_malformed_dayobs_start_returns_422(getter, url):
+    app.dependency_overrides[getter] = lambda: StubService(SENTINEL)
+
+    bad_url = re.sub(r"dayObsStart=\d+", "dayObsStart=20250230", url)
+    response = client.get(bad_url)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(("getter", "url"), DAYOBS_CASES, ids=DAYOBS_IDS)
+def test_malformed_dayobs_end_returns_422(getter, url):
+    app.dependency_overrides[getter] = lambda: StubService(SENTINEL)
+
+    bad_url = re.sub(r"dayObsEnd=\d+", "dayObsEnd=20250230", url)
+    response = client.get(bad_url)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(("getter", "url"), DAYOBS_CASES, ids=DAYOBS_IDS)
+def test_inverted_dayobs_range_returns_422(getter, url):
+    app.dependency_overrides[getter] = lambda: StubService(SENTINEL)
+
+    # A well-formed but far-future start makes dayObsStart > dayObsEnd
+    # for every case in DAYOBS_CASES without touching the date format.
+    bad_url = re.sub(r"dayObsStart=\d+", "dayObsStart=20991231", url)
+    response = client.get(bad_url)
+
     assert response.status_code == 422
 
 

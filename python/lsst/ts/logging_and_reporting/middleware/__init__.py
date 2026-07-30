@@ -20,5 +20,6 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from .cache_control import CacheControlMiddleware
+from .dayobs_validation import DayobsValidationMiddleware
 
-__all__ = ["CacheControlMiddleware"]
+__all__ = ["CacheControlMiddleware", "DayobsValidationMiddleware"]
