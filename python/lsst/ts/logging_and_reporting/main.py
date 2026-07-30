@@ -202,7 +202,7 @@ def read_exposure_entries(
 
 
 @app.get("/night-reports")
-def read_nightreport(
+def read_night_reports(
     dayObsStart: int,
     dayObsEnd: int,
     service=Depends(services.get_night_report_service),
@@ -239,7 +239,7 @@ def read_obs_status(
 
 
 @app.get("/multi-night-visit-maps")
-def multi_night_visit_maps(
+def read_multi_night_visit_maps(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
@@ -282,7 +282,7 @@ def read_block_details(
 
 
 @app.get("/static-visit-map")
-def static_visit_map(
+def read_static_visit_map(
     dayObsStart: int,
     dayObsEnd: int,
     instrument: str,
