@@ -224,7 +224,7 @@ def _sum_on_sky_within_twilight(visits: pd.DataFrame, almanac_info: list[dict]) 
         "sum_visit_gap_with_filter_change": float(visit_gap[with_change_mask].sum()),
         "sum_visit_gap_without_filter_change": float(visit_gap[without_change_mask].sum()),
     }
-    return {key: round(float(total / SECONDS_IN_AN_HOUR), 2) for key, total in sums_sec.items()}
+    return {key: round(total / SECONDS_IN_AN_HOUR, 2) for key, total in sums_sec.items()}
 
 
 class ExposuresService(Service):

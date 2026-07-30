@@ -22,7 +22,7 @@
 
 import logging
 import os
-from typing import Any, List
+from typing import Any
 
 from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,7 +52,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # Change to your React app origin
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -276,7 +276,7 @@ def read_multi_night_visit_maps(
 
 @app.get("/block-details")
 def read_block_details(
-    keys: List[str] = Query(..., alias="key"),
+    keys: list[str] = Query(..., alias="key"),
     service=Depends(services.get_block_details_service),
 ):
     logger.info(f"Getting BLOCK details from Zephyr/Jira for: {keys}")

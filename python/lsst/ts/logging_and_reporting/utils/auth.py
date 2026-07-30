@@ -47,7 +47,10 @@ AUTH_SOURCES = {
 
 # Servers we might use
 class Server:
-    """Do I need a class for this instead of just using line 262?"""
+    """Deployment URLs.
+
+    Currently active host detected via EXTERNAL_INSTANCE_URL.
+    """
 
     summit = "https://summit-lsp.lsst.codes"
     usdfdev = "https://usdf-rsp-dev.slac.stanford.edu"
