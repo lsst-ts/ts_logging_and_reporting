@@ -38,7 +38,7 @@ is negligible; the consistency of the pattern is worth more than the optimisatio
 Each `Service` subclass is instantiated once per process, with its adapters wired in, by a
 `functools.cache` getter in its own module (adapters likewise expose `get_<name>_adapter()`
 getters — one natural owner even when several services share an adapter). FastAPI's `Depends()`
-injects the singleton into each endpoint. The service's `handle_request` calls adapter(s),
+injects the singleton into each endpoint. The service's `handle` calls adapter(s),
 merges per-dayobs results, and returns via `collate_response`. No Redis interaction occurs in
 the service layer.
 
@@ -50,9 +50,18 @@ the user's end date as inclusive and sends end + 1 day), so their services conve
 each one's actual frontend usage as its chunk is migrated, and put the conversion (if any) in
 the service so cache keys stay per-dayobs.
 
-**Dict of adapters per Service**
-Each `Service` holds a `dict[str, CachedAdapter]`. In the common case this has one entry, but
-multi-source endpoints (e.g. `/exposures`) can declare multiple adapters.
+**Named, typed adapter parameters per Service**
+Each `Service` subclass declares its own typed `__init__` with one named parameter per adapter
+it needs (e.g. `AlmanacService(almanac_adapter: AlmanacCachedAdapter | None = None)`), rather
+than a generic `dict[str, CachedAdapter]` on the base class. Each parameter defaults to `None`
+and falls back to that adapter's module-level `get_<name>_adapter()` singleton getter, so
+`get_<name>_service()` factories construct with no arguments (`return XService()`) while tests
+inject fakes directly by keyword. A missing or misnamed adapter now fails at construction
+(`TypeError`) instead of at request time (a `KeyError` from a stringly-typed dict lookup);
+multi-source endpoints (e.g. `/exposures`) simply declare more parameters. `BlockDetailsService`
+is the one exception — it genuinely dispatches by adapter name at runtime (Zephyr vs. Jira
+BLOCK-key patterns), so it builds a small local `{name: adapter}` dict inside `handle` from its
+two named attributes, rather than storing adapters as a dict on `self`.
 
 **Jira endpoints: one dayobs adapter, one ID-driven service**
 `/jira-tickets` is dayobs-driven and follows the standard pattern: `JiraObsCachedAdapter`
@@ -136,8 +145,8 @@ missing:
 4. `PublicAccessMiddleware` — for the public-facing release, enforces `dayObsStart == dayObsEnd`
    on dayobs-driven endpoints
 
-**Specific `handle_request` signatures per subclass**
-Each `Service` subclass defines its own typed `handle_request` signature. The base class does not
+**Specific `handle` signatures per subclass**
+Each `Service` subclass defines its own typed `handle` signature. The base class does not
 use `**kwargs`.
 
 ### Endpoints Outside the Pattern
@@ -146,7 +155,7 @@ use `**kwargs`.
 |---|---|
 | `/version`, `/health` | No data fetch; no caching needed |
 | `/mock-exposures` | Reads a local file; no adapter |
-| `/block-details` | ID-driven, not dayobs-driven — gets a `Service` (`BlockDetailsService`) but its `handle_request` takes BLOCK keys, and its adapters are `IdCachedAdapter` subclasses rather than `DayobsCachedAdapter` |
+| `/block-details` | ID-driven, not dayobs-driven — gets a `Service` (`BlockDetailsService`) but its `handle` takes BLOCK keys, and its adapters are `IdCachedAdapter` subclasses rather than `DayobsCachedAdapter` |
 
 `/version`, `/health`, and `/mock-exposures` remain as simple FastAPI route functions with no
 `Service`.
@@ -363,10 +372,12 @@ A thin collator. Each subclass calls its adapter(s), merges results, and returns
 ```
 Service (ABC)
 │
-├── adapters: dict[str, CachedAdapter]
-│     Injected at construction.
+├── (subclass-defined) __init__(..., <name>_adapter: <AdapterType> | None = None, ...)
+│     Each subclass declares its own named, typed adapter parameters — not a base-class
+│     dict[str, CachedAdapter]. Each defaults to None and falls back to that module's
+│     get_<name>_adapter() singleton getter, stored as self.<name>_adapter.
 │
-├── handle_request(...) -> dict
+├── handle(...) -> dict
 │     Abstract. Each subclass defines its own typed signature. Implementation:
 │       1. Convert the endpoint's exclusive dayObsEnd to the inclusive range
 │          the cache loop uses (the frontend sends end + 1 day).
@@ -374,11 +385,11 @@ Service (ABC)
 │       3. Merge per-dayobs results across adapters into dict[int, dict[str, Any]].
 │       4. Return collate_response(merged).
 │
-├── handle(*args) -> dict
-│     Concrete. Calls handle_request, letting HTTPException pass through,
+├── handle_request(*args, **kwargs) -> dict
+│     Concrete. Calls handle, letting HTTPException pass through,
 │     converting upstream requests failures into a logged HTTP 502 and any
 │     other exception into a logged HTTP 500. Endpoints call this rather
-│     than handle_request. (All REST adapters raise requests exceptions via
+│     than handle directly. (All REST adapters raise requests exceptions via
 │     _get_json, so the 502 mapping covers every upstream uniformly. Zephyr
 │     (chunk 4) already relies on this — it lets raw requests errors through.
 │     ConsDB does the same: its adapter drops the legacy ConsdbQueryError and
@@ -455,8 +466,8 @@ Startup (singletons come from functools.cache getters in their own modules):
 Request: GET /exposure-entries?dayObsStart=20250101&dayObsEnd=20250108&instrument=LSSTCam
   1. DayobsValidationMiddleware validates params
   2. FastAPI resolves Depends(get_exposure_entries_service)
-  3. Endpoint calls service.handle(20250101, 20250108, "LSSTCam")
-  4. handle_request converts the exclusive dayObsEnd and calls
+  3. Endpoint calls service.handle_request(20250101, 20250108, "LSSTCam")
+  4. handle converts the exclusive dayObsEnd and calls
      exposurelog_adapter.fetch(20250101, 20250107)
   5. Inside fetch() cache loop:
        - 20250101–20250106: cache hits, returned immediately
@@ -465,7 +476,7 @@ Request: GET /exposure-entries?dayObsStart=20250101&dayObsEnd=20250108&instrumen
          all instruments)
        - Result stored in Redis with short TTL (today)
        - Returns {20250101: ..., ..., 20250107: ...}
-  6. handle_request filters to the requested instrument (the cache holds all
+  6. handle filters to the requested instrument (the cache holds all
      instruments per dayobs) and returns collate_response(filtered)
   7. CacheControlMiddleware adds "Cache-Control: public, max-age=<TODAY_TTL>"
      (today is in the requested range; a historical range would get MUTABLE_TTL
@@ -475,7 +486,7 @@ Request: GET /block-details?key=BLOCK-42&key=BLOCK-99&key=BLOCK-T123_a
   1–2. Same middleware/Depends flow as above (DayobsValidationMiddleware skips —
        no dayobs params; CacheControlMiddleware applies MUTABLE_TTL)
   3. Endpoint calls block_details_service.handle_request(keys)
-  4. handle_request deduplicates and splits keys by pattern:
+  4. handle deduplicates and splits keys by pattern:
        Jira:   ["BLOCK-42", "BLOCK-99"]
        Zephyr: ["BLOCK-T123_a"]
   5. Calls jira_block_adapter.fetch_by_ids(["BLOCK-42", "BLOCK-99"]):
@@ -612,7 +623,7 @@ HTTP layer without touching the adapter or service code.
 | `middleware/dayobs_validation.py` | `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips non-dayobs endpoints |
 | `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
 | `adapters/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils/dayobs.py`) |
-| `services/base_service.py` | ✅ `Service` ABC (with the `handle()` error wrapper); the `flatten_sorted()` collation helper now lives in `utils/collation.py` |
+| `services/base_service.py` | ✅ `Service` ABC (with the `handle_request()` error wrapper); the `flatten_sorted()` collation helper now lives in `utils/collation.py` |
 | `refresh_worker.py` | ✅ `RefreshWorker` (blocking refresh loop, rollover finalisation), run by the `run_refresh_worker.py` process entrypoint |
 | `utils/` | ✅ Utility helpers split by concern (from the former flat `utils.py`): `dayobs.py` (dayobs/date conversions & ranges), `auth.py` (`AUTH_SOURCES`, `Server`, token/header helpers), `serialization.py` (`make_json_safe`, `stringify_special_floats`), `collation.py` (`flatten_sorted`), `misc.py` (parked helpers pending chunk-8 removal). `__init__.py` re-exports every name as a transitional shim so the remaining `import utils as ut` callers keep working; live code imports from the concern submodule |
 | `redis_client.py` | ✅ `create_redis_client()` / cached `get_redis_client()` — shared client from `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` env vars; requires the `redis-py` dependency (added to `conda/meta.yaml`) |
@@ -681,7 +692,7 @@ HTTP layer without touching the adapter or service code.
   sibling subclass for the visit1⋈visit1_quicklook query
 - Drops the legacy `ConsdbQueryError` wrapping. The old `query()` caught
   `requests.HTTPError`/`ConnectionError` only to re-tag them so the endpoint could map them to
-  502; the base `Service.handle` already maps `requests.RequestException → 502`, so the adapter
+  502; the base `Service.handle_request` already maps `requests.RequestException → 502`, so the adapter
   just lets the raw requests error propagate. The one thing worth keeping — ConsDB reports SQL
   errors as a 500 with the Postgres text in the JSON `message` body — is preserved as a log line
   in the adapter's error path, not a bespoke exception type. `ConsdbQueryError` stays *defined*
@@ -713,7 +724,7 @@ HTTP layer without touching the adapter or service code.
   INFO), format including the logger name; new modules use `logging.getLogger(__name__)`
 - ✅ `/exposure-flags` and `/exposure-entries` switched: plain `def` endpoints (FastAPI's
   threadpool handles the blocking fetch) that inject their service via
-  `Depends(get_..._service)` and delegate to `service.handle(...)`
+  `Depends(get_..._service)` and delegate to `service.handle_request(...)`
 - ⬜ Remaining data endpoints switch to the same pattern as their chunks land
 - ⬜ Register the remaining middleware classes (error handling first, then public access, then
   dayobs validation, then cache control)
@@ -734,9 +745,9 @@ HTTP layer without touching the adapter or service code.
 `consdb_service.py`'s `get_exposures()` / `get_data_log()`)
 
 - ✅ `ExposuresService(Service)` owns the whole `/exposures` response, so the endpoint is thin
-  (`return service.handle(dayObsStart, dayObsEnd, instrument)` — no auth token; every sub-source
+  (`return service.handle_request(dayObsStart, dayObsEnd, instrument)` — no auth token; every sub-source
   is a service-account adapter):
-  - the exposures come from `{"consdb": ConsdbExposuresAdapter}`, projected to the curated
+  - the exposures come from `consdb_adapter: ConsdbExposuresAdapter`, projected to the curated
     `EXPOSURE_COLUMNS` in `collate_response`, with the exposure/on-sky counts and durations
   - ✅ dome open/close hours (`_dome_hours`) come from `RubinNightsDomeAdapter`; the per-night
     aggregation (`_aggregate_dome_hours` / `_compute_closed_hours`) lives on the service. Twilight
@@ -744,15 +755,15 @@ HTTP layer without touching the adapter or service code.
     twilight windows from `AlmanacCachedAdapter`, then runs the reduction helpers over the range
   - the two sub-computations degrade to `open_dome_error` / `time_accounting_error` in the
     payload rather than failing the request; a ConsDB failure propagates (→ 502 via
-    `Service.handle`)
-- `DataLogService(Service)` is a clean full switch, also `{"consdb": ConsdbExposuresAdapter}`;
-  the endpoint is `return service.handle(...)`. It returns the full exposure record with special
+    `Service.handle_request`)
+- `DataLogService(Service)` is a clean full switch, also taking `consdb_adapter: ConsdbExposuresAdapter`;
+  the endpoint is `return service.handle_request(...)`. It returns the full exposure record with special
   floats rendered as JSON-safe strings
 - The transformed-EFD channels are folded into the ConsDB `SELECT` as a per-instrument
   `LEFT JOIN` on `exposure_id` (`exposure_id` is unique), so there is no separate EFD adapter,
   query, or merge; `/exposures` projects the EFD column away
 - Both endpoints drop their `except ConsdbQueryError` blocks: a ConsDB failure is mapped to 502
-  by `Service.handle` (requests error), and an unrecognised instrument / malformed dayobs is a
+  by `Service.handle_request` (requests error), and an unrecognised instrument / malformed dayobs is a
   422 raised by `ConsdbSqlMixin` validation
 - The ConsDB query uses inclusive bounds (`run_start <= e.day_obs <= run_end`);
   `InstrumentDayobsCachedAdapter` keys entries per dayobs, so the endpoint's exclusive `dayObsEnd`
@@ -788,7 +799,7 @@ HTTP layer without touching the adapter or service code.
   which were copied there)
 - ✅ `/block-details` is served by `BlockDetailsService` in the new
   `services/block_details.py`, holding `JiraBlockAdapter` and `ZephyrAdapter`
-  (both `IdCachedAdapter`); `handle_request(keys)` deduplicates, splits by key pattern,
+  (both `IdCachedAdapter`); `handle(keys)` deduplicates, splits by key pattern,
   calls `fetch_by_ids` on each, and preserves the per-source error reporting (with one
   change: auth failures raise 401 for the whole request, as the endpoint's `Depends` did)
 - ✅ `get_block_ticket_summaries()` logic moved into `JiraBlockAdapter`
@@ -838,7 +849,7 @@ HTTP layer without touching the adapter or service code.
     file), both using `ConsdbVisitsAdapter`; each overrides `collate_response` to build its
     output (multi-night Bokeh figure / static PNG) from per-night visit data. The endpoints
     are plain `def` (FastAPI's threadpool absorbs the blocking render), delegating to
-    `service.handle(...)` — no auth token, matching the other switched endpoints
+    `service.handle_request(...)` — no auth token, matching the other switched endpoints
 - ✅ `/exposures` owns the dome and time-accounting logic in `ExposuresService`. The dome fetch is
   now `RubinNightsDomeAdapter` with the per-night aggregation helpers on the service; the
   time-accounting slew/overhead — the costly kinematic model, which needs the EFD for TMA limits —
@@ -873,14 +884,14 @@ HTTP layer without touching the adapter or service code.
 **`services/expected_exposures.py`** (new; replaces `scheduler_service.py`'s
 `get_expected_exposures()`)
 
-- ✅ `ExpectedExposuresService(Service)` holds `{"expected_exposures": ExpectedExposuresCachedAdapter}`;
+- ✅ `ExpectedExposuresService(Service)` takes `expected_exposures_adapter: ExpectedExposuresCachedAdapter`;
   `collate_response` sums the per-dayobs counts and returns `{"sum_exposures": N}`. The endpoint is
-  thin (`return service.handle(dayObsStart, dayObsEnd)`)
+  thin (`return service.handle_request(dayObsStart, dayObsEnd)`)
 - `dayObsEnd` is **inclusive** here (the old loop used `while current_date <= end_date`), unlike the
   exclusive-end convention elsewhere — the adapter fetch keeps `[start, end]` inclusive (no `end-1`)
 - A night with no matching simulation raises `NoMatchingSimulationsFoundError`, which
-  `handle_request` maps to **404** (the sim archive is healthy, the prediction just doesn't exist);
-  everything else falls through to `Service.handle`'s 500. `get_expected_exposures()` stays as dead
+  `handle` maps to **404** (the sim archive is healthy, the prediction just doesn't exist);
+  everything else falls through to `Service.handle_request`'s 500. `get_expected_exposures()` stays as dead
   code in `scheduler_service.py` until the cleanup step
 - `get_mock_exposures()`-style note: none — this endpoint has no mock variant
 
@@ -979,7 +990,7 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      `.fetch()` directly (no gain from a threadpool hop, and it would only add indirection);
      and `handle` was **not** changed to pre-fetch data, because what to fetch is
      service-specific (heterogeneous args, conditional/dependent fetches) — the helper
-     called from within each `handle_request` is the right seam. Precursor: the
+     called from within each `handle` is the right seam. Precursor: the
      `exposures`/`expected-exposures`/`data-log` endpoints were still `async def` calling a
      blocking `handle`; converted to plain `def` so the blocking work (and its threadpool
      fan-out) runs in FastAPI's worker pool, not on the event loop.
@@ -989,7 +1000,7 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
      own. Replaced by `tests/test_endpoint_contracts.py` (~280 lines). Rather than one file
      per endpoint (the tests turned out too thin to justify 16 files), it takes the plan's
      second steer: every endpoint does the same job — parse query params, forward to
-     `service.handle`, return the result — so it tests exactly that, uniformly, by overriding
+     `service.handle_request`, return the result — so it tests exactly that, uniformly, by overriding
      the service with a stub. A parametrized `FORWARDING` table drives pass-through +
      parsed-param forwarding for all endpoints; focused tests cover the distinctive params
      (obs-status bool/list coercion, visit-maps `appletMode`, block-details multi-key),
@@ -1059,6 +1070,14 @@ to validate the pattern on simpler cases before tackling the riskiest parts:
        need the same rework as the adapters themselves.
     - **8.6 concurrency 2** - The zephyr scale adapter does sequential queries for each block
        passed to it. We should fix that
+    - ✅ **8.7 Service constructor DI** — each `Service` subclass now declares its own named,
+      typed adapter constructor parameters (defaulting to `None`, falling back to that module's
+      `get_<name>_adapter()` singleton getter) instead of taking a generic
+      `adapters: dict[str, CachedAdapter]` on the base class — see "Named, typed adapter
+      parameters per Service" in Key Decisions for the rationale. `base_service.py`'s
+      `Service.__init__` was deleted entirely; `get_<name>_service()` factories now construct
+      with no arguments (`return XService()`); tests inject fakes by keyword instead of through
+      a dict literal. Touched all 15 service files and all 16 service test files.
 
 9. **Swagger/OpenAPI documentation pass** — after the cleanup, audit every endpoint in
    `main.py` so the auto-generated FastAPI docs (`/docs`, `/openapi.json`) are correct
