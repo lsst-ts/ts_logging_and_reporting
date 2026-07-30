@@ -637,7 +637,7 @@ HTTP layer without touching the adapter or service code.
 | `services/almanac.py` | ✅ `AlmanacService` + `get_almanac_service()`; computes the time-dependent `elapsed_twilight_hours` at collation time so only deterministic ephemeris data is cached |
 | `services/jira.py` | ✅ `JiraTicketsService` + `get_jira_tickets_service()`; dedupes multi-bucket tickets, derives the range-dependent `isNew` at collation, and holds the instrument include/exclude filters |
 | `services/block_details.py` | ✅ `BlockDetailsService` + `get_block_details_service()`; splits keys by pattern across the two ID-based adapters, reports per-source failures in the response's `errors` field (both failing → 500), and decorates records with source and URL (built lazily from `get_jira_hostname()`) |
-| `services/obs_status.py` | ✅ `ObsStatusService` + `get_obs_status_service()`; carry-in via one leading day, almanac night windows (dayobs `[start+1, end+1]`) for the night-only metrics, `include_entries`/`include_intervals`/metric flags; status/interval helpers live in `utils/obs_status.py`; dayObsEnd inclusive |
+| `services/obs_status.py` | ✅ `ObsStatusService` + `get_obs_status_service()`; carry-in via one leading day, almanac night windows (dayobs `[start+1, end+1]`) for the night-only metrics, `include_entries`/`include_intervals`/metric flags; status/interval helpers live alongside it in the same module; `dayobs_to_unix_ms`/`almanac_to_unix_ms` live in `utils/dayobs.py`; dayObsEnd inclusive |
 | `services/context_feed.py` | ✅ `ContextFeedService` + `get_context_feed_service()`; flattens the per-dayobs buckets and returns `{"data", "cols"}`, recomputing the window-bounded task-change `timestampProcessEnd` over the assembled range (dayObsEnd inclusive) |
 | `services/visit_maps.py` | ✅ `VisitMapsService` + `get_visit_maps_service()` (`/multi-night-visit-maps`), using `ConsdbVisitsAdapter`; augments the raw frame (`augment_visits` → `consdb_to_opsim`) and builds the interactive Bokeh figure on read. Holds the interactive map-building helpers moved out of `scheduler_service.py` |
 | `services/static_visit_map.py` | ✅ `StaticVisitMapService` + `get_static_visit_map_service()` (`/static-visit-map`), using `ConsdbVisitsAdapter`; renders the healpix visit-count PNG from the raw columns. Holds the static map-building helpers moved out of `scheduler_service.py` |
@@ -826,8 +826,10 @@ HTTP layer without touching the adapter or service code.
   - ✅ `services/obs_status.py` — `ObsStatusService(Service)` using
     `RubinNightsObsStatusAdapter` plus `AlmanacCachedAdapter` (for the night-only metric
     intervals, replacing its `get_almanac()` call); the status/interval helper functions
-    (`decode_states`, `contains_*`, `sum_interval_overlap`, `get_availability`, etc.) now live
-    in `utils/obs_status.py`
+    (`decode_states`, `contains_*`, `sum_interval_overlap`, `get_availability`, etc.) live
+    alongside the service in the same module — they have no other caller. The generic
+    `dayobs_to_unix_ms`/`almanac_to_unix_ms` conversions live in `utils/dayobs.py` instead,
+    since `services/exposures.py` also needs `almanac_to_unix_ms`
   - ✅ `services/context_feed.py` — `ContextFeedService(Service)` using
     `RubinNightsContextAdapter`; recomputes the task-change `timestampProcessEnd` at collation
     because rubin_nights bounds it to the query window (chains to the next task change / last message)

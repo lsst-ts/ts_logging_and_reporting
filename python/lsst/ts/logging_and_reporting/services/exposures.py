@@ -35,8 +35,11 @@ from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_e
 from lsst.ts.logging_and_reporting.adapters.rubin_nights_dome import get_rubin_nights_dome_adapter
 from lsst.ts.logging_and_reporting.adapters.visit_overhead import get_visit_overhead_adapter
 from lsst.ts.logging_and_reporting.services.base_service import Service
-from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days, dayobs_at
-from lsst.ts.logging_and_reporting.utils.obs_status import almanac_to_unix_ms
+from lsst.ts.logging_and_reporting.utils.dayobs import (
+    add_or_subtract_dayobs_days,
+    almanac_to_unix_ms,
+    dayobs_at,
+)
 
 logger = logging.getLogger(__name__)
 
