@@ -30,10 +30,19 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
-from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_exposures_adapter
-from lsst.ts.logging_and_reporting.adapters.rubin_nights_dome import get_rubin_nights_dome_adapter
-from lsst.ts.logging_and_reporting.adapters.visit_overhead import get_visit_overhead_adapter
+from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter, get_almanac_adapter
+from lsst.ts.logging_and_reporting.adapters.consdb_exposures import (
+    ConsdbExposuresAdapter,
+    get_consdb_exposures_adapter,
+)
+from lsst.ts.logging_and_reporting.adapters.rubin_nights_dome import (
+    RubinNightsDomeAdapter,
+    get_rubin_nights_dome_adapter,
+)
+from lsst.ts.logging_and_reporting.adapters.visit_overhead import (
+    VisitOverheadAdapter,
+    get_visit_overhead_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
@@ -228,6 +237,20 @@ class ExposuresService(Service):
     the response rather than failing the request.
     """
 
+    def __init__(
+        self,
+        consdb_adapter: ConsdbExposuresAdapter | None = None,
+        dome_adapter: RubinNightsDomeAdapter | None = None,
+        overhead_adapter: VisitOverheadAdapter | None = None,
+        almanac_adapter: AlmanacCachedAdapter | None = None,
+    ) -> None:
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_exposures_adapter()
+        self.dome_adapter = dome_adapter if dome_adapter is not None else get_rubin_nights_dome_adapter()
+        self.overhead_adapter = (
+            overhead_adapter if overhead_adapter is not None else get_visit_overhead_adapter()
+        )
+        self.almanac_adapter = almanac_adapter if almanac_adapter is not None else get_almanac_adapter()
+
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return exposures and night-summary metrics for the range.
 
@@ -244,9 +267,9 @@ class ExposuresService(Service):
         inclusive_end = add_or_subtract_dayobs_days(day_obs_end, -1)
         fetched = self.fetch_concurrently(
             {
-                "consdb": lambda: self.adapters["consdb"].fetch(instrument, day_obs_start, inclusive_end),
-                "dome": lambda: self.adapters["dome"].fetch(day_obs_start, inclusive_end),
-                "overhead": lambda: self.adapters["overhead"].fetch(instrument, day_obs_start, inclusive_end),
+                "consdb": lambda: self.consdb_adapter.fetch(instrument, day_obs_start, inclusive_end),
+                "dome": lambda: self.dome_adapter.fetch(day_obs_start, inclusive_end),
+                "overhead": lambda: self.overhead_adapter.fetch(instrument, day_obs_start, inclusive_end),
             }
         )
         # Exposures are the core payload, so a ConsDB failure fails the
@@ -332,7 +355,7 @@ class ExposuresService(Service):
             if not rows:
                 night_time_on_sky_sums = dict(_EMPTY_TIME_ACCOUNTING)
             else:
-                almanac = self.adapters["almanac"].fetch(day_obs_start, day_obs_end)
+                almanac = self.almanac_adapter.fetch(day_obs_start, day_obs_end)
                 almanac_info = [almanac[dayobs] for dayobs in sorted(almanac)]
                 night_time_on_sky_sums = _sum_on_sky_within_twilight(pd.DataFrame(rows), almanac_info)
         except Exception as e:
@@ -347,11 +370,4 @@ class ExposuresService(Service):
 
 @functools.cache
 def get_exposures_service() -> ExposuresService:
-    return ExposuresService(
-        adapters={
-            "consdb": get_consdb_exposures_adapter(),
-            "dome": get_rubin_nights_dome_adapter(),
-            "overhead": get_visit_overhead_adapter(),
-            "almanac": get_almanac_adapter(),
-        }
-    )
+    return ExposuresService()

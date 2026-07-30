@@ -26,7 +26,10 @@ import functools
 import logging
 from typing import Any
 
-from lsst.ts.logging_and_reporting.adapters.nightreport import get_nightreport_adapter
+from lsst.ts.logging_and_reporting.adapters.nightreport import (
+    NightReportCachedAdapter,
+    get_nightreport_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.collation import flatten_sorted
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
@@ -36,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 class NightReportService(Service):
     """Collates Night Report records for /night-reports."""
+
+    def __init__(self, nightreport_adapter: NightReportCachedAdapter | None = None) -> None:
+        self.nightreport_adapter = (
+            nightreport_adapter if nightreport_adapter is not None else get_nightreport_adapter()
+        )
 
     def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
         """Return night reports for the dayobs range.
@@ -48,9 +56,7 @@ class NightReportService(Service):
             Exclusive upper bound of the dayobs range (the API
             contract — the frontend sends end + 1 day).
         """
-        per_day = self.adapters["nightreport"].fetch(
-            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-        )
+        per_day = self.nightreport_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
         if not any(per_day.values()):
             logger.debug(f"No reports for dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end}")
         response = self.collate_response(per_day)
@@ -66,4 +72,4 @@ class NightReportService(Service):
 
 @functools.cache
 def get_night_report_service() -> NightReportService:
-    return NightReportService(adapters={"nightreport": get_nightreport_adapter()})
+    return NightReportService()

@@ -26,10 +26,8 @@ class StubIdAdapter:
 
 def make_service(zephyr=None, jira=None):
     return BlockDetailsService(
-        adapters={
-            "zephyr": zephyr if zephyr is not None else StubIdAdapter(),
-            "jira": jira if jira is not None else StubIdAdapter(),
-        }
+        zephyr_adapter=zephyr if zephyr is not None else StubIdAdapter(),
+        jira_adapter=jira if jira is not None else StubIdAdapter(),
     )
 
 

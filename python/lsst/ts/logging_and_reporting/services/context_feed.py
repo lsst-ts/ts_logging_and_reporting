@@ -27,6 +27,7 @@ import logging
 
 from lsst.ts.logging_and_reporting.adapters.rubin_nights_context import (
     CONTEXT_FEED_COLS,
+    RubinNightsContextAdapter,
     get_rubin_nights_context_adapter,
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
@@ -40,8 +41,13 @@ class ContextFeedService(Service):
     dayObsEnd is **inclusive** here.
     """
 
+    def __init__(self, context_adapter: RubinNightsContextAdapter | None = None) -> None:
+        self.context_adapter = (
+            context_adapter if context_adapter is not None else get_rubin_nights_context_adapter()
+        )
+
     def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
-        records = self.collate_response(self.adapters["context"].fetch(day_obs_start, day_obs_end))
+        records = self.collate_response(self.context_adapter.fetch(day_obs_start, day_obs_end))
         return {"data": records, "cols": CONTEXT_FEED_COLS}
 
     def collate_response(self, data: dict[int, list[dict]]) -> list[dict]:
@@ -64,4 +70,4 @@ class ContextFeedService(Service):
 
 @functools.cache
 def get_context_feed_service() -> ContextFeedService:
-    return ContextFeedService(adapters={"context": get_rubin_nights_context_adapter()})
+    return ContextFeedService()

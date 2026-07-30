@@ -69,12 +69,10 @@ class StubAlmanacAdapter:
 
 def make_service(per_day, dome=None, overhead=None, almanac=None):
     return ExposuresService(
-        adapters={
-            "consdb": StubConsdbAdapter(per_day),
-            "dome": dome or StubDomeAdapter(),
-            "overhead": overhead or StubOverheadAdapter(),
-            "almanac": almanac or StubAlmanacAdapter(),
-        }
+        consdb_adapter=StubConsdbAdapter(per_day),
+        dome_adapter=dome or StubDomeAdapter(),
+        overhead_adapter=overhead or StubOverheadAdapter(),
+        almanac_adapter=almanac or StubAlmanacAdapter(),
     )
 
 
@@ -116,12 +114,10 @@ class TestExclusiveEnd:
         dome = StubDomeAdapter()
         overhead = StubOverheadAdapter()
         service = ExposuresService(
-            adapters={
-                "consdb": consdb,
-                "dome": dome,
-                "overhead": overhead,
-                "almanac": StubAlmanacAdapter(),
-            }
+            consdb_adapter=consdb,
+            dome_adapter=dome,
+            overhead_adapter=overhead,
+            almanac_adapter=StubAlmanacAdapter(),
         )
         service.handle_request(20250101, 20250103, "LSSTCam")
         # Dayobs adapters get the inclusive end (exclusive end - 1 day).

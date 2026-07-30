@@ -19,8 +19,8 @@ class StubVisitsAdapter:
         return self.buckets
 
 
-def make_service(buckets=None):
-    return StaticVisitMapService(adapters={"consdb": StubVisitsAdapter(buckets or {})})
+def make_service(buckets=None, consdb_adapter=None):
+    return StaticVisitMapService(consdb_adapter=consdb_adapter or StubVisitsAdapter(buckets or {}))
 
 
 def visit(day_obs):
@@ -29,10 +29,11 @@ def visit(day_obs):
 
 class TestHandleRequest:
     def test_fetches_range_with_exclusive_end_converted(self):
-        service = make_service()
+        adapter = StubVisitsAdapter({})
+        service = make_service(consdb_adapter=adapter)
         service.handle_request(20250101, 20250104, "LSSTCam")
         # dayObsEnd is exclusive, so the inclusive fetch stops at end - 1.
-        assert service.adapters["consdb"].fetch_calls == [("LSSTCam", 20250101, 20250103)]
+        assert adapter.fetch_calls == [("LSSTCam", 20250101, 20250103)]
 
 
 class TestCollateResponse:
