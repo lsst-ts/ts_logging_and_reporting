@@ -27,7 +27,10 @@ import logging
 
 import pandas as pd
 
-from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_exposures_adapter
+from lsst.ts.logging_and_reporting.adapters.consdb_exposures import (
+    ConsdbExposuresAdapter,
+    get_consdb_exposures_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 from lsst.ts.logging_and_reporting.utils.serialization import make_json_safe, stringify_special_floats
@@ -43,6 +46,9 @@ class DataLogService(Service):
     JSON-safe strings.
     """
 
+    def __init__(self, consdb_adapter: ConsdbExposuresAdapter | None = None) -> None:
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_exposures_adapter()
+
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return the detailed data log for the range and instrument.
 
@@ -56,7 +62,7 @@ class DataLogService(Service):
         instrument : `str`
             Instrument to query (e.g. ``LSSTCam``).
         """
-        per_day = self.adapters["consdb"].fetch(
+        per_day = self.consdb_adapter.fetch(
             instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
         )
         response = self.collate_response(per_day)
@@ -77,4 +83,4 @@ class DataLogService(Service):
 
 @functools.cache
 def get_data_log_service() -> DataLogService:
-    return DataLogService(adapters={"consdb": get_consdb_exposures_adapter()})
+    return DataLogService()

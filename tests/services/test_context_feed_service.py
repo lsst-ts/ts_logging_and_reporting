@@ -18,15 +18,16 @@ class StubContextAdapter:
         return self.buckets
 
 
-def make_service(buckets=None):
-    return ContextFeedService(adapters={"context": StubContextAdapter(buckets or {})})
+def make_service(buckets=None, context_adapter=None):
+    return ContextFeedService(context_adapter=context_adapter or StubContextAdapter(buckets or {}))
 
 
 class TestHandleRequest:
     def test_fetches_inclusive_range(self):
-        service = make_service()
+        adapter = StubContextAdapter({})
+        service = make_service(context_adapter=adapter)
         service.handle_request(20250101, 20250103)
-        assert service.adapters["context"].fetch_calls == [(20250101, 20250103)]
+        assert adapter.fetch_calls == [(20250101, 20250103)]
 
     def test_returns_data_and_constant_cols(self):
         service = make_service(buckets={20250101: [row("t0", name="a")]})

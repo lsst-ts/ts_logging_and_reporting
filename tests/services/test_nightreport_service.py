@@ -17,7 +17,7 @@ def make_report(day_obs, report_id="report-1"):
 
 def make_service(payload):
     adapter = StubAdapter(payload)
-    return NightReportService(adapters={"nightreport": adapter}), adapter
+    return NightReportService(nightreport_adapter=adapter), adapter
 
 
 class TestNightReportService:

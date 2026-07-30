@@ -34,8 +34,8 @@ import re
 
 from fastapi import HTTPException
 
-from lsst.ts.logging_and_reporting.adapters.jira_block import get_jira_block_adapter
-from lsst.ts.logging_and_reporting.adapters.zephyr import get_zephyr_adapter
+from lsst.ts.logging_and_reporting.adapters.jira_block import JiraBlockAdapter, get_jira_block_adapter
+from lsst.ts.logging_and_reporting.adapters.zephyr import ZephyrAdapter, get_zephyr_adapter
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.auth import get_jira_hostname
 
@@ -58,6 +58,14 @@ class BlockDetailsService(Service):
     request fails only when both sources fail.
     """
 
+    def __init__(
+        self,
+        zephyr_adapter: ZephyrAdapter | None = None,
+        jira_adapter: JiraBlockAdapter | None = None,
+    ) -> None:
+        self.zephyr_adapter = zephyr_adapter if zephyr_adapter is not None else get_zephyr_adapter()
+        self.jira_adapter = jira_adapter if jira_adapter is not None else get_jira_block_adapter()
+
     def handle(self, keys: list[str]) -> dict:
         """Return summary, source, and URL per resolvable BLOCK key.
 
@@ -72,10 +80,11 @@ class BlockDetailsService(Service):
             "zephyr": [key for key in keys if ZEPHYR_BLOCK_RE.match(key)],
             "jira": [key for key in keys if JIRA_BLOCK_RE.match(key)],
         }
+        source_adapters = {"zephyr": self.zephyr_adapter, "jira": self.jira_adapter}
 
         fetched = self.fetch_concurrently(
             {
-                source: (lambda source=source, wanted=wanted: self.adapters[source].fetch_by_ids(wanted))
+                source: (lambda source=source, wanted=wanted: source_adapters[source].fetch_by_ids(wanted))
                 for source, wanted in source_keys.items()
                 if wanted
             }
@@ -131,9 +140,4 @@ class BlockDetailsService(Service):
 
 @functools.cache
 def get_block_details_service() -> BlockDetailsService:
-    return BlockDetailsService(
-        adapters={
-            "zephyr": get_zephyr_adapter(),
-            "jira": get_jira_block_adapter(),
-        }
-    )
+    return BlockDetailsService()

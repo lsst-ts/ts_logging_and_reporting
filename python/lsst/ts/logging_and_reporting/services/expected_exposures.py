@@ -28,7 +28,10 @@ import logging
 from fastapi import HTTPException
 from rubin_sim.sim_archive import NoMatchingSimulationsFoundError
 
-from lsst.ts.logging_and_reporting.adapters.expected_exposures import get_expected_exposures_adapter
+from lsst.ts.logging_and_reporting.adapters.expected_exposures import (
+    ExpectedExposuresCachedAdapter,
+    get_expected_exposures_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,13 @@ logger = logging.getLogger(__name__)
 
 class ExpectedExposuresService(Service):
     """Sums the expected (simulated) visit count over a dayobs range."""
+
+    def __init__(self, expected_exposures_adapter: ExpectedExposuresCachedAdapter | None = None) -> None:
+        self.expected_exposures_adapter = (
+            expected_exposures_adapter
+            if expected_exposures_adapter is not None
+            else get_expected_exposures_adapter()
+        )
 
     def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
         """Return the summed expected-exposure count for the range.
@@ -46,7 +56,7 @@ class ExpectedExposuresService(Service):
             Inclusive bounds of the dayobs range, in YYYYMMDD form.
         """
         try:
-            per_day = self.adapters["expected_exposures"].fetch(day_obs_start, day_obs_end)
+            per_day = self.expected_exposures_adapter.fetch(day_obs_start, day_obs_end)
         except NoMatchingSimulationsFoundError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         response = self.collate_response(per_day)
@@ -62,4 +72,4 @@ class ExpectedExposuresService(Service):
 
 @functools.cache
 def get_expected_exposures_service() -> ExpectedExposuresService:
-    return ExpectedExposuresService(adapters={"expected_exposures": get_expected_exposures_adapter()})
+    return ExpectedExposuresService()

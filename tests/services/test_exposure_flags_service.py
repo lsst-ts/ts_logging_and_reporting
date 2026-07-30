@@ -25,7 +25,7 @@ def make_message(day_obs, instrument="LSSTCam", flag="junk", obs_id="obs-1", dat
 
 def make_service(payload):
     adapter = StubAdapter(payload)
-    return ExposureFlagsService(adapters={"exposurelog": adapter}), adapter
+    return ExposureFlagsService(exposurelog_adapter=adapter), adapter
 
 
 class TestExposureFlagsService:

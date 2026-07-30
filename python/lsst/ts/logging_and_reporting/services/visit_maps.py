@@ -42,7 +42,10 @@ from schedview.compute.visits import add_coords_tuple
 from schedview.plot.visit_skymaps import VisitMapBuilder
 from uranography.api import ArmillarySphere, Planisphere
 
-from lsst.ts.logging_and_reporting.adapters.consdb_visits import get_consdb_visits_adapter
+from lsst.ts.logging_and_reporting.adapters.consdb_visits import (
+    ConsdbVisitsAdapter,
+    get_consdb_visits_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 from lsst.utils.plotting import get_multiband_plot_colors
@@ -274,6 +277,9 @@ class VisitMapsService(Service):
     the opsim conversion the Bokeh builder needs run here, on read.
     """
 
+    def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
+
     def handle(
         self, day_obs_start: int, day_obs_end: int, instrument: str, applet_mode: bool = False
     ) -> dict:
@@ -291,7 +297,7 @@ class VisitMapsService(Service):
         applet_mode : `bool`, optional
             Render the simplified applet layout when `True`.
         """
-        per_day = self.adapters["consdb"].fetch(
+        per_day = self.consdb_adapter.fetch(
             instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
         )
         return self.collate_response(per_day, instrument=instrument, applet_mode=applet_mode)
@@ -308,4 +314,4 @@ class VisitMapsService(Service):
 
 @functools.cache
 def get_visit_maps_service() -> VisitMapsService:
-    return VisitMapsService(adapters={"consdb": get_consdb_visits_adapter()})
+    return VisitMapsService()

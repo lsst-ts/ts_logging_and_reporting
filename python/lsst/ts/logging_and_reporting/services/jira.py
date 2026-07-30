@@ -32,7 +32,7 @@ import functools
 import logging
 from datetime import datetime
 
-from lsst.ts.logging_and_reporting.adapters.jira_obs import get_jira_obs_adapter
+from lsst.ts.logging_and_reporting.adapters.jira_obs import JiraObsCachedAdapter, get_jira_obs_adapter
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
@@ -113,6 +113,9 @@ def filter_tickets_without_instrument_match(tickets, instrument):
 class JiraTicketsService(Service):
     """Collates OBS Jira tickets for /jira-tickets."""
 
+    def __init__(self, jira_obs_adapter: JiraObsCachedAdapter | None = None) -> None:
+        self.jira_obs_adapter = jira_obs_adapter if jira_obs_adapter is not None else get_jira_obs_adapter()
+
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return OBS tickets for the range and instrument.
 
@@ -126,7 +129,7 @@ class JiraTicketsService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.adapters["jira_obs"].fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
+        per_day = self.jira_obs_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
 
         # A ticket can sit in several dayobs buckets (created one day,
         # updated another) — keep the first occurrence of each key.
@@ -162,4 +165,4 @@ class JiraTicketsService(Service):
 
 @functools.cache
 def get_jira_tickets_service() -> JiraTicketsService:
-    return JiraTicketsService(adapters={"jira_obs": get_jira_obs_adapter()})
+    return JiraTicketsService()

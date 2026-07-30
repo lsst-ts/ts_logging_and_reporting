@@ -37,31 +37,22 @@ from typing import Any
 import requests
 from fastapi import HTTPException
 
-from lsst.ts.logging_and_reporting.adapters.base_adapters import CachedAdapter
-
 logger = logging.getLogger(__name__)
 
 
 class Service(ABC):
     """A thin collator over one or more adapters.
 
-    Subclasses define their own typed ``handle`` signature; the
-    typical implementation calls its adapter's ``fetch`` directly
-    (single-adapter services) or fans several fetches out through the
-    `fetch_concurrently` helper, then returns `collate_response` of the
-    merged result.
+    Subclasses define their own typed ``__init__`` (named, typed adapter
+    parameters) and ``handle`` signature; the typical implementation
+    calls its adapter's ``fetch`` directly (single-adapter services) or
+    fans several fetches out through the `fetch_concurrently` helper,
+    then returns `collate_response` of the merged result.
 
-    Parameters
-    ----------
-    adapters : `dict` [`str`, `CachedAdapter`]
-        The adapters this service collates, keyed by adapter name.
-        Injected at construction; instances are singletons created at
-        application startup and provided to endpoints via
-        ``fastapi.Depends``.
+    Instances are singletons created at application startup by each
+    module's ``get_*_service`` factory and provided to endpoints via
+    ``fastapi.Depends``.
     """
-
-    def __init__(self, adapters: dict[str, CachedAdapter]):
-        self.adapters = adapters
 
     @abstractmethod
     def handle(self, *args: Any) -> dict:

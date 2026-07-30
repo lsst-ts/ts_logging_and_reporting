@@ -27,7 +27,7 @@ def make_ticket(key="OBS-1", systems=("Simonyi",), created_utc="2025-01-01T18:00
 
 def make_service(payload):
     adapter = StubAdapter(payload)
-    return JiraTicketsService(adapters={"jira_obs": adapter}), adapter
+    return JiraTicketsService(jira_obs_adapter=adapter), adapter
 
 
 class TestJiraTicketsService:

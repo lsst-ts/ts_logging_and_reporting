@@ -37,7 +37,10 @@ import pandas as pd
 import rubin_sim.maf as maf
 from rubin_nights.reference_values import SCIENCE_PROGRAMS
 
-from lsst.ts.logging_and_reporting.adapters.consdb_visits import get_consdb_visits_adapter
+from lsst.ts.logging_and_reporting.adapters.consdb_visits import (
+    ConsdbVisitsAdapter,
+    get_consdb_visits_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 
@@ -282,6 +285,9 @@ class StaticVisitMapService(Service):
     augmentation is needed.
     """
 
+    def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
+
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Build the static visit map for the range.
 
@@ -295,7 +301,7 @@ class StaticVisitMapService(Service):
         instrument : `str`
             Instrument to query (e.g. ``LSSTCam``).
         """
-        per_day = self.adapters["consdb"].fetch(
+        per_day = self.consdb_adapter.fetch(
             instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
         )
         return self.collate_response(per_day)
@@ -309,4 +315,4 @@ class StaticVisitMapService(Service):
 
 @functools.cache
 def get_static_visit_map_service() -> StaticVisitMapService:
-    return StaticVisitMapService(adapters={"consdb": get_consdb_visits_adapter()})
+    return StaticVisitMapService()

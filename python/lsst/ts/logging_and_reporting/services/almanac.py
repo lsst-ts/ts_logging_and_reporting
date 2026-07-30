@@ -32,7 +32,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from lsst.ts.logging_and_reporting.adapters.almanac import get_almanac_adapter
+from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter, get_almanac_adapter
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 
@@ -107,6 +107,9 @@ def _compute_elapsed_twilight_hours(
 class AlmanacService(Service):
     """Collates per-night almanac records for /almanac."""
 
+    def __init__(self, almanac_adapter: AlmanacCachedAdapter | None = None) -> None:
+        self.almanac_adapter = almanac_adapter if almanac_adapter is not None else get_almanac_adapter()
+
     def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
         """Return almanac records for the dayobs range.
 
@@ -124,7 +127,7 @@ class AlmanacService(Service):
         twilight boundary, so the range yields records labeled
         ``day_obs_start + 1`` through ``day_obs_end``.
         """
-        per_day = self.adapters["almanac"].fetch(add_or_subtract_dayobs_days(day_obs_start, 1), day_obs_end)
+        per_day = self.almanac_adapter.fetch(add_or_subtract_dayobs_days(day_obs_start, 1), day_obs_end)
         response = self.collate_response(per_day)
         logger.debug(
             f"Collated {len(response['almanac_info'])} almanac records "
@@ -147,4 +150,4 @@ class AlmanacService(Service):
 
 @functools.cache
 def get_almanac_service() -> AlmanacService:
-    return AlmanacService(adapters={"almanac": get_almanac_adapter()})
+    return AlmanacService()
