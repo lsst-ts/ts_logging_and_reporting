@@ -27,15 +27,16 @@ overwrite cycle (via ``DayobsCachedAdapter.refresh``) means today's entry —
 the stampede-prone hot key — never misses under normal operation, and
 user requests for today never trigger an external fetch directly.
 
-The refresh loop runs on a daemon thread because adapters are
-synchronous by design (see the plan's "Sync vs Async" decision):
-blocking upstream fetches on a thread leave uvicorn's event loop free,
-whereas an asyncio task would have to push every refresh into an
-executor thread anyway.
+The worker runs as its own process (see ``run_refresh_worker.py``),
+separate from the API service. Exactly one instance must run per
+deployment: duplicate refreshes would be harmless (fetch-then-overwrite
+is idempotent) but waste upstream calls, so the deployment — a single
+``refresh-worker`` container in docker-compose, a single-replica
+deployment in Kubernetes — is what guarantees uniqueness.
 
-Three deployment/rollover behaviours matter here:
+Two deployment/rollover behaviours matter here:
 
-- The first refresh cycle runs immediately on ``start()``, so today's
+- The first refresh cycle runs immediately on ``run()``, so today's
   entries are warm right after a deploy or restart instead of staying
   cold for one interval.
 - When the astronomical dayobs rolls over (12:00 UTC), the worker
@@ -45,18 +46,10 @@ Three deployment/rollover behaviours matter here:
   entry would expire ~one short-TTL after rollover (a guaranteed daily
   cold miss on the most-viewed historical night), possibly caching a
   version truncated at the worker's last pre-rollover refresh.
-- A Redis leader lease ensures only one worker refreshes per cycle
-  even when several processes run the app (``uvicorn --workers``,
-  multiple k8s replicas). Duplicate refreshes would be harmless
-  (fetch-then-overwrite is idempotent) but waste upstream calls. If
-  the leader dies, its lease expires and another instance takes over
-  within a cycle.
 """
 
 import logging
 import threading
-import uuid
-from typing import Any
 
 from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
@@ -65,26 +58,21 @@ from .cache_ttl import TODAY_TTL
 
 logger = logging.getLogger(__name__)
 
-LEADER_LOCK_KEY = "lock:refresh_worker:leader"
-
 
 class RefreshWorker:
-    """Daemon thread refreshing today's entry on each adapter.
+    """Refresh loop keeping today's entry warm on each adapter.
 
-    Every ``interval_seconds``, the leader instance calls
-    ``refresh(today)`` on each registered `DayobsCachedAdapter`
-    (fetch-then-overwrite, so the existing entry stays served during
-    the refresh), plus a one-time finalisation refresh of the previous
-    dayobs after rollover. Failures are logged per adapter without
-    aborting the loop.
+    Every ``interval_seconds``, `run` calls ``refresh(today)`` on each
+    registered `DayobsCachedAdapter` (fetch-then-overwrite, so the
+    existing entry stays served during the refresh), plus a one-time
+    finalisation refresh of the previous dayobs after rollover.
+    Failures are logged per adapter without aborting the loop.
 
     Parameters
     ----------
     adapters : `list` [`DayobsCachedAdapter` | `InstrumentDayobsCachedAdapter`]
         The adapters to refresh. ``IdCachedAdapter`` instances are not
         accepted — they have no "today" entry.
-    redis : `Any`
-        redis-py-compatible client, used for the leader lease.
     interval_seconds : `int`, optional
         Seconds between refresh cycles. Defaults to `TODAY_TTL` — the
         cache-control ``max-age`` served for today's data — so
@@ -94,71 +82,43 @@ class RefreshWorker:
     def __init__(
         self,
         adapters: list[DayobsCachedAdapter | InstrumentDayobsCachedAdapter],
-        redis: Any,
         interval_seconds: int = TODAY_TTL,
     ):
         self._adapters = list(adapters)
-        self._redis = redis
         self._interval = interval_seconds
-        # Lease must outlive the interval so leadership is stable
-        # across cycles, but expire soon after a dead leader's last
-        # re-up so failover happens within about one cycle.
-        self._lease_ttl = interval_seconds * 2
-        self._instance_id = uuid.uuid4().hex
         self._stop_event = threading.Event()
-        self._thread: threading.Thread | None = None
         self._last_today: int | None = None
 
-    def start(self) -> None:
-        """Start the daemon thread. Called once at application startup.
+    def run(self) -> None:
+        """Run refresh cycles until `stop` is called.
 
-        The first refresh cycle runs immediately (on the worker
-        thread, so startup is not blocked).
+        Blocks the calling thread; the worker process has nothing else
+        to do. The first cycle runs immediately, further cycles once
+        per interval.
         """
-        if self._thread is not None and self._thread.is_alive():
-            logger.warning("RefreshWorker.start() called while already running")
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, name="RefreshWorker", daemon=True)
-        self._thread.start()
-        logger.info(
-            f"RefreshWorker started: {len(self._adapters)} adapter(s), "
-            f"interval {self._interval}s, instance {self._instance_id}"
-        )
-
-    def stop(self) -> None:
-        """Signal the thread to stop cleanly. Called at shutdown.
-
-        Releases the leader lease if held, so another instance can
-        take over immediately rather than waiting out the lease.
-        """
-        self._stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout=self._interval)
-            self._thread = None
-        self._release_leadership()
-        logger.info("RefreshWorker stopped")
-
-    def _run(self) -> None:
-        # Immediate first cycle, then one per interval. wait() returns
-        # True when stop() sets the event, ending the loop; a False
-        # return means the interval elapsed normally.
+        logger.info(f"RefreshWorker started: {len(self._adapters)} adapter(s), interval {self._interval}s")
+        # wait() returns True when stop() sets the event, ending the
+        # loop; a False return means the interval elapsed normally.
         self._refresh_cycle()
         while not self._stop_event.wait(self._interval):
             self._refresh_cycle()
+        logger.info("RefreshWorker stopped")
+
+    def stop(self) -> None:
+        """Signal the loop to finish, from a signal handler or thread.
+
+        `run` returns once the in-flight cycle completes.
+        """
+        self._stop_event.set()
 
     def _refresh_cycle(self) -> None:
-        """One pass: if leader, finalise the previous dayobs on
-        rollover, then refresh today on every adapter.
+        """One pass: finalise the previous dayobs on rollover, then
+        refresh today on every adapter.
 
-        Never raises — a failure here (e.g. transient Redis
-        connectivity in the leadership check) is logged and the cycle
-        retried at the next interval, so the worker thread cannot die.
+        Never raises — a failure here is logged and the cycle retried
+        at the next interval, so the loop cannot die.
         """
         try:
-            if not self._acquire_leadership():
-                logger.debug("RefreshWorker: not leader this cycle, skipping")
-                return
             today = current_dayobs()
             if self._last_today is not None and today != self._last_today:
                 logger.info(
@@ -181,29 +141,3 @@ class RefreshWorker:
                 logger.exception(
                     f"RefreshWorker: refresh of dayobs {dayobs} failed for adapter {adapter.name!r}"
                 )
-
-    def _acquire_leadership(self) -> bool:
-        """Acquire or re-up the leader lease; return True if leading.
-
-        ``SET NX EX`` wins an unheld lease; the current holder renews
-        by overwriting its own value. Between the read and the renewal
-        an expired lease could be won by another instance and then
-        overwritten here — that costs at worst one doubly-refreshed
-        cycle, which fetch-then-overwrite makes harmless.
-        """
-        if self._redis.set(LEADER_LOCK_KEY, self._instance_id, nx=True, ex=self._lease_ttl):
-            return True
-        holder = self._redis.get(LEADER_LOCK_KEY)
-        if holder is not None and self._decode(holder) == self._instance_id:
-            self._redis.set(LEADER_LOCK_KEY, self._instance_id, ex=self._lease_ttl)
-            return True
-        return False
-
-    def _release_leadership(self) -> None:
-        holder = self._redis.get(LEADER_LOCK_KEY)
-        if holder is not None and self._decode(holder) == self._instance_id:
-            self._redis.delete(LEADER_LOCK_KEY)
-
-    @staticmethod
-    def _decode(value: Any) -> str:
-        return value.decode() if isinstance(value, bytes) else str(value)
