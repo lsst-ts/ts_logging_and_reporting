@@ -23,7 +23,7 @@
 from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 
 from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
@@ -60,9 +60,17 @@ def _make_app():
     def narrative_log():
         return {"ok": True}
 
+    @app.get("/jira-tickets")
+    def jira_tickets():
+        return {"ok": True}
+
     @app.get("/health")
     def health():
         return {"ok": True}
+
+    @app.get("/error/{status_code}")
+    def error_endpoint(status_code: int):
+        return Response(status_code=status_code)
 
     return app
 
@@ -179,3 +187,48 @@ def test_only_start_param(mock_today, client):
 def test_only_end_param(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsEnd": MOCK_TODAY})
     assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
+
+
+# -- error responses --
+
+
+@pytest.mark.parametrize("status_code", [400, 404, 422, 500, 503])
+def test_error_response_gets_no_store(status_code, client):
+    resp = client.get(f"/error/{status_code}")
+    assert _cache_header(resp) == "no-store"
+
+
+@patch(
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_error_response_overrides_dayobs_ttl(mock_today, client):
+    resp = client.get(
+        "/error/500",
+        params={"dayObsStart": 20250101, "dayObsEnd": 20250131},
+    )
+    assert _cache_header(resp) == "no-store"
+
+
+@patch(
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_status_399_not_treated_as_error(mock_today, client):
+    resp = client.get(
+        "/error/399",
+        params={"dayObsStart": 20250101, "dayObsEnd": 20250131},
+    )
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
+
+
+@patch(
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_status_400_treated_as_error(mock_today, client):
+    resp = client.get(
+        "/error/400",
+        params={"dayObsStart": 20250101, "dayObsEnd": 20250131},
+    )
+    assert _cache_header(resp) == "no-store"

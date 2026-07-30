@@ -72,6 +72,10 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
 
+        if response.status_code >= 400:
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
         path = request.url.path.rstrip("/")
         mutable = path in _MUTABLE_PATHS
 
