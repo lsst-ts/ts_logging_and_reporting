@@ -130,12 +130,25 @@ fetch. Three layers address this:
 If the server is running, Redis is available. No fallback path is implemented.
 
 **Middleware for cross-cutting concerns**
-Four middleware classes replace logic that is currently either scattered across endpoints or
-missing:
+Originally planned as four middleware classes; `ErrorHandlingMiddleware` was dropped (see below).
+The remaining three replace logic that is currently either scattered across endpoints or missing:
 
-1. `ErrorHandlingMiddleware` — catches all unhandled exceptions and returns structured JSON errors
-2. `DayobsValidationMiddleware` — validates dayobs parameters, ensures `dayObsStart <= dayObsEnd`;
-   must skip endpoints without dayobs parameters (`/block-details`, `/version`, `/health`)
+1. ~~`ErrorHandlingMiddleware` — catches all unhandled exceptions and returns structured JSON
+   errors~~ **Dropped (2026-07-30).** `Service.handle_request` already catches everything a
+   service-backed endpoint's `handle()` can raise and converts it to a JSON `HTTPException`, which
+   covers every data endpoint. The original design was built around the `BaseLogrepError`
+   hierarchy in `exceptions.py`, but that module was deleted as dead code in the chunk-8 cleanup
+   (Stage 2) — so implementing this as originally envisioned isn't even possible without
+   resurrecting a hierarchy that was deliberately removed. The frontend (`../ts_logging_frontend`)
+   also doesn't need the shape guarantee this would provide: `fetchUtils.js` already falls back to
+   a generic message when the error body isn't JSON or lacks `detail`, and `detail` never reaches
+   any user-visible UI regardless (only `console.error`). The one residual gap — a bug outside any
+   service call (a dependency raising something other than `HTTPException`, or a non-JSON-
+   serializable service return value) — still gets logged by Starlette's own
+   `ServerErrorMiddleware`; it just wouldn't come back as tidy JSON, which is an acceptable bar for
+   a true framework-level bug.
+2. ✅ `DayobsValidationMiddleware` — done (2026-07-30, commit 73e6ad1); see
+   `middleware/dayobs_validation.py` entry below.
 3. `CacheControlMiddleware` — **already implemented and committed** (with tests in
    `tests/test_cache_control.py`); adds `Cache-Control` headers from the shared
    `cache_ttl.py` constants: `TODAY_TTL` if the response includes today's dayobs,
@@ -619,7 +632,7 @@ HTTP layer without touching the adapter or service code.
 | `middleware/__init__.py` | ✅ Exists — exports middleware classes |
 | `cache_ttl.py` | ✅ All cache lifetimes in one place: `HISTORIC_TTL`/`HISTORIC_TTL_REDIS`, `TODAY_TTL`/`TODAY_TTL_REDIS`, `MUTABLE_TTL`/`MUTABLE_TTL_REDIS` — client `max-age` and Redis TTL per data kind; the `RefreshWorker` default interval is `TODAY_TTL` |
 | `middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers from the `cache_ttl` constants based on whether today's dayobs is in the requested range (mutable-data endpoints get `MUTABLE_TTL` on historical ranges) |
-| `middleware/error_handling.py` | `ErrorHandlingMiddleware` — catches unhandled exceptions and returns structured JSON using the existing `BaseLogrepError` hierarchy from `exceptions.py` |
+| `middleware/error_handling.py` | ❌ Dropped (2026-07-30) — `Service.handle_request` already covers this for every service-backed endpoint, and the `BaseLogrepError` hierarchy it was meant to use was deleted as dead code (chunk-8 Stage 2); see "Middleware for cross-cutting concerns" above |
 | `middleware/dayobs_validation.py` | ✅ `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips requests that don't match a registered route (so it never shadows a 404/405), and non-numeric values are left for FastAPI's own type coercion |
 | `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |
 | `adapters/base_adapters.py` | ✅ `CachedAdapter` base (single-flight cache loop) with `DayobsCachedAdapter`, `IdCachedAdapter`, and `InstrumentDayobsCachedAdapter` subclasses (renamed from `base_adapter.py`; the `MutableDataMixin` moved to `adapters/mixins.py` and the `dayobs_range` / `contiguous_runs` / `dayobs_int_to_date` / `date_to_dayobs_int` helpers to `utils/dayobs.py`) |
@@ -730,7 +743,8 @@ HTTP layer without touching the adapter or service code.
   per-route `dependencies=[Depends(validate_dayobs_range)]` approach was tried first and then
   replaced by the middleware once it became clear per-route wiring could silently be forgotten
   on a new endpoint
-- ⬜ `error_handling.py` and `public_access.py` middleware remain unimplemented
+- ⬜ `public_access.py` middleware remains unimplemented; `error_handling.py` was dropped (see
+  "Middleware for cross-cutting concerns" above)
 - Singleton instantiation lives in the adapter/service modules as cached getters, not in
   `main.py`; main only imports getters
 - Endpoints without a `Service` (`/version`, `/health`) remain as simple route functions
@@ -1218,7 +1232,6 @@ skinparam packageStyle rectangle
 actor Client
 
 package "Middleware Stack" {
-    component [ErrorHandlingMiddleware] as MW_ERR
     component [PublicAccessMiddleware] as MW_PUB
     component [DayobsValidationMiddleware] as MW_DAY
     component [CacheControlMiddleware] as MW_CC
@@ -1239,7 +1252,7 @@ package "Endpoints (main.py)" {
     component [/multi-night-visit-maps] as EP14
     component [/expected-exposures] as EP15
     component [/static-visit-map] as EP16
-    component [/version\n/health\n/mock-exposures] as EP_SIMPLE
+    component [/version\n/health] as EP_SIMPLE
 }
 
 package "Service Layer (services/)" {
@@ -1273,6 +1286,7 @@ package "Adapter Layer" {
         component [ConsdbVisitsAdapter] as AD_VIS
         component [AlmanacCachedAdapter] as AD_ALM
         component [ExpectedExposuresCachedAdapter] as AD_EXP_EXP
+        component [VisitOverheadAdapter] as AD_VISOVH
     }
     package "adapters/jira_*.py" {
         component [JiraObsCachedAdapter] as AD_JIRA_OBS
@@ -1296,15 +1310,13 @@ package "External Data Sources" {
     component [Jira] as EXT_JIRA
     component [Zephyr] as EXT_ZEP
     component [EFD] as EXT_EFD
-    component [rubin_nights / schedview] as EXT_RN
     component [rubin_sim] as EXT_SIM
 }
 
 component [RefreshWorker\n(separate process)] as WORKER
 
 ' Request flow through middleware
-Client --> MW_ERR
-MW_ERR --> MW_PUB
+Client --> MW_PUB
 MW_PUB --> MW_DAY
 MW_DAY --> MW_CC
 MW_CC --> EP1
@@ -1344,6 +1356,8 @@ SVC1 --> AD_EXP
 SVC2 --> AD_EXP
 SVC3 --> AD_CDB
 SVC3 --> AD_DOME
+SVC3 --> AD_VISOVH
+SVC3 --> AD_ALM
 SVC6 --> AD_CDB
 SVC7 --> AD_JIRA_OBS
 SVC8 --> AD_JIRA_BLK : fetch_by_ids
@@ -1352,6 +1366,7 @@ SVC9 --> AD_ALM
 SVC10 --> AD_NAR
 SVC11 --> AD_NIG
 SVC12 --> AD_EFD
+SVC12 --> AD_ALM
 SVC13 --> AD_CTX
 SVC14 --> AD_VIS
 SVC15 --> AD_EXP_EXP
@@ -1369,6 +1384,7 @@ AD_EFD <--> REDIS_ADP
 AD_CTX <--> REDIS_ADP
 AD_VIS <--> REDIS_ADP
 AD_EXP_EXP <--> REDIS_ADP
+AD_VISOVH <--> REDIS_ADP
 
 ' ID-based adapters use the ID-keyed block cache
 AD_JIRA_BLK <--> REDIS_BLK
@@ -1379,29 +1395,33 @@ AD_EXP --> EXT_EXP
 AD_NAR --> EXT_NAR
 AD_NIG --> EXT_NIG
 AD_CDB --> EXT_CDB
-AD_ALM --> EXT_RN
 AD_JIRA_OBS --> EXT_JIRA
 AD_JIRA_BLK --> EXT_JIRA
 AD_ZEP --> EXT_ZEP
 AD_DOME --> EXT_EFD
 AD_EFD --> EXT_EFD
 AD_CTX --> EXT_EFD
-AD_VIS --> EXT_RN
+AD_VIS --> EXT_CDB
 AD_EXP_EXP --> EXT_SIM
+AD_VISOVH --> EXT_EFD
+
+' VisitOverheadAdapter composes ConsdbExposuresAdapter directly (no second ConsDB query)
+AD_VISOVH --> AD_CDB
 
 ' Background worker refreshes all CachedAdapters
-' (IdCachedAdapters are not registered — no "today" entry to refresh)
+' (IdCachedAdapters are not registered — no "today" entry to refresh;
+' AlmanacCachedAdapter is not registered either — deterministic ephemeris, always long TTL)
 WORKER --> AD_EXP
 WORKER --> AD_NAR
 WORKER --> AD_NIG
 WORKER --> AD_CDB
-WORKER --> AD_ALM
 WORKER --> AD_JIRA_OBS
 WORKER --> AD_DOME
 WORKER --> AD_EFD
 WORKER --> AD_CTX
 WORKER --> AD_VIS
 WORKER --> AD_EXP_EXP
+WORKER --> AD_VISOVH
 
 @enduml
 ```
