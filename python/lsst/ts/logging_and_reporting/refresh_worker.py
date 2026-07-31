@@ -50,6 +50,7 @@ Two deployment/rollover behaviours matter here:
 
 import logging
 import threading
+import time
 
 from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
@@ -57,6 +58,10 @@ from .adapters.base_adapters import DayobsCachedAdapter, InstrumentDayobsCachedA
 from .cache_ttl import TODAY_TTL
 
 logger = logging.getLogger(__name__)
+
+SLOW_CYCLE_FRACTION = 0.5
+"""Fraction of the refresh interval a cycle may take before it is
+logged as slow."""
 
 
 class RefreshWorker:
@@ -118,6 +123,10 @@ class RefreshWorker:
         Never raises — a failure here is logged and the cycle retried
         at the next interval, so the loop cannot die.
         """
+        logger.info("RefreshWorker: refresh cycle started")
+        started = time.monotonic()
+        successes = 0
+        failures = 0
         try:
             today = current_dayobs()
             if self._last_today is not None and today != self._last_today:
@@ -125,19 +134,43 @@ class RefreshWorker:
                     f"RefreshWorker: dayobs rollover {self._last_today} -> {today}; "
                     f"finalising {self._last_today}"
                 )
-                self._refresh_all(self._last_today)
-            self._refresh_all(today)
+                ok, failed = self._refresh_all(self._last_today)
+                successes += ok
+                failures += failed
+            ok, failed = self._refresh_all(today)
+            successes += ok
+            failures += failed
             self._last_today = today
         except Exception:
             logger.exception("RefreshWorker: refresh cycle failed")
+        elapsed = time.monotonic() - started
+        logger.info(
+            f"RefreshWorker: refresh cycle finished in {elapsed:.1f}s "
+            f"({successes} succeeded, {failures} failed)"
+        )
+        if elapsed > SLOW_CYCLE_FRACTION * self._interval:
+            logger.warning(
+                f"RefreshWorker: cycle took {elapsed:.1f}s, over "
+                f"{SLOW_CYCLE_FRACTION:.0%} of the {self._interval}s interval"
+            )
 
-    def _refresh_all(self, dayobs: int) -> None:
+    def _refresh_all(self, dayobs: int) -> tuple[int, int]:
+        """Refresh every adapter for ``dayobs``.
+
+        Returns the number of adapters that refreshed successfully and
+        the number that raised
+        """
+        successes = 0
+        failures = 0
         for adapter in self._adapters:
             if self._stop_event.is_set():
-                return
+                break
             try:
                 adapter.refresh(dayobs)
+                successes += 1
             except Exception:
+                failures += 1
                 logger.exception(
                     f"RefreshWorker: refresh of dayobs {dayobs} failed for adapter {adapter.name!r}"
                 )
+        return successes, failures
