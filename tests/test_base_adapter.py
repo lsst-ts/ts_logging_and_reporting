@@ -105,6 +105,22 @@ class TestCacheLoop:
         assert cached == first
         assert len(adapter.calls) == 1
 
+    def test_non_ascii_stored_as_utf8(self, fake_redis):
+        text = "日本語 中文 😀"
+
+        class UnicodeAdapter(RecordingAdapter):
+            def _fetch_run(self, run_start, run_end):
+                self.calls.append((run_start, run_end))
+                return {d: {"note": text} for d in dayobs_range(run_start, run_end)}
+
+        adapter = UnicodeAdapter(fake_redis)
+        result = adapter.fetch(20250101, 20250101)
+        assert result[20250101]["note"] == text
+
+        raw = fake_redis.get("adapter:recording:20250101")
+        assert text.encode("utf-8") in raw
+        assert b"\\u" not in raw
+
     def test_cached_null_is_a_hit(self, fake_redis):
         class NullAdapter(RecordingAdapter):
             def _fetch_run(self, run_start, run_end):
@@ -130,6 +146,18 @@ class TestCacheLoop:
         adapter = IncompleteAdapter(fake_redis)
         with pytest.raises(KeyError):
             adapter.fetch(20250101, 20250101)
+        assert fake_redis.exists("lock:adapter:recording:20250101") == 0
+
+    def test_non_finite_value_raises_and_releases_locks(self, fake_redis):
+        class NanAdapter(RecordingAdapter):
+            def _fetch_run(self, run_start, run_end):
+                self.calls.append((run_start, run_end))
+                return {d: float("nan") for d in dayobs_range(run_start, run_end)}
+
+        adapter = NanAdapter(fake_redis)
+        with pytest.raises(ValueError):
+            adapter.fetch(20250101, 20250101)
+        assert fake_redis.keys() == []  # no data, and locks released
         assert fake_redis.exists("lock:adapter:recording:20250101") == 0
 
 
