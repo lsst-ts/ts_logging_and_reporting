@@ -35,18 +35,55 @@ Redis is assumed always available — if the server is running, Redis
 is reachable; no fallback path is implemented. The socket timeouts
 below only bound how long a request can hang if that assumption
 breaks.
+
+Setting ``ND_CACHING_DISABLE_REDIS`` replaces the client with
+`DisabledRedis`, which caches nothing; use it to see uncached
+upstream behaviour without tearing the Redis server down.
 """
 
 import functools
 import logging
 import os
+from typing import Any
 
 import redis
 
 logger = logging.getLogger(__name__)
 
+DISABLE_ENV_VAR = "ND_CACHING_DISABLE_REDIS"
+"""Environment variable that turns the Redis cache off."""
 
-def create_redis_client() -> redis.Redis:
+
+def redis_caching_disabled() -> bool:
+    """Whether `DISABLE_ENV_VAR` turns the Redis cache off.
+
+    Unset, empty and ``"0"`` leave caching on; any other value turns it
+    off.
+    """
+    return os.environ.get(DISABLE_ENV_VAR, "").strip() not in ("", "0")
+
+
+class DisabledRedis:
+    """Stand-in client that caches nothing.
+
+    Every read misses, every write is silently dropped, every lock is
+    automatically won.
+    """
+
+    def get(self, name: str) -> None:
+        return None
+
+    def set(self, name: str, value: Any, nx: bool = False, ex: int | None = None) -> bool:
+        return True
+
+    def delete(self, *names: str) -> int:
+        return 0
+
+    def exists(self, *names: str) -> int:
+        return 0
+
+
+def create_redis_client() -> redis.Redis | DisabledRedis:
     """Create the shared Redis client from environment configuration.
 
     Environment variables
@@ -58,13 +95,20 @@ def create_redis_client() -> redis.Redis:
         Port of the Redis server (default ``6379``).
     REDIS_DB
         Redis logical database number (default ``0``).
+    ND_CACHING_DISABLE_REDIS
+        If set (see `redis_caching_disabled`), no server is contacted
+        at all and a `DisabledRedis` is returned instead.
 
     Returns
     -------
-    `redis.Redis`
+    `redis.Redis` or `DisabledRedis`
         Client with its own connection pool. Call once at application
         startup and share the instance.
     """
+    if redis_caching_disabled():
+        logger.warning(f"{DISABLE_ENV_VAR} is set; Redis caching is disabled")
+        return DisabledRedis()
+
     host = os.environ.get("REDIS_HOST", "localhost")
     port = int(os.environ.get("REDIS_PORT", "6379"))
     db = int(os.environ.get("REDIS_DB", "0"))
@@ -79,5 +123,5 @@ def create_redis_client() -> redis.Redis:
 
 
 @functools.cache
-def get_redis_client() -> redis.Redis:
+def get_redis_client() -> redis.Redis | DisabledRedis:
     return create_redis_client()
