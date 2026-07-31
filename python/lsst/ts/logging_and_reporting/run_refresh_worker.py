@@ -34,6 +34,7 @@ import signal
 from types import FrameType
 
 from lsst.ts.logging_and_reporting import adapters
+from lsst.ts.logging_and_reporting.redis_client import DISABLE_ENV_VAR, redis_caching_disabled
 
 from .refresh_worker import RefreshWorker
 
@@ -46,6 +47,12 @@ logger = logging.getLogger(__name__)
 
 def run_refresh_worker() -> None:
     """Run the refresh worker until SIGTERM or SIGINT."""
+
+    if redis_caching_disabled():
+        # Nothing to warm: every entry the worker wrote would be
+        # dropped, leaving only the upstream load.
+        logger.warning(f"{DISABLE_ENV_VAR} is set; refresh worker has no cache to warm, exiting")
+        return
 
     worker = RefreshWorker(
         [
