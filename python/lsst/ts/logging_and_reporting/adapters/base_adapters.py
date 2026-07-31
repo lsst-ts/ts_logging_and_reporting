@@ -169,9 +169,15 @@ class CachedAdapter:
         """Serialise ``data`` as JSON and write it with the key's TTL.
 
         ``_fetch_from_source`` implementations must therefore return
-        JSON-serialisable data.
+        JSON-serialisable data. ``allow_nan=False`` rejects NaN/Infinity
+        instead of writing spec-invalid JSON; ``ensure_ascii=False`` and
+        compact separators keep the cached bytes smaller.
         """
-        self._redis.set(self._cache_key(key), json.dumps(data), ex=self._ttl(key))
+        self._redis.set(
+            self._cache_key(key),
+            json.dumps(data, allow_nan=False, ensure_ascii=False, separators=(",", ":")),
+            ex=self._ttl(key),
+        )
 
     def _acquire_lock(self, key) -> bool:
         return bool(self._redis.set(self._lock_key(key), "1", nx=True, ex=self.LOCK_TTL))
