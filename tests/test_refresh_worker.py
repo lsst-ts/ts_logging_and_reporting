@@ -39,6 +39,34 @@ class FakeClock:
         return self._readings.pop(0)
 
 
+class RecordingEvent:
+    """Stands in for the worker's stop event.
+
+    Records the timeout of every `wait` and reports "stopped" once
+    ``cycles`` of them have gone by, so `RefreshWorker.run` returns
+    after a known number of cycles and the test can inspect how long
+    it meant to sleep between them.
+    """
+
+    def __init__(self, cycles):
+        self.waits = []
+        self._remaining = cycles
+        self._flag = False
+
+    def wait(self, timeout=None):
+        self.waits.append(timeout)
+        self._remaining -= 1
+        if self._remaining <= 0:
+            self._flag = True
+        return self._flag
+
+    def is_set(self):
+        return self._flag
+
+    def set(self):
+        self._flag = True
+
+
 def fix_today(monkeypatch, dayobs):
     monkeypatch.setattr(refresh_worker_module, "current_dayobs", lambda: dayobs)
 
@@ -211,6 +239,43 @@ class TestSlowCycleWarning:
         assert (
             cycle_log(caplog)[-1] == "RefreshWorker: refresh cycle finished in 200.0s (1 succeeded, 0 failed)"
         )
+
+
+class TestCycleScheduling:
+    """Cycles start one interval apart, not one interval after the
+    previous one finished."""
+
+    def run_loop(self, monkeypatch, readings, cycles, interval=300, adapters=None):
+        fix_today(monkeypatch, 20250101)
+        monkeypatch.setattr(refresh_worker_module, "time", FakeClock(*readings))
+        worker = RefreshWorker(adapters or [StubAdapter()], interval_seconds=interval)
+        event = RecordingEvent(cycles)
+        worker._stop_event = event
+        worker.run()
+        return event
+
+    def test_wait_deducts_the_cycle_duration(self, monkeypatch):
+        # A 50s cycle then a 100s one, against a 300s interval.
+        event = self.run_loop(monkeypatch, [0.0, 50.0, 100.0, 200.0], cycles=2)
+        assert event.waits == [250.0, 200.0]
+
+    def test_overrunning_cycle_leaves_no_wait(self, monkeypatch):
+        event = self.run_loop(monkeypatch, [0.0, 400.0], cycles=1)
+        assert event.waits == [0.0]
+
+    def test_schedule_catches_up_after_an_overrun(self, monkeypatch):
+        # 400s cycle (no wait), then a 10s one back on schedule.
+        event = self.run_loop(monkeypatch, [0.0, 400.0, 500.0, 510.0], cycles=2)
+        assert event.waits == [0.0, 290.0]
+
+    def test_first_cycle_runs_before_any_wait(self, monkeypatch):
+        seen = []
+        adapter = StubAdapter(on_refresh=lambda: seen.append("refreshed"))
+        event = self.run_loop(monkeypatch, [0.0, 10.0], cycles=1, adapters=[adapter])
+        assert seen == ["refreshed"]
+        # A 290s wait can only have been computed from a finished 10s
+        # cycle, so the refresh preceded the loop's first wait.
+        assert event.waits == [290.0]
 
 
 class TestRunLoop:
