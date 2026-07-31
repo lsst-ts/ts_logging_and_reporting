@@ -79,9 +79,9 @@ class RefreshWorker:
         The adapters to refresh. ``IdCachedAdapter`` instances are not
         accepted — they have no "today" entry.
     interval_seconds : `int`, optional
-        Seconds between refresh cycles. Defaults to `TODAY_TTL` — the
-        cache-control ``max-age`` served for today's data — so
-        clients are never staler than one refresh cycle.
+        Seconds between the start of consecutive refresh cycles. Defaults
+        to `TODAY_TTL` — the cache-control ``max-age`` served for today's
+        data — so clients are never staler than one refresh cycle.
     """
 
     def __init__(
@@ -98,15 +98,18 @@ class RefreshWorker:
         """Run refresh cycles until `stop` is called.
 
         Blocks the calling thread; the worker process has nothing else
-        to do. The first cycle runs immediately, further cycles once
-        per interval.
+        to do. The first cycle runs immediately; each subsequent cycle
+        starts one interval after the previous one started, by waiting
+        out only the part of the interval the cycle did not consume. A
+        cycle that overruns the interval leaves no wait at all, so the
+        next one starts immediately.
         """
         logger.info(f"RefreshWorker started: {len(self._adapters)} adapter(s), interval {self._interval}s")
         # wait() returns True when stop() sets the event, ending the
         # loop; a False return means the interval elapsed normally.
-        self._refresh_cycle()
-        while not self._stop_event.wait(self._interval):
-            self._refresh_cycle()
+        elapsed = self._refresh_cycle()
+        while not self._stop_event.wait(max(0.0, self._interval - elapsed)):
+            elapsed = self._refresh_cycle()
         logger.info("RefreshWorker stopped")
 
     def stop(self) -> None:
@@ -116,12 +119,15 @@ class RefreshWorker:
         """
         self._stop_event.set()
 
-    def _refresh_cycle(self) -> None:
+    def _refresh_cycle(self) -> float:
         """One pass: finalise the previous dayobs on rollover, then
         refresh today on every adapter.
 
         Never raises — a failure here is logged and the cycle retried
         at the next interval, so the loop cannot die.
+
+        Returns the seconds the pass took, which `run` deducts from the
+        wait before the next one.
         """
         logger.info("RefreshWorker: refresh cycle started")
         started = time.monotonic()
@@ -153,6 +159,7 @@ class RefreshWorker:
                 f"RefreshWorker: cycle took {elapsed:.1f}s, over "
                 f"{SLOW_CYCLE_FRACTION:.0%} of the {self._interval}s interval"
             )
+        return elapsed
 
     def _refresh_all(self, dayobs: int) -> tuple[int, int]:
         """Refresh every adapter for ``dayobs``.
