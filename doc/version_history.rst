@@ -1,3 +1,12 @@
+v0.15.2-alpha.2 (2026-07-31)
+============================
+
+Bug Fixes
+---------
+
+- Fix timestamp unit issue in get_obs_status_events due to bump in pandas to v3. (`OSW-2755 <https://rubinobs.atlassian.net//browse/OSW-2755>`_)
+
+
 v0.15.1 (2026-07-30)
 ====================
 
