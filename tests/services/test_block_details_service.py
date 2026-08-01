@@ -124,10 +124,15 @@ class TestErrorReporting:
         assert response["errors"] == {}
 
     def test_http_exception_propagates(self):
+        # An unresolvable Zephyr token is the realistic case: it raises
+        # HTTPException rather than a plain Exception, so it hard-fails
+        # the request instead of degrading into "errors".
         service = make_service(
-            zephyr=StubIdAdapter(error=HTTPException(status_code=401, detail="no token")),
+            zephyr=StubIdAdapter(error=HTTPException(status_code=500, detail="Server configuration error")),
             jira=StubIdAdapter({"BLOCK-2": "Ticket"}),
         )
         with pytest.raises(HTTPException) as exc_info:
             service.handle_request(["BLOCK-T1", "BLOCK-2"])
-        assert exc_info.value.status_code == 401
+        assert exc_info.value.status_code == 500
+        # The adapter's own exception, not the both-sources-failed one.
+        assert exc_info.value.detail == "Server configuration error"

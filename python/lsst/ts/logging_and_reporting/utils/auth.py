@@ -22,25 +22,25 @@
 
 """Authentication tokens, headers, and server/host resolution."""
 
+import logging
 import os
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
+
+logger = logging.getLogger(__name__)
 
 AUTH_SOURCES = {
     "rsp": {
         "env_var": "ACCESS_TOKEN",
         "label": "RSP",
-        "use_rsp_utils": True,
     },
     "jira": {
         "env_var": "JIRA_API_TOKEN",
         "label": "Jira",
-        "use_rsp_utils": False,
     },
     "zephyr": {
         "env_var": "ZEPHYR_API_TOKEN",
         "label": "Zephyr",
-        "use_rsp_utils": False,
     },
 }
 
@@ -84,81 +84,21 @@ class Server:
                 raise ValueError(f"Unset or invalid {env_var_name}: {current}")
 
 
-def retrieve_access_token(config: dict, request: Request = None) -> str:
-    """Retrieve an authentication token using a configurable sequence of
-    fallback methods.
-
-    This function is framework-agnostic and can be used anywhere token
-    retrieval is needed, without relying on FastAPI.
-
-    Retrieval order
-    ---------------
-    1. Preferred RSP notebook API
-    (``lsst.rsp._services.RSPDiscovery.get_token``) if enabled.
-    2. Fallback notebook API (``lsst.rsp.utils.get_access_token``) for
-    backward compatibility.
-    3. Environment variable specified in the config.
-    4. Authorization header from the provided request, if any.
-
-    Parameters
-    ----------
-    config : `dict`
-        Configuration for the authentication source. Must contain keys:
-        - ``"use_rsp_utils"`` (`bool`)
-        - ``"env_var"`` (`str`)
-        - ``"label"`` (`str`)
-    request : `fastapi.Request`, optional
-        FastAPI request object used to extract the token from headers.
-        Default is None.
-
-    Returns
-    -------
-    `str`
-        The resolved authentication token.
+def retrieve_access_token(config: dict) -> str:
+    """Return the service-account token named by ``config["env_var"]``.
 
     Raises
     ------
     HTTPException
-        If no token could be retrieved by any method.
+        500 if the variable is unset — callers do not authenticate, so
+        this is a misconfigured deployment, not a bad request.
     """
-
-    # Try RSP notebook utils (only if enabled)
-    if config.get("use_rsp_utils"):
-        # Preferred API
-        try:
-            from lsst.rsp._services import RSPDiscovery
-
-            token = RSPDiscovery.get_token()
-            if token:
-                return token
-        except (ImportError, Exception):
-            pass
-
-        # Backward compatibility fallback
-        try:
-            import lsst.rsp.utils
-
-            token = lsst.rsp.utils.get_access_token()
-            if token:
-                return token
-        except ImportError:
-            pass
-
-    # Try env variable
     env_token = os.getenv(config["env_var"])
     if env_token is not None:
         return env_token
 
-    # Try request headers
-    if request is not None:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and " " in auth_header:
-            return auth_header.split(" ")[1]
-
-    raise HTTPException(
-        status_code=401,
-        detail=f"{config['label']} authentication token could not be retrieved by any method.",
-    )
+    logger.error(f"{config['label']} service-account token is unset ({config['env_var']} not configured)")
+    raise HTTPException(status_code=500, detail="Server configuration error")
 
 
 def get_auth_header(token: str | None):
@@ -183,7 +123,7 @@ def get_auth_header(token: str | None):
     Notes
     -----
     This function does not retrieve tokens. Token acquisition should be
-    handled upstream (e.g. via FastAPI dependencies).
+    handled upstream
     """
     if not token:
         raise ValueError("Auth token is required")

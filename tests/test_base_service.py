@@ -100,10 +100,12 @@ class TestHandleRequest:
         assert "Service exploded" in caplog.text
 
     def test_http_exception_passes_through(self):
-        service = FailingService(HTTPException(status_code=401, detail="no token"))
+        service = FailingService(HTTPException(status_code=404, detail="No simulation for 20240101"))
         with pytest.raises(HTTPException) as exc_info:
             service.handle_request()
-        assert exc_info.value.status_code == 401
+        assert exc_info.value.status_code == 404
+        # Verbatim, not rewrapped as "Internal error in FailingService".
+        assert exc_info.value.detail == "No simulation for 20240101"
 
     def test_upstream_request_failure_becomes_502(self, caplog):
         service = FailingService(requests.ConnectionError("upstream unreachable"))
