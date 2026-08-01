@@ -96,7 +96,9 @@ class TestAuthentication:
         with patch("requests.get", mock_get):
             with pytest.raises(HTTPException) as excinfo:
                 JiraClient(fake_redis, server_url=SERVER)._get_json(f"{SERVER}/issues")
-        assert excinfo.value.status_code == 401
+        # An unresolvable service-account token is a misconfigured
+        # deployment, not a rejected caller.
+        assert excinfo.value.status_code == 500
         mock_get.assert_not_called()
 
     def test_empty_token_is_rejected(self, fake_redis, monkeypatch):
