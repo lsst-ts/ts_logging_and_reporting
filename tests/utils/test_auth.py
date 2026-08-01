@@ -1,17 +1,14 @@
 from unittest.mock import Mock, patch
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.testclient import TestClient
+import pytest
+from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.utils.auth import (
     AUTH_SOURCES,
-    get_access_token,
     get_auth_header,
     get_jira_hostname,
     retrieve_access_token,
 )
-
-app = FastAPI()
 
 
 def test_retrieve_access_token_env(monkeypatch):
@@ -111,84 +108,32 @@ def test_retrieve_access_token_lsst_utils():
         assert token == "lsst-token"
 
 
-# Fetch default (RSP) token via env var
-def test_get_access_token_default_env_variable(monkeypatch):
-    monkeypatch.setenv("ACCESS_TOKEN", "env_token")
-    dependency = get_access_token()
-    token = dependency()
-    assert token == "env_token"
-
-
-# Fetch Jira token via env var
-def test_get_access_token_jira_env_variable(monkeypatch):
+# Fetch the Jira token via env var
+def test_retrieve_access_token_jira_env(monkeypatch):
     monkeypatch.setenv("JIRA_API_TOKEN", "jira-token")
-    dependency = get_access_token("jira")
-    token = dependency()
-    assert token == "jira-token"
+    assert retrieve_access_token(AUTH_SOURCES["jira"]) == "jira-token"
 
 
-# Fetch Zephyr token via env var
-def test_get_access_token_zephyr_env_variable(monkeypatch):
+# Fetch the Zephyr token via env var
+def test_retrieve_access_token_zephyr_env(monkeypatch):
     monkeypatch.setenv("ZEPHYR_API_TOKEN", "zephyr-token")
-    dependency = get_access_token("zephyr")
-    token = dependency()
-    assert token == "zephyr-token"
+    assert retrieve_access_token(AUTH_SOURCES["zephyr"]) == "zephyr-token"
 
 
-@app.get("/test-default-access-token")
-def access_token_endpoint(
-    request: Request = None,
-    auth_token: str = Depends(get_access_token()),
-):
-    return {"token": auth_token}
-
-
-@app.get("/test-jira-access-token")
-def jira_access_token_endpoint(
-    request: Request = None,
-    auth_token: str = Depends(get_access_token("jira")),
-):
-    return {"token": auth_token}
-
-
-@app.get("/test-zephyr-access-token")
-def zephyr_access_token_endpoint(
-    request: Request = None,
-    auth_token: str = Depends(get_access_token("zephyr")),
-):
-    return {"token": auth_token}
-
-
-def test_get_access_token_request_headers(monkeypatch):
-    monkeypatch.delenv("ACCESS_TOKEN", raising=False)
-    client = TestClient(app)
-    response = client.get("/test-default-access-token", headers={"Authorization": "Bearer header_token"})
-    assert response.status_code == 200
-    assert response.json() == {"token": "header_token"}
-
-
-def test_get_access_token_no_rsp_token(monkeypatch):
-    monkeypatch.delenv("ACCESS_TOKEN", raising=False)
-    client = TestClient(app)
-    response = client.get("/test-default-access-token")
-    assert response.status_code == 401
-    assert response.json() == {"detail": "RSP authentication token could not be retrieved by any method."}
-
-
-def test_get_access_token_no_jira_token(monkeypatch):
-    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
-    client = TestClient(app)
-    response = client.get("/test-jira-access-token")
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Jira authentication token could not be retrieved by any method."}
-
-
-def test_get_access_token_no_zephyr_token(monkeypatch):
-    monkeypatch.delenv("ZEPHYR_API_TOKEN", raising=False)
-    client = TestClient(app)
-    response = client.get("/test-zephyr-access-token")
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Zephyr authentication token could not be retrieved by any method."}
+@pytest.mark.parametrize(
+    "source, env_var, label",
+    [
+        ("rsp", "ACCESS_TOKEN", "RSP"),
+        ("jira", "JIRA_API_TOKEN", "Jira"),
+        ("zephyr", "ZEPHYR_API_TOKEN", "Zephyr"),
+    ],
+)
+def test_retrieve_access_token_missing(monkeypatch, source, env_var, label):
+    monkeypatch.delenv(env_var, raising=False)
+    with pytest.raises(HTTPException) as excinfo:
+        retrieve_access_token(AUTH_SOURCES[source])
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.detail == f"{label} authentication token could not be retrieved by any method."
 
 
 def test_get_auth_header_valid():
@@ -197,22 +142,10 @@ def test_get_auth_header_valid():
     assert header == {"Authorization": f"Bearer {token}"}
 
 
-def test_get_auth_header_none():
-    try:
-        get_auth_header(None)
-    except ValueError as e:
-        assert str(e) == "Auth token is required"
-    else:
-        assert False, "Expected ValueError"
-
-
-def test_get_auth_header_empty():
-    try:
-        get_auth_header("")
-    except ValueError as e:
-        assert str(e) == "Auth token is required"
-    else:
-        assert False, "Expected ValueError"
+@pytest.mark.parametrize("token", [None, ""])
+def test_get_auth_header_missing_token(token):
+    with pytest.raises(ValueError, match="Auth token is required"):
+        get_auth_header(token)
 
 
 def test_get_jira_hostname_env(monkeypatch):
@@ -223,10 +156,7 @@ def test_get_jira_hostname_env(monkeypatch):
 
 def test_get_jira_hostname_missing(monkeypatch):
     monkeypatch.delenv("JIRA_API_HOSTNAME", raising=False)
-    try:
+    with pytest.raises(HTTPException) as excinfo:
         get_jira_hostname()
-    except HTTPException as e:
-        assert e.status_code == 500
-        assert e.detail == "Jira hostname not configured"
-    else:
-        assert False, "Expected HTTPException"
+    assert excinfo.value.status_code == 500
+    assert excinfo.value.detail == "Jira hostname not configured"
