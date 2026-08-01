@@ -540,6 +540,26 @@ def save_results(args, mode: str, results: list):
     print_markdown(results)
 
 
+def wall_cells(base: dict, after: dict) -> tuple[str, str, str]:
+    """The three wall-clock columns for one row.
+
+    Only burst scenarios have a wall time: it is how long a whole burst
+    of simultaneous requests took end to end, which is what a user
+    hitting a cold dashboard actually waits. It is worth showing next to
+    the per-request p50 because the two can move differently — the point
+    of the single-flight lock is that concurrent requests for one key
+    stop duplicating the upstream fetch, which shortens the burst
+    without necessarily making any single request faster. Non-burst rows
+    get empty cells.
+    """
+    before_wall = base.get("burst_wall_p50")
+    after_wall = after.get("burst_wall_p50")
+    if before_wall is None or after_wall is None:
+        return "", "", ""
+    delta = (after_wall - before_wall) / before_wall * 100
+    return str(before_wall), str(after_wall), f"{delta:+.0f}%"
+
+
 def run_compare(args):
     with open(args.before) as f:
         before = json.load(f)
@@ -559,8 +579,11 @@ def run_compare(args):
 
     print(f"\nBefore: {before['git_commit']} ({before['timestamp']})")
     print(f"After:  {after['git_commit']} ({after['timestamp']})")
-    print("\n| Endpoint | Scenario | before p50 (s) | after p50 (s) | change |")
-    print("|---|---|---|---|---|")
+    print(
+        "\n| Endpoint | Scenario | before p50 (s) | after p50 (s) | change "
+        "| before wall p50 (s) | after wall p50 (s) | wall change |"
+    )
+    print("|---|---|---|---|---|---|---|---|")
     for endpoint, rows in after_by_endpoint.items():
         # Baseline requests are always cold: compare every after-scenario of a
         # given range length (or key set, for /block-details) against the
@@ -581,7 +604,11 @@ def run_compare(args):
             if not base:
                 continue
             delta = (r["p50"] - base["p50"]) / base["p50"] * 100
-            print(f"| {endpoint} | {r['scenario']} | {base['p50']} | {r['p50']} | {delta:+.0f}% |")
+            wall_before, wall_after, wall_delta = wall_cells(base, r)
+            print(
+                f"| {endpoint} | {r['scenario']} | {base['p50']} | {r['p50']} | {delta:+.0f}% "
+                f"| {wall_before} | {wall_after} | {wall_delta} |"
+            )
 
 
 def main():
