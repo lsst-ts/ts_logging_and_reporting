@@ -115,7 +115,9 @@ class RefreshWorker:
     def stop(self) -> None:
         """Signal the loop to finish, from a signal handler or thread.
 
-        `run` returns once the in-flight cycle completes.
+        `_refresh_all` checks the event before each adapter, so the
+        refresh in progress completes, the remaining adapters in the
+        cycle are skipped, and `run` returns.
         """
         self._stop_event.set()
 
