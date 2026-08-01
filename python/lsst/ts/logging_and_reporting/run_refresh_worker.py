@@ -73,8 +73,9 @@ def run_refresh_worker() -> None:
     )
 
     def handle_signal(signum: int, frame: FrameType | None) -> None:
-        # The current cycle finishes before run() returns, so an
-        # in-flight refresh is never left half-written.
+        # The refresh in progress finishes before run() returns (the
+        # rest of the cycle is skipped), so it is never left
+        # half-written.
         logger.info(f"Received signal {signal.Signals(signum).name}, stopping refresh worker")
         worker.stop()
 
