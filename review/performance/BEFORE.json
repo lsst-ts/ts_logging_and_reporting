@@ -291,12 +291,31 @@
       "scenario": "cold-all-keys",
       "runs": 50,
       "errors": 0,
-      "url": "http://127.0.0.1:8080/block-details?key=BLOCK-T664_a&key=BLOCK-T594&key=BLOCK-407&key=BLOCK-T664_b&key=BLOCK-T523_6&key=BLOCK-T523&key=BLOCK-T682&key=BLOCK-T539",
-      "p50": 2.235,
-      "p95": 2.769,
-      "min": 2.114,
-      "max": 2.823,
-      "bytes": 2123
+      "url": "http://127.0.0.1:8080/block-details?key=BLOCK-407&key=BLOCK-T523&key=BLOCK-T523_6&key=BLOCK-T539&key=BLOCK-T594&key=BLOCK-T664_a&key=BLOCK-T664_b&key=BLOCK-T682",
+      "p50": 2.122,
+      "p95": 2.574,
+      "min": 1.959,
+      "max": 3.585,
+      "bytes": 2123,
+      "captured_at": "2026-08-02T11:24:37+00:00",
+      "from_commit": "bdddcca"
+    },
+    {
+      "endpoint": "block-details",
+      "scenario": "cold-all-keys-burst",
+      "runs": 100,
+      "errors": 0,
+      "url": "http://127.0.0.1:8080/block-details?key=BLOCK-407&key=BLOCK-T523&key=BLOCK-T523_6&key=BLOCK-T539&key=BLOCK-T594&key=BLOCK-T664_a&key=BLOCK-T664_b&key=BLOCK-T682",
+      "p50": 4.684,
+      "p95": 5.879,
+      "min": 2.304,
+      "max": 6.55,
+      "bytes": 2123,
+      "burst_size": 10,
+      "bursts": 10,
+      "burst_wall_p50": 5.658,
+      "captured_at": "2026-08-02T11:24:37+00:00",
+      "from_commit": "bdddcca"
     }
   ]
 }
