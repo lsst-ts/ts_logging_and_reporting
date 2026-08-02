@@ -95,6 +95,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -168,6 +169,14 @@ ENDPOINTS = [
 BOKEH_ID_RE = re.compile(r"^(?:p\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 ID_KEYS = {"id", "root_id", "target_id"}
 
+EPOCH_NS_RE = re.compile(r"^\d{19}$")
+# Bokeh stamps the render time, in nanoseconds since the epoch, into the
+# document. It tracks when the figure was built rather than anything about
+# the data, so it differs on every call. Bounded to a plausible date range
+# (roughly 2020-2100) so a genuine 19-digit datum is not swallowed.
+EPOCH_NS_MIN, EPOCH_NS_MAX = 1_500_000_000_000_000_000, 4_200_000_000_000_000_000
+RENDER_TIMESTAMP = "<render-timestamp>"
+
 
 def add_days(dayobs: int, days: int) -> int:
     date = datetime.strptime(str(dayobs), "%Y%m%d") + timedelta(days=days)
@@ -212,6 +221,12 @@ def canonicalise(value, state: dict):
     if isinstance(value, str) and BOKEH_ID_RE.match(value):
         state["transforms"].add("bokeh-ids-renumbered")
         return state["ids"].setdefault(value, f"id-{len(state['ids'])}")
+
+    if isinstance(value, str) and EPOCH_NS_RE.match(value) and EPOCH_NS_MIN <= int(value) <= EPOCH_NS_MAX:
+        # Masked to one constant rather than numbered: these carry no
+        # identity, so position among them is not meaningful either.
+        state["transforms"].add("render-timestamps-masked")
+        return RENDER_TIMESTAMP
 
     return value
 
@@ -308,8 +323,40 @@ def selected_endpoints(args):
     return [e for e in ENDPOINTS if e["name"] in args.endpoints]
 
 
+REORDER_MARK = "reordered:"
+"""Prefix marking a difference that is purely a change of list order.
+
+Lets `compare` tell "the same records came back in a different order"
+apart from "the records themselves changed", without re-analysing the
+message text.
+"""
+
+
+def _canonical(value) -> str:
+    """A hashable, order-insensitive identity for one list element.
+
+    Object key order is not meaningful, so sorting keys means two
+    equivalent records canonicalise identically.
+    """
+    return json.dumps(value, sort_keys=True)
+
+
+def _summarise(counts, limit: int = 3) -> str:
+    shown = [f"{item[:80]} x{n}" if n > 1 else item[:80] for item, n in list(counts.items())[:limit]]
+    if len(counts) > limit:
+        shown.append(f"... {len(counts) - limit} more")
+    return "; ".join(shown)
+
+
 def diff_json(before, after, path: str = "") -> list[str]:
-    """Recursive structural diff, deepest-specific path first."""
+    """Recursive structural diff, deepest-specific path first.
+
+    Lists are checked as multisets before position-by-position, so a
+    reordering is reported once rather than as a difference at every
+    index. A multiset (rather than a set) keeps duplicates significant:
+    ``[a, a, b]`` and ``[a, b, b]`` hold the same distinct values but
+    are not the same list.
+    """
     if type(before) is not type(after):
         return [f"{path or '<root>'}: type {type(before).__name__} -> {type(after).__name__}"]
 
@@ -326,8 +373,26 @@ def diff_json(before, after, path: str = "") -> list[str]:
         return differences
 
     if isinstance(before, list):
+        if before == after:
+            return []
+        label = path or "<root>"
+        before_counts = Counter(_canonical(item) for item in before)
+        after_counts = Counter(_canonical(item) for item in after)
+
+        if before_counts == after_counts:
+            return [f"{label}: {REORDER_MARK} same {len(before)} elements, different order"]
+
+        removed, added = before_counts - after_counts, after_counts - before_counts
         if len(before) != len(after):
-            return [f"{path or '<root>'}: length {len(before)} -> {len(after)}"]
+            differences = [f"{label}: length {len(before)} -> {len(after)}"]
+            if removed:
+                differences.append(f"{label}: {sum(removed.values())} removed — {_summarise(removed)}")
+            if added:
+                differences.append(f"{label}: {sum(added.values())} added — {_summarise(added)}")
+            return differences
+
+        # Same length, different contents: positional detail is the
+        # informative view, since indices line up.
         differences = []
         for index, (a, b) in enumerate(zip(before, after)):
             differences.extend(diff_json(a, b, f"{path}[{index}]"))
@@ -343,32 +408,66 @@ def compare(args) -> int:
     before_files = {p.name for p in before_dir.glob("*.json")} - {"manifest.json"}
     after_files = {p.name for p in after_dir.glob("*.json")} - {"manifest.json"}
 
-    for label, missing in (("after", before_files - after_files), ("before", after_files - before_files)):
-        for name in sorted(missing):
-            print(f"MISSING from {label}: {name}")
+    identical = reordered = differing = 0
+    rows, details = [], []
 
-    identical, differing = [], []
-    for name in sorted(before_files & after_files):
-        before = json.loads((before_dir / name).read_text())
-        after = json.loads((after_dir / name).read_text())
+    # Every file gets a row, matched or not: a parity claim is only as good
+    # as the evidence that each capture was actually checked.
+    for name in sorted(before_files | after_files):
+        if name not in after_files:
+            rows.append((name, "MISSING from after", ""))
+            continue
+        if name not in before_files:
+            rows.append((name, "MISSING from before", ""))
+            continue
+
+        # Canonicalise again on load. It is idempotent, and it means a
+        # capture taken before a masking rule existed still compares
+        # correctly without being re-taken.
+        before, _ = canonicalise_response(json.loads((before_dir / name).read_text()))
+        after, _ = canonicalise_response(json.loads((after_dir / name).read_text()))
         differences = diff_json(before, after)
-        if differences:
-            differing.append((name, differences))
+
+        status = before.get("status")
+        # Both sides erroring identically is parity, but not success —
+        # surface the code so it cannot pass as a clean match.
+        note = "" if status == 200 else f" (HTTP {status})"
+
+        if not differences:
+            # Deep equality of the parsed objects, independent of the walk.
+            identical += 1
+            rows.append((name, f"OK{note}", ""))
+            continue
+
+        if all(REORDER_MARK in line for line in differences):
+            reordered += 1
+            verdict = "ORDER ONLY"
         else:
-            identical.append(name)
+            differing += 1
+            verdict = "DIFFERS"
+        rows.append((name, f"{verdict}{note}", str(len(differences))))
 
-    for name, differences in differing:
-        print(f"\n=== {name} — {len(differences)} difference(s)")
-        for line in differences[: args.max_lines]:
-            print(f"    {line}")
-        if len(differences) > args.max_lines:
-            print(f"    ... {len(differences) - args.max_lines} more")
+        shown = differences[: args.max_lines]
+        extra = len(differences) - len(shown)
+        details.append((name, shown, extra))
 
-    print(f"\n{len(identical)} identical, {len(differing)} differing")
-    for name in sorted(before_files ^ after_files):
-        print(f"  (unpaired: {name})")
+    print("| File | Verdict | Differences |")
+    print("|---|---|---|")
+    for name, verdict, count in rows:
+        print(f"| `{name}` | {verdict} | {count} |")
 
-    return 0 if not differing and before_files == after_files else 1
+    for name, shown, extra in details:
+        print(f"\n**`{name}`**\n")
+        for line in shown:
+            print(f"- `{line}`")
+        if extra:
+            print(f"- ... {extra} more")
+
+    print(f"\n{identical} identical, {reordered} differing only in list order, {differing} differing.")
+    if reordered:
+        print("\nSame records, different sequence — a real contract change, but not a data change.")
+
+    return 0 if not differing and not reordered and before_files == after_files else 1
 
 
 def main() -> int:

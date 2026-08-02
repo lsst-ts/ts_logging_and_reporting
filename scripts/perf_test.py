@@ -39,8 +39,9 @@ compare
     - after ``cold-1day``                → baseline ``cold-1day``
     - after 7-day non-burst scenarios    → baseline ``cold-7day``
     - after 7-day burst scenarios        → baseline ``cold-7day-burst``
-    - after /block-details scenarios     → baseline ``cold-all-keys``
-      (warns if the two runs measured different key sets)
+    - after /block-details non-burst     → baseline ``cold-all-keys``
+    - after /block-details burst         → baseline ``cold-all-keys-burst``
+      (both warn if the runs measured different key sets)
 
 Scenarios
 ---------
@@ -62,6 +63,9 @@ reference numbers the after-scenarios are compared against):
     pre-refactor concurrency reference.
 ``cold-all-keys`` (/block-details)
     N timed requests for all discovered BLOCK keys.
+``cold-all-keys-burst`` (/block-details)
+    Burst rounds for all discovered BLOCK keys — the pre-refactor
+    concurrency reference for the key-driven endpoint.
 
 After mode, per dayobs endpoint:
 
@@ -120,6 +124,12 @@ the frontend builds its requests, or supplied via ``--block-keys``):
 ``partial-keys``
     First half of the keys primed, all keys requested. Checks that
     cost scales with the number of missing keys, not requested keys.
+``cold-all-keys-burst`` / ``hot-all-keys-burst`` / ``partial-keys-burst``
+    The same three under burst rounds. The frontend fans a whole batch
+    of BLOCK keys out on page load, so concurrent demand for the same
+    keys is the realistic shape for this endpoint; the cold burst is
+    where the per-key single-flight lock has to stop N simultaneous
+    requests becoming N upstream fetches.
 
 Notes
 -----
@@ -388,8 +398,8 @@ def run_baseline(args) -> list:
         summary = runner.burst_runs(endpoint["path"], params)
         results.append({"endpoint": endpoint["name"], "scenario": "cold-7day-burst", **summary})
 
-    # No server-side cache exists in the baseline, so a single all-keys
-    # scenario captures /block-details (always effectively cold).
+    # No server-side cache exists in the baseline, so one sequential and
+    # one burst all-keys scenario capture /block-details (always cold).
     block_keys = args.block_keys or discover_block_keys(runner, day1, day8, args.instrument)
     if block_keys:
         all_keys = [("key", k) for k in block_keys]
@@ -397,6 +407,10 @@ def run_baseline(args) -> list:
         runner.request("/block-details", all_keys)  # warm-up
         summary = runner.timed_runs("/block-details", all_keys)
         results.append({"endpoint": "block-details", "scenario": "cold-all-keys", **summary})
+
+        print("[baseline] block-details cold-all-keys-burst ...", flush=True)
+        summary = runner.burst_runs("/block-details", all_keys)
+        results.append({"endpoint": "block-details", "scenario": "cold-all-keys-burst", **summary})
     else:
         print("[baseline] block-details skipped — no BLOCK keys found or given", flush=True)
     return results
@@ -490,13 +504,21 @@ def run_block_details_scenarios(runner: Runner, keys: list[str]) -> list:
     runner.flush_redis()
     runner.request(path, all_keys)
     scenarios = [
-        ("cold-all-keys", all_keys, True, None),
-        ("hot-all-keys", all_keys, False, [(path, all_keys)]),
-        ("partial-keys", all_keys, True, [(path, subset)]),
+        # (label, params, flush_each, prime, burst)
+        ("cold-all-keys", all_keys, True, None, False),
+        ("hot-all-keys", all_keys, False, [(path, all_keys)], False),
+        ("partial-keys", all_keys, True, [(path, subset)], False),
+        # The frontend fans a whole batch of BLOCK keys out on page load,
+        # so concurrent demand for the same keys is the realistic shape
+        # here, not the sequential one. Mirrors the three above.
+        ("cold-all-keys-burst", all_keys, True, None, True),
+        ("hot-all-keys-burst", all_keys, False, [(path, all_keys)], True),
+        ("partial-keys-burst", all_keys, True, [(path, subset)], True),
     ]
-    for label, params, flush_each, prime in scenarios:
+    for label, params, flush_each, prime, burst in scenarios:
         print(f"[after] block-details {label} ...", flush=True)
-        summary = runner.timed_runs(path, params, flush_before_each=flush_each, prime=prime)
+        run = runner.burst_runs if burst else runner.timed_runs
+        summary = run(path, params, flush_before_each=flush_each, prime=prime)
         results.append({"endpoint": "block-details", "scenario": label, **summary})
     return results
 
@@ -585,12 +607,13 @@ def run_compare(args):
     )
     print("|---|---|---|---|---|---|---|---|")
     for endpoint, rows in after_by_endpoint.items():
-        # Baseline requests are always cold: compare every after-scenario of a
-        # given range length (or key set, for /block-details) against the
-        # cold baseline for that length.
+        # Baseline requests are always cold, so every after-scenario joins to
+        # the cold baseline of the same shape: matching range length (or key
+        # set, for /block-details), and burst against burst.
         for r in rows:
+            suffix = "-burst" if "burst" in r["scenario"] else ""
             if endpoint == "block-details":
-                base = before_map.get((endpoint, "cold-all-keys"))
+                base = before_map.get((endpoint, f"cold-all-keys{suffix}"))
                 if base and base.get("url") != r.get("url"):
                     print(
                         "WARNING: block-details key sets differ between runs "
@@ -599,7 +622,6 @@ def run_compare(args):
                     )
             else:
                 length = "1day" if "1day" in r["scenario"] else "7day"
-                suffix = "-burst" if "burst" in r["scenario"] else ""
                 base = before_map.get((endpoint, f"cold-{length}{suffix}"))
             if not base:
                 continue
