@@ -11,7 +11,10 @@ It is not a summary of the refactor. For the architecture itself see
 `doc/service-adapter-infrastructure.md`; for the reasoning behind it see
 `review/BACKEND_REFACTOR_PLAN.md`, and for the plan as first written
 `review/BACKEND_REFACTOR_PLAN_ORIGINAL.md` (both deleted before merge — see
-[§14](#14-divergence-from-the-original-refactor-plan)).
+[§14](#14-divergence-from-the-original-refactor-plan)). See also
+`review/capture-compare.md` for a comparison of the exact output response
+for each endpoint before and after the refactor, and `review/performance/COMPARE.md`
+for a comparison of the performance before and after the refactor.
 
 ---
 
@@ -116,21 +119,26 @@ A full before/after therefore means two runs, on two different checkouts:
 ```
 git checkout <merge-base>          # pre-refactor
 run_logging_and_reporting
-python scripts/perf_test.py baseline --out review/BEFORE.json
+python scripts/perf_test.py baseline --out review/performance/BEFORE.json
 
 git checkout experiemental/cache-refactor
 run_logging_and_reporting          # plus Redis and the refresh worker
-python scripts/perf_test.py after --out review/AFTER.json
+python scripts/perf_test.py after --out review/performance/AFTER.json
 
-python scripts/perf_test.py compare review/BEFORE.json review/AFTER.json
+python scripts/perf_test.py compare review/performance/BEFORE.json \
+    review/performance/AFTER.json
 ```
+
+All three files are kept: the two raw result sets and the joined table, which is
+`review/performance/COMPARE.md`. This comparison file also contains commentary
+and analysis of the results.
 
 Four things will invalidate the comparison if you get them wrong:
 
 - **Use the same `--day-start` and `--instrument` for both runs.** Both default to
   a fixed, well-populated historical week, so the safe move is to pass neither —
-  the captures in `review/` were taken on the defaults. `compare` warns on
-  mismatched ranges but cannot correct for them.
+  the captures in `review/performance/` were taken on the defaults. `compare`
+  warns on mismatched ranges but cannot correct for them.
 - **Point at uvicorn directly (port 8080), never at nginx**, or the proxy cache
   measures itself rather than the backend.
 - **`after` mode issues `FLUSHDB` between runs.** Never point it at a shared or
@@ -161,7 +169,8 @@ change needs re-measuring.
 
 Performance is only half the claim. The other half — that the refactor did not
 change *what* the API returns — is what `scripts/capture_endpoints.py` exists to
-demonstrate, and `review/capture/` holds the result.
+demonstrate, and `review/capture-compare.md` holds the result along with 
+analysis and commentary.
 
 It calls every data endpoint and writes one JSON file per call: each dayobs
 endpoint over a 1-day and a 7-day range, each instrument-taking endpoint once per
@@ -170,33 +179,28 @@ harvested from real `/data-log` data.
 
 ```
 # on the pre-refactor checkout
-python scripts/capture_endpoints.py capture --out review/capture/before
+python scripts/capture_endpoints.py capture --out <somewhere>/capture-before
 
 # on experiemental/cache-refactor
-python scripts/capture_endpoints.py capture --out review/capture/after
+python scripts/capture_endpoints.py capture --out <somewhere>/capture-after
 
-python scripts/capture_endpoints.py compare review/capture/before review/capture/after
+python scripts/capture_endpoints.py compare <somewhere>/capture-before \
+    <somewhere>/capture-after
 ```
 
-`compare` exits non-zero if anything differs. `review/CAPTURE_RESULTS.md` records
-what did.
+`compare` exits non-zero if anything differs, and prints a per-call table of
+verdicts. `review/capture-compare.md` holds that table together with a written
+explanation of every difference in it.
 
-Two values are canonicalised before writing, because they vary between runs of
-identical code and would otherwise bury real differences — Bokeh model ids in
-`/multi-night-visit-maps`, which come from a per-process counter rather than from
-the data, and the base64 PNG in `/static-visit-map`, which becomes a SHA-256 plus
-a byte count because matplotlib embeds metadata that is not always reproducible.
-Every transform applied is recorded per file in the capture's `manifest.json`.
+Unlike the performance run, the raw output of a capture is **not** committed: the
+two sets are ~168 MB across 88 files, which is not something to put in the history
+of a repository this size for the sake of a review that ends in their deletion.
 
 Object key order is sorted on write, since it carries no meaning. **List order is
 not** — record ordering is part of the contract, and `/exposures` deliberately
 changed its sort to `(day_obs, seq_num)`, so that is a difference worth seeing
 rather than hiding.
 
-One difference to expect for a reason that is not the refactor:
-`/expected-exposures` reads the simulation archive, which only retains
-simulations within 60 days of the night. If the two captures are taken far enough
-apart, a night can age out of that window between them.
 
 ---
 
@@ -1000,11 +1004,21 @@ compile. The one behavioural consequence inside the repository is the lost
 
 The `review/` directory, `scripts/perf_test.py` and
 `scripts/capture_endpoints.py`. Everything in `review/` is refactor-only
-scaffolding — both plan revisions, this document, the performance captures and
-their write-up, and the endpoint output captures and theirs — and the two scripts
-are the harnesses that produced them. A single final commit removes the lot and
-does nothing else, so it can be taken after review, immediately before the epic
-merges.
+scaffolding:
+
+```
+review/BACKEND_REFACTOR_PLAN.md           the plan as it ended
+review/BACKEND_REFACTOR_PLAN_ORIGINAL.md  the plan as first written
+review/REFACTOR_ODDITIES.md               this document
+review/capture-compare.md                 endpoint output parity, before vs after
+review/performance/BEFORE.json            performance run, pre-refactor
+review/performance/AFTER.json             performance run, post-refactor
+review/performance/COMPARE.md             the two joined into a table
+```
+
+and the two scripts are the harnesses that produced the evidence. A single final
+commit removes the lot and does nothing else, so it can be taken after review,
+immediately before the epic merges.
 
 ---
 
