@@ -230,6 +230,13 @@ traceback) is logged.
 **The instrument filter did not work before and does now.** The records that
 "disappear" were never LATISS data.
 
+The cause is a parameter-name mismatch. `ExposurelogAdapter.get_messages` sent
+`instrument=<name>`, but the Exposure Log `/messages` endpoint defines no such
+parameter — its filter is `instruments`, an array ("Names of instruments (e.g.
+LSSTCam). Repeat the parameter for each value.", per the service's OpenAPI
+schema). Unrecognised query parameters are ignored rather than rejected, so the
+request succeeded and returned every instrument's messages.
+
 The `obs_id` prefix names the telescope — `MC_O_` for MainTel/LSSTCam, `AT_O_`
 for AuxTel/LATISS — and **every** record removed from the LATISS responses is
 `MC_O_`, across both endpoints and both spans (11, 23, 11, 11 records; zero

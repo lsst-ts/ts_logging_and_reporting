@@ -168,6 +168,52 @@ keyword-only arguments beyond `data` — `VisitMapsService` passes
 independent fetches at once, returning each one's result or its
 exception ([§9](#9-shared-helpers)).
 
+### Services that do CPU-bound work
+
+Waiting on an upstream is what most services do, and threads are right
+for it — that is what `fetch_concurrently` uses. Work that *computes*
+rather than waits is the opposite case: under the GIL a thread buys no
+throughput at all, and the API process spends the whole render unable to
+serve anything else.
+
+Such a service mixes in `WorkerPoolMixin`
+(`services/worker_pool_mixin.py`) ahead of `Service`, and calls
+`run_in_worker(func, *args)` instead of calling `func` directly. Each
+service gets its own pool of worker processes, so one endpoint's work
+cannot starve another's and each pool's workers import only what that
+service needs. Both map services use it — `StaticVisitMapService` for
+the healpix PNG, `VisitMapsService` for the Bokeh document.
+
+```python
+class StaticVisitMapService(WorkerPoolMixin, Service):
+    pool_preload = ("lsst.ts.logging_and_reporting.services.static_visit_map",)
+
+    def collate_response(self, data):
+        ...
+        png_bytes = self.run_in_worker(build_static_visit_map, visits)
+```
+
+Four class attributes tune a pool: `pool_workers`, `pool_queue`,
+`pool_timeout` and `pool_preload`. Only `pool_preload` is service
+specific in practice — naming the service's own module so the forkserver
+imports its dependencies once rather than per worker.
+
+Two constraints follow from the work crossing a process boundary. The
+callable must be importable by name, so it has to be a module-level
+function rather than a method, a closure or a mock; and its arguments
+and return value must pickle. That second one shapes the return type:
+`VisitMapsService` returns the serialised embed document from the worker
+rather than the Bokeh model, because the model does not pickle — hence
+`build_visit_maps_payload` doing the `json_item` call inside the worker
+rather than in `collate_response`.
+
+Pools are started and stopped by the application's lifespan hook, which
+reads the `WORKER_POOL_SERVICES` registry in `services/__init__.py`. A
+service that gains a pool must be added there
+([§11](#11-adding-a-new-endpoint-what-you-must-override)); starting at
+application startup rather than on first use keeps the forkserver's
+import cost off the first request.
+
 A complete service, minus imports:
 
 ```python
@@ -771,6 +817,10 @@ Create `services/<endpoint>.py`.
 9. **Add the path to `_MUTABLE_PATHS`** in
    `middleware/cache_control.py` if the endpoint serves mutable data,
    matching the adapter's `MutableDataMixin`.
+10. **Add the service to `WORKER_POOL_SERVICES`** in
+    `services/__init__.py` if it mixes in `WorkerPoolMixin`
+    ([§3](#3-anatomy-of-a-service)), so the application starts and stops
+    its pool.
 
 ### Tests
 
@@ -794,7 +844,12 @@ instead (`get_dome_open_close`, `augment_visits`, and so on), by the
 name it is bound to in the adapter module.
 
 **`tests/services/`** — collation and response shape, with stub
-adapters passed to the constructor.
+adapters passed to the constructor. A service using `WorkerPoolMixin`
+needs one addition: its tests patch the functions the service submits,
+and a patched function cannot be pickled out to a worker, so those
+modules replace `run_in_worker` with a fixture that calls through
+in-process. The pool itself is covered separately, against real
+subprocesses, in `tests/services/test_worker_pool_mixin.py`.
 
 **`tests/test_endpoint_contracts.py`** — the route layer, which does
 the same uniform job for every endpoint: declare its query parameters,
@@ -941,7 +996,9 @@ BLOCK key does not re-query upstream on every request.
 
 **`Service.handle_request` maps exceptions to HTTP responses.**
 `HTTPException` (raised deliberately — e.g. `ConsdbSqlMixin`'s 422 for
-an unknown instrument) passes through untouched;
+an unknown instrument, or `WorkerPoolMixin`'s 503 when its pool is
+saturated and 504 when a call outruns `pool_timeout`) passes through
+untouched;
 `requests.RequestException` becomes a 502 naming the service; anything
 else becomes a 500. All three are logged with a traceback, while 
 a minimal error message is returned to the user. Endpoints
