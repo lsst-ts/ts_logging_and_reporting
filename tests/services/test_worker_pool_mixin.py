@@ -83,12 +83,16 @@ class TestLimits:
                 thread.join(timeout=30)
 
     def test_slot_is_released_after_a_failure(self, worker):
-        worker.pool_timeout = 0.2
-        for _ in range(3):
+        # Enough failures to exhaust every slot if a permit leaked. The
+        # sleep is short because a timed-out call keeps its worker until
+        # it finishes on its own, and this is about the semaphore rather
+        # than how fast the pool drains.
+        worker.pool_timeout = 0.1
+        for _ in range(worker.pool_workers + worker.pool_queue):
             with pytest.raises(HTTPException):
-                worker.run_in_worker(time.sleep, 5)
-        worker.pool_timeout = 10.0
-        # A leaked permit per failure would have exhausted the slots.
+                worker.run_in_worker(time.sleep, 0.5)
+        worker.pool_timeout = 30.0
+        # A leaked permit would make this a 503 rather than a result.
         assert worker.run_in_worker(abs, -1) == 1
 
 
