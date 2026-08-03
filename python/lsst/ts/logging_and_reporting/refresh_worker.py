@@ -22,30 +22,17 @@
 
 """Background worker that keeps today's cache entries warm.
 
-The worker's fetch-then-
-overwrite cycle (via ``DayobsCachedAdapter.refresh``) means today's entry —
-the stampede-prone hot key — never misses under normal operation, and
-user requests for today never trigger an external fetch directly.
+The worker's fetch-then- overwrite cycle
+(via ``[Instrument]DayobsCachedAdapter.refresh``) means today's
+entry never misses under normal operation, and user requests for
+today never trigger an external fetch directly.
 
 The worker runs as its own process (see ``run_refresh_worker.py``),
-separate from the API service. Exactly one instance must run per
-deployment: duplicate refreshes would be harmless (fetch-then-overwrite
-is idempotent) but waste upstream calls, so the deployment — a single
-``refresh-worker`` container in docker-compose, a single-replica
-deployment in Kubernetes — is what guarantees uniqueness.
+separate from the API service.
 
-Two deployment/rollover behaviours matter here:
-
-- The first refresh cycle runs immediately on ``run()``, so today's
-  entries are warm right after a deploy or restart instead of staying
-  cold for one interval.
-- When the astronomical dayobs rolls over (12:00 UTC), the worker
-  refreshes the *previous* dayobs one final time before resuming.
-  This finalisation pass fetches the complete, now-immutable night
-  and stores it with the long historical TTL — without it, yesterday's
-  entry would expire ~one short-TTL after rollover (a guaranteed daily
-  cold miss on the most-viewed historical night), possibly caching a
-  version truncated at the worker's last pre-rollover refresh.
+When the astronomical dayobs rolls over (12:00 UTC), the worker
+refreshes the *previous* dayobs one final time to ensure the
+full previous dayobs is captured.
 """
 
 import logging
@@ -68,7 +55,7 @@ class RefreshWorker:
     """Refresh loop keeping today's entry warm on each adapter.
 
     Every ``interval_seconds``, `run` calls ``refresh(today)`` on each
-    registered `DayobsCachedAdapter` (fetch-then-overwrite, so the
+    registered `[Instrument]DayobsCachedAdapter` (fetch-then-overwrite, so the
     existing entry stays served during the refresh), plus a one-time
     finalisation refresh of the previous dayobs after rollover.
     Failures are logged per adapter without aborting the loop.
@@ -77,7 +64,7 @@ class RefreshWorker:
     ----------
     adapters : `list` [`DayobsCachedAdapter` | `InstrumentDayobsCachedAdapter`]
         The adapters to refresh. ``IdCachedAdapter`` instances are not
-        accepted — they have no "today" entry.
+        accepted — they have no sense of "today"
     interval_seconds : `int`, optional
         Seconds between the start of consecutive refresh cycles. Defaults
         to `TODAY_TTL` — the cache-control ``max-age`` served for today's
@@ -97,8 +84,7 @@ class RefreshWorker:
     def run(self) -> None:
         """Run refresh cycles until `stop` is called.
 
-        Blocks the calling thread; the worker process has nothing else
-        to do. The first cycle runs immediately; each subsequent cycle
+        The first cycle runs immediately; each subsequent cycle
         starts one interval after the previous one started, by waiting
         out only the part of the interval the cycle did not consume. A
         cycle that overruns the interval leaves no wait at all, so the
@@ -124,15 +110,15 @@ class RefreshWorker:
         self._stop_event.set()
 
     def _refresh_cycle(self) -> float:
-        """One pass: finalise the previous dayobs on rollover, then
-        refresh today on every adapter.
+        """Refresh today on every adapter.
 
         Never raises — a failure here is logged and the cycle retried
-        at the next interval, so the loop cannot die.
+        at the next interval, so the loop cannot die. Finalises
+        (re-fetches) yesterday, if required.
 
-        Returns the seconds the pass took, which `run` deducts from the
-        wait before the next one.
+        Returns the seconds the pass took
         """
+
         logger.info("RefreshWorker: refresh cycle started")
         started = time.monotonic()
         successes = 0
