@@ -47,15 +47,12 @@ class RestClient:
     """Mixin adding authenticated REST access to a cached adapter.
 
     Provides server URL resolution, service-account authentication,
-    and JSON GET requests. Auth tokens are resolved per request from
-    the source configured by ``auth_source`` (environment variable or
-    RSP utilities), so token rotation needs no restart.
+    and JSON GET requests. Auth tokens are read per request from the
+    environment variable named by ``auth_source``, so token rotation
+    needs no restart.
 
-    HTTP or connection failures raise, matching the cache-loop
-    contract that any upstream error fails the whole fetch.
-
-    Combine with a cache base class, e.g. `DayobsCachedAdapter` for
-    dayobs-keyed adapters or `IdCachedAdapter` for ID-keyed ones.
+    requests Exceptions thrown by this class are caught by
+    ``Service.handle_request`` and turned into a generic 502
     """
 
     auth_source = "rsp"
@@ -104,7 +101,9 @@ class RestClient:
         """
         response = requests.get(
             url,
-            params={key: value for key, value in (params or {}).items() if value is not None},
+            params={
+                key: value for key, value in (params or {}).items() if value is not None
+            },
             headers=self._request_headers(),
             timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
         )
@@ -172,11 +171,10 @@ class RestClient:
 
 
 class SqlClient(RestClient):
-    """REST client for ConsDB's SQL query endpoint.
+    """RestClient for ConsDB's SQL query endpoint.
 
     Give it SQL, get back row dicts: adds ``/consdb/query`` execution
-    and result shaping on top of `RestClient`. Combine with a cache
-    base (e.g. `InstrumentDayobsCachedAdapter`) to build an adapter.
+    and result shaping on top of `RestClient`.
     """
 
     def _query(self, sql: str) -> list[dict]:
@@ -191,16 +189,14 @@ class SqlClient(RestClient):
         try:
             result = self._post_json(url, {"query": sql})
         except requests.HTTPError as err:
-            logger.error(f"ConsDB query failed: {self._error_message(err)}. SQL: {sql!r}")
+            logger.error(
+                f"ConsDB query failed: {self._error_message(err)}. SQL: {sql!r}"
+            )
             raise
         return self._rows_from_result(result)
 
     def _rows_from_result(self, result: dict) -> list[dict]:
-        """Zip the ``columns``/``data`` payload into row dicts.
-
-        Assumes distinct column names; callers whose queries join tables
-        with overlapping names override this.
-        """
+        """Zip the ``columns``/``data`` payload into row dicts."""
         return [dict(zip(result["columns"], row)) for row in result["data"]]
 
     @staticmethod
