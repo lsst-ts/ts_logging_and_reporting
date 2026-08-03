@@ -20,13 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Service for the /block-details endpoint.
-
-The endpoint is ID-driven rather than dayobs-driven: it receives a
-list of BLOCK keys and resolves each against the source its pattern
-selects — ``BLOCK-<n>`` against Jira, ``BLOCK-T<n>`` (optionally
-``_x``-suffixed) against Zephyr Scale.
-"""
+"""Service for the /block-details endpoint."""
 
 import functools
 import logging
@@ -34,8 +28,14 @@ import re
 
 from fastapi import HTTPException
 
-from lsst.ts.logging_and_reporting.adapters.jira_block import JiraBlockAdapter, get_jira_block_adapter
-from lsst.ts.logging_and_reporting.adapters.zephyr import ZephyrAdapter, get_zephyr_adapter
+from lsst.ts.logging_and_reporting.adapters.jira_block import (
+    JiraBlockAdapter,
+    get_jira_block_adapter,
+)
+from lsst.ts.logging_and_reporting.adapters.zephyr import (
+    ZephyrAdapter,
+    get_zephyr_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.auth import get_jira_hostname
 
@@ -53,6 +53,11 @@ ZEPHYR_TEST_CASE_PATH = (
 class BlockDetailsService(Service):
     """Resolves BLOCK keys to their summaries for /block-details.
 
+    The endpoint is ID-driven rather than dayobs-driven: it receives a
+    list of BLOCK keys and resolves each against the source its pattern
+    selects — ``BLOCK-<n>`` against Jira, ``BLOCK-T<n>`` (optionally
+    ``_x``-suffixed) against Zephyr Scale.
+
     A failure of one source is reported in the response's ``errors``
     field while the other source's results are still returned; the
     request fails only when both sources fail.
@@ -63,8 +68,12 @@ class BlockDetailsService(Service):
         zephyr_adapter: ZephyrAdapter | None = None,
         jira_adapter: JiraBlockAdapter | None = None,
     ) -> None:
-        self.zephyr_adapter = zephyr_adapter if zephyr_adapter is not None else get_zephyr_adapter()
-        self.jira_adapter = jira_adapter if jira_adapter is not None else get_jira_block_adapter()
+        self.zephyr_adapter = (
+            zephyr_adapter if zephyr_adapter is not None else get_zephyr_adapter()
+        )
+        self.jira_adapter = (
+            jira_adapter if jira_adapter is not None else get_jira_block_adapter()
+        )
 
     def handle(self, keys: list[str]) -> dict:
         """Return summary, source, and URL per resolvable BLOCK key.
@@ -84,7 +93,11 @@ class BlockDetailsService(Service):
 
         fetched = self.fetch_concurrently(
             {
-                source: (lambda source=source, wanted=wanted: source_adapters[source].fetch_by_ids(wanted))
+                source: (
+                    lambda source=source, wanted=wanted: source_adapters[
+                        source
+                    ].fetch_by_ids(wanted)
+                )
                 for source, wanted in source_keys.items()
                 if wanted
             }
@@ -96,13 +109,18 @@ class BlockDetailsService(Service):
             if isinstance(result, HTTPException):
                 raise result
             if isinstance(result, Exception):
-                logger.error(f"{source} fetch failed in /block-details: {result}", exc_info=result)
+                logger.error(
+                    f"{source} fetch failed in /block-details: {result}",
+                    exc_info=result,
+                )
                 errors[source] = str(result)
             else:
                 summaries[source] = result
 
         if "zephyr" in errors and "jira" in errors:
-            raise HTTPException(status_code=500, detail="Both Zephyr and Jira requests failed.")
+            raise HTTPException(
+                status_code=500, detail="Both Zephyr and Jira requests failed."
+            )
 
         response = self.collate_response({"summaries": summaries, "errors": errors})
         logger.debug(f"Collated {len(response['data'])} BLOCK details for keys: {keys}")

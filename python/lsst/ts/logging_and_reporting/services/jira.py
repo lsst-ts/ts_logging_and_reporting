@@ -20,19 +20,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Service for the /jira-tickets endpoint.
-
-The ``JiraObsCachedAdapter`` caches range-independent ticket records
-for all instruments per dayobs; instrument filtering, deduplication,
-and the range-dependent ``isNew`` flag are handled here at collation
-time.
-"""
+"""Service for the /jira-tickets endpoint."""
 
 import functools
 import logging
 from datetime import datetime
 
-from lsst.ts.logging_and_reporting.adapters.jira_obs import JiraObsCachedAdapter, get_jira_obs_adapter
+from lsst.ts.logging_and_reporting.adapters.jira_obs import (
+    JiraObsCachedAdapter,
+    get_jira_obs_adapter,
+)
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import (
     add_or_subtract_dayobs_days,
@@ -79,7 +76,9 @@ def filter_tickets_by_instrument(tickets, instrument, exclude=False):
     def matches(ticket):
         obj_system_list = ticket["system"]
         search_terms = (instrument, INSTRUMENTS[instrument])
-        return any(term in system for term in search_terms for system in obj_system_list)
+        return any(
+            term in system for term in search_terms for system in obj_system_list
+        )
 
     if exclude:
         return [ticket for ticket in tickets if not matches(ticket)]
@@ -87,13 +86,21 @@ def filter_tickets_by_instrument(tickets, instrument, exclude=False):
 
 
 class JiraTicketsService(Service):
-    """Collates OBS Jira tickets for /jira-tickets."""
+    """Collates OBS Jira tickets for /jira-tickets.
+
+    The ``JiraObsCachedAdapter`` caches range-independent ticket records
+    for all instruments per dayobs; instrument filtering, deduplication,
+    and the range-dependent ``isNew`` flag are handled here at collation
+    time.
+    """
 
     def __init__(self, jira_obs_adapter: JiraObsCachedAdapter | None = None) -> None:
-        self.jira_obs_adapter = jira_obs_adapter if jira_obs_adapter is not None else get_jira_obs_adapter()
+        self.jira_obs_adapter = (
+            jira_obs_adapter if jira_obs_adapter is not None else get_jira_obs_adapter()
+        )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
-        """Return OBS tickets for the range and instrument.
+        """Return OBS tickets (updated and created) for the range and instrument.
 
         Parameters
         ----------
@@ -105,7 +112,9 @@ class JiraTicketsService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.jira_obs_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
+        per_day = self.jira_obs_adapter.fetch(
+            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
+        )
 
         # A ticket can sit in several dayobs buckets (created one day,
         # updated another) — keep the first occurrence of each key.
@@ -123,7 +132,9 @@ class JiraTicketsService(Service):
 
         if instrument in INSTRUMENT_EXCLUDE_MAP:
             for excluded_instrument in INSTRUMENT_EXCLUDE_MAP[instrument]:
-                tickets = filter_tickets_by_instrument(tickets, instrument=excluded_instrument, exclude=True)
+                tickets = filter_tickets_by_instrument(
+                    tickets, instrument=excluded_instrument, exclude=True
+                )
         else:
             tickets = filter_tickets_by_instrument(tickets, instrument=instrument)
 
