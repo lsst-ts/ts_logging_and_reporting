@@ -25,9 +25,10 @@
 import logging
 import multiprocessing
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
+import setproctitle
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -35,14 +36,47 @@ logger = logging.getLogger(__name__)
 BUSY_DETAIL = "Service busy, try again shortly"
 TIMEOUT_DETAIL = "Operation timed out"
 
+WORKER_TITLE = "nd-worker[{name}]"
+
+
+def preload_worker_modules(services: Iterable["WorkerPoolMixin"]) -> None:
+    """Register every service's `pool_preload` with the forkserver.
+
+    Call once, before any pool is started. The forkserver is a singleton
+    for the whole process, and reads its preload list only when it
+    starts, so a service that sets the list while building its own pool
+    gets it silently ignored unless it happens to be first. Unioning the
+    lists here is what makes the preload apply to every service.
+
+    Parameters
+    ----------
+    services : iterable of `WorkerPoolMixin`
+        Every service that will start a pool.
+    """
+    modules = sorted({module for service in services for module in service.pool_preload})
+    if not modules:
+        return
+    multiprocessing.get_context("forkserver").set_forkserver_preload(modules)
+    logger.info(f"Preloading into the forkserver: {', '.join(modules)}")
+
+
+def name_worker(name: str) -> None:
+    """Retitle a worker so `ps` identifies which pool it belongs to.
+
+    Runs once per worker. Without it every worker shows the forkserver's
+    bootstrap command line, which carries the whole of `sys.path`.
+    """
+    setproctitle.setproctitle(WORKER_TITLE.format(name=name))
+
 
 class WorkerPoolMixin:
     """Runs one service's heavy work in its own pool of processes.
 
     Mixed in ahead of `Service` by services whose work is CPU-bound and
     so gains nothing from a thread. Each service gets its own pool, so
-    one endpoint cannot starve another and each pool's workers import
-    only what that service needs.
+    a burst on one endpoint cannot take capacity from another. The
+    processes themselves are forked from one shared forkserver, so they
+    all carry every pooled service's preloaded modules.
 
     Subclasses set the class attributes below and call `run_in_worker`.
     The application starts each pool on startup and releases it with
@@ -60,7 +94,9 @@ class WorkerPoolMixin:
         Seconds to wait for one call before giving up on it.
     pool_preload : `tuple` [`str`]
         Modules the forkserver imports before forking workers, so the
-        import cost is paid once rather than per worker.
+        import cost is paid once rather than per worker. Registered by
+        `preload_worker_modules`, which unions the lists across services
+        because the forkserver is shared.
     """
 
     pool_workers: int = 4
@@ -125,11 +161,10 @@ class WorkerPoolMixin:
         """
         with self._pool_guard:
             if self._pool is None:
+                name = type(self).__name__
                 context = multiprocessing.get_context("forkserver")
-                if self.pool_preload:
-                    context.set_forkserver_preload(list(self.pool_preload))
-                logger.info(f"{type(self).__name__} starting {self.pool_workers} workers")
-                self._pool = context.Pool(self.pool_workers)
+                logger.info(f"{name} starting {self.pool_workers} workers")
+                self._pool = context.Pool(self.pool_workers, initializer=name_worker, initargs=(name,))
                 self._pool_slots = threading.Semaphore(self.pool_workers + self.pool_queue)
             return self._pool, self._pool_slots
 

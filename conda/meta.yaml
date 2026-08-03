@@ -56,3 +56,4 @@ requirements:
         - psycopg2 =2.9
         - astropy-iers-data
         - redis-py
+        - setproctitle

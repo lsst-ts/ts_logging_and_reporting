@@ -179,10 +179,10 @@ serve anything else.
 Such a service mixes in `WorkerPoolMixin`
 (`services/worker_pool_mixin.py`) ahead of `Service`, and calls
 `run_in_worker(func, *args)` instead of calling `func` directly. Each
-service gets its own pool of worker processes, so one endpoint's work
-cannot starve another's and each pool's workers import only what that
-service needs. Both map services use it — `StaticVisitMapService` for
-the healpix PNG, `VisitMapsService` for the Bokeh document.
+service gets its own pool of worker processes, so a burst on one
+endpoint cannot take capacity from another. Both map services use it —
+`StaticVisitMapService` for the healpix PNG, `VisitMapsService` for the
+Bokeh document.
 
 ```python
 class StaticVisitMapService(WorkerPoolMixin, Service):
@@ -195,10 +195,15 @@ class StaticVisitMapService(WorkerPoolMixin, Service):
 
 Four class attributes tune a pool: `pool_workers`, `pool_queue`,
 `pool_timeout` and `pool_preload`. Only `pool_preload` is service
-specific in practice — naming the service's own module so the forkserver
-imports its dependencies once rather than per worker.
+specific in practice — naming the service's own module so its
+dependencies are imported once and shared, rather than per worker.
 
-Two constraints follow from the work crossing a process boundary. The
+All the pools share one forkserver, which reads its preload list only
+when it starts, so `preload_worker_modules` registers every service's
+list together before any pool is built. Setting it per pool would apply
+only to whichever pool was built first due to `forkserver` constraints.
+
+Two requirements follow from the work crossing a process boundary. The
 callable must be importable by name, so it has to be a module-level
 function rather than a method, a closure or a mock; and its arguments
 and return value must pickle. That second one shapes the return type:
