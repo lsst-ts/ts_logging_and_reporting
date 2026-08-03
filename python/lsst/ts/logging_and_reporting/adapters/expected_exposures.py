@@ -43,7 +43,7 @@ class ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter):
     """Caches the expected (simulated) visit count per night.
 
     Counts come from the latest nominal pre-night simulation for each
-    dayobs (``rubin_sim.sim_archive``). They are mutable — schedules are
+    dayobs (``rubin_sim.sim_archive``). They are mutable — schedules can be
     re-simulated — so they get the mutable TTL. A night with no matching
     simulation raises ``NoMatchingSimulationsFoundError``, which the
     service maps to 404.
@@ -52,11 +52,16 @@ class ExpectedExposuresCachedAdapter(MutableDataMixin, DayobsCachedAdapter):
     name = "expected_exposures"
 
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, int]:
-        return {dayobs: self._nominal_visits(dayobs) for dayobs in dayobs_range(run_start, run_end)}
+        return {
+            dayobs: self._nominal_visits(dayobs)
+            for dayobs in dayobs_range(run_start, run_end)
+        }
 
     def _nominal_visits(self, dayobs: int) -> int:
         logger.debug(f"Fetching expected exposures for dayobs {dayobs}")
-        stats = fetch_sim_stats_for_night(day_obs=dayobs, max_simulation_age=MAX_SIMULATION_AGE)
+        stats = fetch_sim_stats_for_night(
+            day_obs=dayobs, max_simulation_age=MAX_SIMULATION_AGE
+        )
         return stats.get("nominal_visits", 0)
 
 
