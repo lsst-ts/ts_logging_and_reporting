@@ -1,12 +1,25 @@
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 from matplotlib import pyplot as plt
 
 from lsst.ts.logging_and_reporting.services import static_visit_map
 from lsst.ts.logging_and_reporting.services.static_visit_map import StaticVisitMapService
+from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
 
 SERVICE = "lsst.ts.logging_and_reporting.services.static_visit_map"
+
+
+@pytest.fixture(autouse=True)
+def run_inline(monkeypatch):
+    """Run worker calls in-process so the builder can be patched.
+
+    The real path pickles the callable out to a worker, which a mock
+    cannot survive. `WorkerPoolMixin` is covered on its own in
+    test_worker_pool_mixin.
+    """
+    monkeypatch.setattr(WorkerPoolMixin, "run_in_worker", lambda self, func, *args: func(*args))
 
 
 class StubVisitsAdapter:

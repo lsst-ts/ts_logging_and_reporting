@@ -43,6 +43,7 @@ from lsst.ts.logging_and_reporting.adapters.consdb_visits import (
     get_consdb_visits_adapter,
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
+from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 
 # Pin matplotlib backend.
@@ -291,12 +292,15 @@ def _encode_png_payload(image_bytes):
     }
 
 
-class StaticVisitMapService(Service):
+class StaticVisitMapService(WorkerPoolMixin, Service):
     """Serves /static-visit-map: the healpix visit-count PNG.
 
     The count map reads the raw ConsDB visit columns directly, so no
-    augmentation is needed.
+    augmentation is needed. The map itself is built in a worker process
+    (`WorkerPoolMixin`), never in the API process.
     """
+
+    pool_preload = ("lsst.ts.logging_and_reporting.services.static_visit_map",)
 
     def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
         self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
@@ -322,7 +326,7 @@ class StaticVisitMapService(Service):
     def collate_response(self, data: dict[int, list[dict]]) -> dict:
         rows = [record for dayobs in sorted(data) for record in data[dayobs]]
         visits = pd.DataFrame(rows)
-        png_bytes = build_static_visit_map(visits) if not visits.empty else None
+        png_bytes = self.run_in_worker(build_static_visit_map, visits) if not visits.empty else None
         return {"static_map": _encode_png_payload(png_bytes)}
 
 
