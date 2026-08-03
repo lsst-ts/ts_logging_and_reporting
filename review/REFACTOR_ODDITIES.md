@@ -733,6 +733,19 @@ It is now the module constant `CONTEXT_FEED_COLS` — the same twelve display co
 the adapter filters the frame down to before caching. If the upstream shortlist
 changes, this list must be changed with it.
 
+### The frontend needs one change: missing times render as `--`
+
+The only JavaScript change this refactor requires. A missing timestamp used to
+reach the frontend as the literal string `"NaT"`: the old serialisation ran only
+`stringify_special_floats`, which handles float NaN and Inf but not `pd.NaT`, so
+the value survived to FastAPI's `jsonable_encoder`, whose fallback for an unknown
+type is `str(obj)` — and `str(pd.NaT)` is `"NaT"`. The table rendered that string
+as-is.
+
+`make_json_safe` now maps `NaT` to a real JSON `null`, so the cell has nothing to
+render and needs a placeholder of its own: `--`. Truthiness checks on those fields
+change meaning too, since `"NaT"` was truthy and `null` is not.
+
 ### `/data-log` record order is unspecified; `/exposures` is now guaranteed
 
 The two endpoints read the same cache entry, and only one of them sorts it.
