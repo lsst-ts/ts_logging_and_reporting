@@ -120,6 +120,9 @@ comparable numeric field elsewhere is `/obs-status`'s `time_ms`, computed as
 everything below the millisecond, so sub-microsecond precision cannot reach it.
 Both `/obs-status` captures are byte-identical, `time_ms` included.
 
+This ns precision is lost on the frontend when converting to `Date()` and is
+unrelated to the ns/µ obs-status issue usdf-dev recently suffered.
+
 **3. Six records dropped, all predating the window.** All are
 `finalStatus: "Configuration"` — `Obsenv`, `Obsenv Check`,
 `Scheduler configuration`, `Scheduler dependencies` — timestamped 10–11 July for

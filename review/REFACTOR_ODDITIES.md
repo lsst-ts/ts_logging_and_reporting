@@ -1080,6 +1080,50 @@ Resolving this means deciding, per endpoint, whether a given field is *used* (an
 so needs a number) or *displayed* (and so belongs to the frontend). Not attempted
 here; no ticket yet.
 
+### `/static-visit-map` returns wrong images under concurrency
+
+Pre-existing, not introduced here, but the performance work surfaced it and it is
+the most serious thing in this section. `build_static_visit_map` renders through
+pyplot's global state machine, and FastAPI dispatches the sync handler into a
+threadpool, so concurrent requests contend for one process-wide active-figure and
+active-axes pointer. Rendering a fixed visits frame across ten threads and comparing
+the PNG bytes against a single-threaded reference gives **92–98 of 100 renders
+wrong**, against **0 of 100** when the render is serialised behind a lock. Roughly a
+quarter of the failures raise `IndexError: list index out of range` from inside
+healpy/MAF; the rest return a wrong image with a 200 and no error at all.
+
+The silent-wrong case is the dangerous one: an observer can be served another
+request's sky map with nothing to indicate it.
+
+The obvious local fix does not work. The pyplot calls in `static_visit_map.py`
+(`plt.figure`, `plt.sca` at line 117, `plt.close`) are not the whole story — tracing
+the mutations shows MAF and healpy creating and switching figures themselves, and
+`plt.sca` is load-bearing because `hp.graticule()` takes no axes argument and draws
+on `plt.gca()`. Rewriting the service against matplotlib's object-oriented API is
+therefore not possible without replacing those libraries. The options are a
+module-level lock around the render (cheap; renders already serialise on the GIL, so
+it costs throughput that was never there) paired with a bounded semaphore so queued
+requests shed rather than occupy threadpool workers, or a pre-warmed process pool
+(genuine parallelism, days of work). Caching the rendered PNG — see the next entry
+but one — would make the lock rarely contended but does not fix correctness on its
+own, since distinct ranges still race. Ticket.
+
+### `build_static_visit_map` leaks a figure on every failed render
+
+`plt.close(fig)` is the last statement of the function rather than a `finally`, so
+any exception between the figure being made current and that line leaves the figure
+registered in pyplot's global manager, where nothing collects it. Each leaked figure
+holds a full healpix image.
+
+The concurrency run above makes the arithmetic exact: 73 `plt.close` calls and 27
+exceptions across 100 renders. Every render that raised leaked, every render that
+completed did not. Under the burst conditions in the performance capture, where
+62–67% of requests failed, most requests would leak — unbounded growth in a
+long-running server.
+
+Independent of the concurrency defect and worth fixing on its own: it is a
+`try/finally`.
+
 ### Visit-map rendering is not cached
 
 Only the data fetch is cached
