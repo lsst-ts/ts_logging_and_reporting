@@ -20,12 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Service for the /exposure-flags endpoint.
-
-Uses the shared ``ExposurelogCachedAdapter``, which caches Exposure
-Log messages for all instruments per dayobs; instrument filtering
-happens here at collation time.
-"""
+"""Service for the /exposure-flags endpoint."""
 
 import functools
 import logging
@@ -47,11 +42,20 @@ FLAG_VALUES = {"questionable", "junk"}
 
 
 class ExposureFlagsService(Service):
-    """Collates flagged exposures for /exposure-flags."""
+    """Collates flagged exposures for /exposure-flags.
 
-    def __init__(self, exposurelog_adapter: ExposurelogCachedAdapter | None = None) -> None:
+    Uses the shared ``ExposurelogCachedAdapter``, which caches Exposure
+    Log messages for all instruments per dayobs; instrument filtering
+    happens here at collation time.
+    """
+
+    def __init__(
+        self, exposurelog_adapter: ExposurelogCachedAdapter | None = None
+    ) -> None:
         self.exposurelog_adapter = (
-            exposurelog_adapter if exposurelog_adapter is not None else get_exposurelog_adapter()
+            exposurelog_adapter
+            if exposurelog_adapter is not None
+            else get_exposurelog_adapter()
         )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
@@ -67,7 +71,9 @@ class ExposureFlagsService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.exposurelog_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
+        per_day = self.exposurelog_adapter.fetch(
+            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
+        )
         instrument_messages = {
             dayobs: [m for m in messages if m.get("instrument") == instrument]
             for dayobs, messages in per_day.items()
