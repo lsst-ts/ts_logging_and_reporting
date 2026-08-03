@@ -22,6 +22,7 @@
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, Query
@@ -37,11 +38,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the worker pools before serving, and stop them after.
+
+    Starting here rather than on first use means the forkserver has
+    imported each service's dependencies by the time requests arrive;
+    uvicorn holds off accepting them until this returns.
+    """
+    pooled = [factory() for factory in services.WORKER_POOL_SERVICES]
+    for service in pooled:
+        service.start_worker_pool()
+    yield
+    for service in pooled:
+        service.shutdown_worker_pool()
+
+
 app = FastAPI(
     root_path="/nightlydigest/api",
     docs_url="/docs",
     openapi_url="/openapi.json",
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 origins = [
