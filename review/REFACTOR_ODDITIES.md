@@ -859,6 +859,48 @@ locally and never changes, so it takes the historic TTL even for today.
 `IdCachedAdapter` subclasses (`zephyr`, `jira_block`) are not registered either;
 they have no "today" entry to refresh.
 
+### The map endpoints render in worker processes
+
+`/static-visit-map` and `/multi-night-visit-maps` no longer build anything in the
+API process. `WorkerPoolMixin` (`services/worker_pool_mixin.py`) gives each of the
+two services its own pool of worker processes and a `run_in_worker` call; the
+services submit `build_static_visit_map` and `build_visit_maps_payload` to it. The
+pools are started and stopped by the application's lifespan hook, from the
+`WORKER_POOL_SERVICES` registry in `services/__init__.py`.
+
+Two unrelated problems forced this, and neither is fixable with a thread. The
+renders are CPU-bound Python, so under the GIL a threadpool gives no throughput —
+FastAPI already ran these handlers in one, which is why ten concurrent requests
+cost very nearly ten times one. Separately, `build_static_visit_map` goes through
+pyplot's process-global active figure and axes, which healpy and maf both depend
+on: concurrent renders in one process overwrote each other, and 92–98 of 100
+returned an image that did not match the single-threaded result, about a quarter
+raising `IndexError` from inside healpy instead. Only separate processes fix that
+one, since the state is per-process by construction.
+
+Three operational consequences:
+
+- **Process count and memory.** Each service's pool is `pool_workers` processes,
+  each holding that service's plotting stack and one render's working set. Neither
+  service overrides the mixin's defaults, so that is currently **4 workers per pool,
+  8 worker processes in total** — both numbers are class attributes on
+  `WorkerPoolMixin`, tunable per service without touching the mixin. The pools are
+  `forkserver`-backed with the service module preloaded, so the imports are paid
+  once, but the per-render allocations are not shared. Size the container for
+  `pool_workers` concurrent renders per map endpoint, and note that an OOM kill now
+  costs one worker rather than the API process.
+- **These endpoints now shed load.** Each service admits `pool_workers + pool_queue`
+  requests — **8** on the current defaults — and refuses the rest with an immediate
+  **503** rather than queueing them, since queued requests would occupy the
+  threadpool workers every other endpoint needs. A render that outruns
+  `pool_timeout` (default 180 s) gets a **504**. All of these were previously a slow
+  200, a 500, or a client timeout.
+- **`fork` is not used, deliberately.** The API process is multi-threaded by the
+  time a request arrives, and forking a threaded process can deadlock on a lock held
+  at fork time. `multiprocessing.Pool` rather than `ProcessPoolExecutor` for the same
+  class of reason: a worker that dies abruptly leaves the executor permanently
+  broken, where the pool replaces it and only the request it was serving is lost.
+
 ### New environment variables
 
 | Variable | Effect |
@@ -1080,62 +1122,18 @@ Resolving this means deciding, per endpoint, whether a given field is *used* (an
 so needs a number) or *displayed* (and so belongs to the frontend). Not attempted
 here; no ticket yet.
 
-### `/static-visit-map` returns wrong images under concurrency
-
-Pre-existing, not introduced here, but the performance work surfaced it and it is
-the most serious thing in this section. `build_static_visit_map` renders through
-pyplot's global state machine, and FastAPI dispatches the sync handler into a
-threadpool, so concurrent requests contend for one process-wide active-figure and
-active-axes pointer. Rendering a fixed visits frame across ten threads and comparing
-the PNG bytes against a single-threaded reference gives **92–98 of 100 renders
-wrong**, against **0 of 100** when the render is serialised behind a lock. Roughly a
-quarter of the failures raise `IndexError: list index out of range` from inside
-healpy/MAF; the rest return a wrong image with a 200 and no error at all.
-
-The silent-wrong case is the dangerous one: an observer can be served another
-request's sky map with nothing to indicate it.
-
-The obvious local fix does not work. The pyplot calls in `static_visit_map.py`
-(`plt.figure`, `plt.sca` at line 117, `plt.close`) are not the whole story — tracing
-the mutations shows MAF and healpy creating and switching figures themselves, and
-`plt.sca` is load-bearing because `hp.graticule()` takes no axes argument and draws
-on `plt.gca()`. Rewriting the service against matplotlib's object-oriented API is
-therefore not possible without replacing those libraries. The options are a
-module-level lock around the render (cheap; renders already serialise on the GIL, so
-it costs throughput that was never there) paired with a bounded semaphore so queued
-requests shed rather than occupy threadpool workers, or a pre-warmed process pool
-(genuine parallelism, days of work). Caching the rendered PNG — see the next entry
-but one — would make the lock rarely contended but does not fix correctness on its
-own, since distinct ranges still race. Ticket.
-
-### `build_static_visit_map` leaks a figure on every failed render
-
-`plt.close(fig)` is the last statement of the function rather than a `finally`, so
-any exception between the figure being made current and that line leaves the figure
-registered in pyplot's global manager, where nothing collects it. Each leaked figure
-holds a full healpix image.
-
-The concurrency run above makes the arithmetic exact: 73 `plt.close` calls and 27
-exceptions across 100 renders. Every render that raised leaked, every render that
-completed did not. Under the burst conditions in the performance capture, where
-62–67% of requests failed, most requests would leak — unbounded growth in a
-long-running server.
-
-Independent of the concurrency defect and worth fixing on its own: it is a
-`try/finally`.
-
 ### Visit-map rendering is not cached
 
 Only the data fetch is cached
 ([§3](#visit-maps-cache-the-un-augmented-visit-record)); augmentation, the Bokeh build
 and `json_item` serialisation of a ~3.3 MB document run on every request. A fully hot
 7-day `/multi-night-visit-maps` still takes **18.0 s** (from 36.9 s cold), where
-`/static-visit-map` hot is 4.5 s and every non-map endpoint is under a second. Being
-CPU-bound Python in a sync handler, that work serialises on the GIL, so ten concurrent
-requests exhaust the 300 s timeout no matter how warm the cache is.
+`/static-visit-map` hot is 4.5 s and every non-map endpoint is under a second. The
+renders now run in worker processes ([§9](#the-map-endpoints-render-in-worker-processes))
+so they no longer hold the GIL against the rest of the API, but the work itself is
+still repeated on every request.
 
-Deferred — this wants its own ticket, and it may be a regression of
-[OSW-2187](https://rubinobs.atlassian.net/browse/OSW-2187). Three separable levers, in
+Deferred — this wants its own ticket. Three separable levers, in
 rough order of cost:
 
 - **Range-keyed document cache.** The rendered figure genuinely cannot join the
@@ -1147,21 +1145,23 @@ rough order of cost:
   per-day scheme's natural bound.
 - **Cache the prepared frame per dayobs.** The *document* is not decomposable but the
   *preparation* is: `_prepare_visit_maps_data` and `rn_aug.augment_visits` are per-row
-  transforms. `collate_response` currently concatenates all days and then augments the
+  transforms. `build_visit_maps_payload` concatenates all days and then augments the
   whole frame, which forces row work into range shape. Preparing per day and caching
   that fits `InstrumentDayobsCachedAdapter` as it stands and helps rolling windows too.
   Confirm first that the `NIGHT_STACKERS` entries are row-independent — a stacker
   computing night-relative quantities would make a per-day frame differ from a slice of
   the 7-day one — and note it costs a second entry per night, since the prepared frame
   is useless to `/static-visit-map`.
-- **Take the render off the GIL.** Neither cache helps a burst of distinct ranges.
-  That needs the build in a process pool, or a concurrency limit that sheds load
-  instead of letting every request time out together.
 
-Which of the first two is worth doing depends on how the 18 s splits between
-preparation and Bokeh build/serialisation. That was never measured; timing the three
-phases on one request would settle it, and if the build dominates then the per-day
-prepared frame is not worth its second cache entry.
+Which of the two is worth doing depends on how the 18 s splits between preparation
+and Bokeh build/serialisation. That was never measured; timing the three phases on
+one request would settle it, and if the build dominates then the per-day prepared
+frame is not worth its second cache entry.
+
+The third lever — taking the render off the GIL — is done
+([§9](#the-map-endpoints-render-in-worker-processes)). It bounds the damage a map
+burst does to the rest of the API, but it does not reduce the work, so caching is
+still what would make these endpoints fast.
 
 
 ---
