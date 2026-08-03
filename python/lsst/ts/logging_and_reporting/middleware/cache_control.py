@@ -58,15 +58,8 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     - `HISTORIC_TTL` for other fully historical requests, whose data
       will not change.
 
-    Endpoints without dayobs parameters (``/version``, ``/health``)
-    are left untouched, except mutable endpoints, which get
-    `MUTABLE_TTL` (``/block-details`` is keyed by BLOCK id, not
-    dayobs).
-
-    Query parameter names handled:
-
-    - ``dayObs`` — single-day endpoints
-    - ``dayObsStart`` + ``dayObsEnd`` — range endpoints
+    Endpoints without dayobs parameters are left untouched, except
+    mutable endpoints, which still get `MUTABLE_TTL`.
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
@@ -99,7 +92,9 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             start = int(start_raw) if start_raw else None
             end = int(end_raw) if end_raw else None
         except (ValueError, TypeError):
-            logger.warning(f"Uncacheable non-integer dayobs range for {path}: {start_raw}..{end_raw}")
+            logger.warning(
+                f"Uncacheable non-integer dayobs range for {path}: {start_raw}..{end_raw}"
+            )
             return response
 
         # If only one bound is present, treat it as both
