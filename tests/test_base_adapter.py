@@ -282,11 +282,6 @@ class TestRefresh:
             adapter.refresh(20250101)
         assert adapter.fetch(20250101, 20250101) == {20250101: "previous"}
 
-    def test_refresh_today_targets_current_dayobs(self, fake_redis):
-        adapter = RecordingAdapter(fake_redis)
-        adapter.refresh_today()
-        assert fake_redis.get(f"adapter:recording:{TODAY}") is not None
-
 
 class TestSingleFlight:
     def test_concurrent_misses_fetch_once(self, fake_redis):

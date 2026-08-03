@@ -339,10 +339,6 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
         data = self._fetch_from_source([dayobs])
         self._store(dayobs, data[dayobs])
 
-    def refresh_today(self) -> None:
-        """Refresh today's cache entry (see `refresh`)."""
-        self.refresh(current_dayobs())
-
 
 class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
     """Base class for adapters partitioned by instrument and dayobs.

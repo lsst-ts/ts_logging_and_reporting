@@ -22,9 +22,9 @@
 
 """Entrypoint for the cache refresh worker process.
 
-Runs one `RefreshWorker` in the foreground, writing to the same Redis
-cache the API service reads. Deploy exactly one instance: nothing in
-the process coordinates with its peers, so a second instance just
+Runs one `RefreshWorker`, writing to the same Redis cache the API
+service reads. Deploy exactly one instance: nothing in the
+process coordinates with its peers, so a second instance just
 duplicates upstream fetches.
 """
 
@@ -34,7 +34,10 @@ import signal
 from types import FrameType
 
 from lsst.ts.logging_and_reporting import adapters
-from lsst.ts.logging_and_reporting.redis_client import DISABLE_ENV_VAR, redis_caching_disabled
+from lsst.ts.logging_and_reporting.redis_client import (
+    DISABLE_ENV_VAR,
+    redis_caching_disabled,
+)
 
 from .refresh_worker import RefreshWorker
 
@@ -51,14 +54,16 @@ def run_refresh_worker() -> None:
     if redis_caching_disabled():
         # Nothing to warm: every entry the worker wrote would be
         # dropped, leaving only the upstream load.
-        logger.warning(f"{DISABLE_ENV_VAR} is set; refresh worker has no cache to warm, exiting")
+        logger.warning(
+            f"{DISABLE_ENV_VAR} is set; refresh worker has no cache to warm, exiting"
+        )
         return
 
     worker = RefreshWorker(
         [
             adapters.get_consdb_exposures_adapter(),
-            # After consdb_exposures: the overhead adapter reads that cache,
-            # so a cycle warms it from the freshly-refreshed exposures.
+            # The visit_overhead adapter reads data from the consdb_exposures
+            # so deliberate cycle ordering ensures it reads fresh data.
             adapters.get_visit_overhead_adapter(),
             adapters.get_consdb_visits_adapter(),
             adapters.get_expected_exposures_adapter(),
@@ -73,10 +78,10 @@ def run_refresh_worker() -> None:
     )
 
     def handle_signal(signum: int, frame: FrameType | None) -> None:
-        # The refresh in progress finishes before run() returns (the
-        # rest of the cycle is skipped), so it is never left
-        # half-written.
-        logger.info(f"Received signal {signal.Signals(signum).name}, stopping refresh worker")
+        # Handle graceful shutdown
+        logger.info(
+            f"Received signal {signal.Signals(signum).name}, stopping refresh worker"
+        )
         worker.stop()
 
     signal.signal(signal.SIGTERM, handle_signal)

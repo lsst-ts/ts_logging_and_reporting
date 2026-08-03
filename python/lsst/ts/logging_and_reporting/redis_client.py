@@ -23,22 +23,15 @@
 """Shared Redis client for the adapter cache layer.
 
 One client (holding one connection pool) is created at application
-startup and passed to every adapter and the ``RefreshWorker``, keeping
-the total number of connections to Redis bounded.
+startup and passed to every adapter, keeping the total number of
+connections to Redis bounded.
 
 The server itself must be configured as a cache, not a datastore:
 ``maxmemory`` with ``allkeys-lru`` eviction and persistence disabled.
-The dev docker-compose stack (frontend repo) provides this; production
-deployments must match it.
-
-Redis is assumed always available — if the server is running, Redis
-is reachable; no fallback path is implemented. The socket timeouts
-below only bound how long a request can hang if that assumption
-breaks.
 
 Setting ``ND_CACHING_DISABLE_REDIS`` replaces the client with
 `DisabledRedis`, which caches nothing; use it to see uncached
-upstream behaviour without tearing the Redis server down.
+upstream behaviour without any caching.
 """
 
 import functools
@@ -73,7 +66,9 @@ class DisabledRedis:
     def get(self, name: str) -> None:
         return None
 
-    def set(self, name: str, value: Any, nx: bool = False, ex: int | None = None) -> bool:
+    def set(
+        self, name: str, value: Any, nx: bool = False, ex: int | None = None
+    ) -> bool:
         return True
 
     def delete(self, *names: str) -> int:
