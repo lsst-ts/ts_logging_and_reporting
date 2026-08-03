@@ -352,18 +352,38 @@ worryingly. Its after-side burst rows returned **HTTP 500s at a rate of 62–67 
 errors, not timeouts, so its −76% / −82% burst figures are likewise computed over a
 third of the requests and understate nothing but also prove little.
 
-Two observations point at the cause. `services/static_visit_map.py` renders through
-the `matplotlib.pyplot` global state machine — `plt.sca`, `plt.figure`, `plt.close`
-— which is not thread-safe, and FastAPI dispatches this sync handler into a
-threadpool, so concurrent requests share one global figure registry. Consistent with
-that, the recorded payload size varies across burst rows for the *same* URL: 74,842
-and 146,754 bytes on the cold and hot bursts against 164,450 bytes for the identical
-sequential request. Since `bytes` records only the first successful sample, that is a
-single observation per row rather than a distribution — it is an indication, not
-proof — but a response roughly half the expected size, arriving alongside a 62%
-error rate, is what cross-thread figure contamination would look like. This warrants
-investigation on its own merits: unlike the multi-night timeouts, it is a potential
-correctness problem, not just a throughput one.
+The cause has been confirmed separately, and it is a correctness defect rather than a
+throughput one. Rendering one fixed visits frame concurrently and comparing the
+returned PNG bytes against a single-threaded reference — identical input must give
+identical output — gives, over ten threads × ten rounds:
+
+| | wrong renders |
+|---|---|
+| concurrent | 92–98 / 100 |
+| serialised behind a lock | 0 / 100 |
+
+The locked run being byte-identical on every render establishes that the function is
+deterministic for fixed input, so the comparison is sound and concurrency is the only
+remaining variable. Of the concurrent failures, ~27% raise
+`IndexError: list index out of range` and the rest return a *wrong image with a 200*.
+
+The shared state is pyplot's global active-figure and active-axes pointers.
+`services/static_visit_map.py` writes them at `plt.figure(plot["SkyMap"])`,
+`plt.sca(ax)` (line 117) and `plt.close(fig)`, and FastAPI dispatches this sync
+handler into a threadpool. Tracing every mutation across the ten threads recorded 384
+writes, of which **155 were one thread taking the active figure or axes from another
+mid-render**. The pyplot use is not confined to those three lines: the trace saw 100
+no-argument `plt.figure()` calls and 142 `plt.figure(<Figure>)` calls against only
+100 renders, so MAF and healpy create and switch figures themselves. `plt.sca` is
+likewise load-bearing rather than incidental — `hp.graticule()` takes no axes
+argument and draws on `plt.gca()`. Rewriting the service against matplotlib's
+object-oriented API therefore cannot fix this; the fix is a lock around the render,
+or a process pool.
+
+This also explains the burst payload sizes recorded in `AFTER.json` — 74,842 and
+146,754 bytes against 164,450 for the identical sequential request — which were
+previously only an indication. The HTTP 500s are very likely the same `IndexError` 
+surfacing through the error handler.
 
 ---
 
@@ -379,7 +399,7 @@ correctness problem, not just a throughput one.
 - `exposures cold-7day` is a genuine 11% regression with a plausible and testable
   cause (a wider cached record raising per-night cost past a ~5-day crossover).
 - The two map endpoints are the outstanding work: rendering is outside the cache,
-  and `static-visit-map` additionally fails under concurrency in a way that looks
-  like `pyplot` global state rather than load.
+  and `static-visit-map` additionally returns wrong images under concurrency —
+  confirmed, and caused by pyplot global state rather than load.
 - `exposure-entries` returned no data in this window and needs re-measuring on a
   populated range.
