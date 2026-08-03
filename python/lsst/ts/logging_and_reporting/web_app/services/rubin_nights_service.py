@@ -569,7 +569,7 @@ def get_obs_status_events(
         # to preserve it in subsequent list transformation
         time_as_col = obs_status_messages.reset_index(names="time")
         # Create a column of Unix ms timestamps for plotting library
-        time_as_col["time_ms"] = time_as_col["time"].astype("int64") // 1_000_000
+        time_as_col["time_ms"] = time_as_col["time"].dt.as_unit("ms").astype("int64")
         records = time_as_col.to_dict(orient="records")
 
         return records
