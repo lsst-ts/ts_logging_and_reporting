@@ -30,7 +30,10 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 
-from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter, get_almanac_adapter
+from lsst.ts.logging_and_reporting.adapters.almanac import (
+    AlmanacCachedAdapter,
+    get_almanac_adapter,
+)
 from lsst.ts.logging_and_reporting.adapters.consdb_exposures import (
     ConsdbExposuresAdapter,
     get_consdb_exposures_adapter,
@@ -92,7 +95,9 @@ EXPOSURE_COLUMNS = [
 ]
 
 
-def _compute_closed_hours(totals: dict[str, Any], current_dayobs: int, now_utc: pd.Timestamp) -> float:
+def _compute_closed_hours(
+    totals: dict[str, Any], current_dayobs: int, now_utc: pd.Timestamp
+) -> float:
     """Closed dome hours for one aggregated per-night row.
 
     For completed nights this is ``night_hours - open_hours``. For the
@@ -135,7 +140,8 @@ def _aggregate_dome_hours(per_day: dict[int, list[dict]]) -> dict[int, dict]:
         totals = {
             "day_obs": dayobs,
             "night_hours": max(
-                (r["night_hours"] for r in records if r.get("night_hours") is not None), default=0.0
+                (r["night_hours"] for r in records if r.get("night_hours") is not None),
+                default=0.0,
             ),
             "open_hours": sum((r.get("open_hours") or 0.0) for r in records),
             "sunset12": records[0].get("sunset12"),
@@ -176,7 +182,9 @@ def _obs_start_tai_to_utc_ms(obs_start: pd.Series) -> pd.Series:
     result = pd.Series(np.nan, index=obs_start.index, dtype="float64")
     valid = obs_start.notna()
     if valid.any():
-        tai_times = Time(obs_start[valid].astype(str).tolist(), format="isot", scale="tai")
+        tai_times = Time(
+            obs_start[valid].astype(str).tolist(), format="isot", scale="tai"
+        )
         result.loc[valid] = tai_times.utc.unix * 1000
     return result
 
@@ -184,12 +192,16 @@ def _obs_start_tai_to_utc_ms(obs_start: pd.Series) -> pd.Series:
 def _compute_filter_changed(visits_sorted: pd.DataFrame) -> pd.Series:
     """Flag visits whose band differs from the immediately preceding visit."""
     band_prev = visits_sorted["band"].shift(1)
-    band_changed = (visits_sorted["band"] != band_prev) & ~(visits_sorted["band"].isna() & band_prev.isna())
+    band_changed = (visits_sorted["band"] != band_prev) & ~(
+        visits_sorted["band"].isna() & band_prev.isna()
+    )
     band_changed.iloc[0] = False
     return band_changed
 
 
-def _sum_on_sky_within_twilight(visits: pd.DataFrame, almanac_info: list[dict]) -> dict[str, float]:
+def _sum_on_sky_within_twilight(
+    visits: pd.DataFrame, almanac_info: list[dict]
+) -> dict[str, float]:
     """Summarize on-sky overhead and visit-gap hours within twilight.
 
     Returns four hour-valued sums, split by whether the band changed from
@@ -202,13 +214,21 @@ def _sum_on_sky_within_twilight(visits: pd.DataFrame, almanac_info: list[dict]) 
 
     windows = _twilight_windows_by_dayobs(almanac_info)
     window_start_ms = (
-        visits_sorted["day_obs"].map(lambda d: windows.get(d, (np.nan, np.nan))[0]).astype(float)
+        visits_sorted["day_obs"]
+        .map(lambda d: windows.get(d, (np.nan, np.nan))[0])
+        .astype(float)
     )
-    window_end_ms = visits_sorted["day_obs"].map(lambda d: windows.get(d, (np.nan, np.nan))[1]).astype(float)
+    window_end_ms = (
+        visits_sorted["day_obs"]
+        .map(lambda d: windows.get(d, (np.nan, np.nan))[1])
+        .astype(float)
+    )
 
     obs_start_utc_ms = _obs_start_tai_to_utc_ms(visits_sorted["obs_start"])
 
-    in_twilight = (obs_start_utc_ms >= window_start_ms) & (obs_start_utc_ms <= window_end_ms)
+    in_twilight = (obs_start_utc_ms >= window_start_ms) & (
+        obs_start_utc_ms <= window_end_ms
+    )
     base_mask = visits_sorted["can_see_sky"].fillna(False).astype(bool) & in_twilight
 
     filter_changed = _compute_filter_changed(visits_sorted)
@@ -220,11 +240,17 @@ def _sum_on_sky_within_twilight(visits: pd.DataFrame, almanac_info: list[dict]) 
 
     sums_sec = {
         "sum_overhead_with_filter_change": float(overhead[with_change_mask].sum()),
-        "sum_overhead_without_filter_change": float(overhead[without_change_mask].sum()),
+        "sum_overhead_without_filter_change": float(
+            overhead[without_change_mask].sum()
+        ),
         "sum_visit_gap_with_filter_change": float(visit_gap[with_change_mask].sum()),
-        "sum_visit_gap_without_filter_change": float(visit_gap[without_change_mask].sum()),
+        "sum_visit_gap_without_filter_change": float(
+            visit_gap[without_change_mask].sum()
+        ),
     }
-    return {key: round(total / SECONDS_IN_AN_HOUR, 2) for key, total in sums_sec.items()}
+    return {
+        key: round(total / SECONDS_IN_AN_HOUR, 2) for key, total in sums_sec.items()
+    }
 
 
 class ExposuresService(Service):
@@ -233,7 +259,7 @@ class ExposuresService(Service):
     The exposures come from the cached ConsDB adapter (projected to the
     curated `EXPOSURE_COLUMNS`, with derived counts and durations). Dome
     open/close hours and twilight time accounting come from the
-    ``rubin_nights`` helpers; their failures degrade to error fields in
+    ``rubin_nights`` adapters; their failures degrade to error fields in
     the response rather than failing the request.
     """
 
@@ -244,12 +270,24 @@ class ExposuresService(Service):
         overhead_adapter: VisitOverheadAdapter | None = None,
         almanac_adapter: AlmanacCachedAdapter | None = None,
     ) -> None:
-        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_exposures_adapter()
-        self.dome_adapter = dome_adapter if dome_adapter is not None else get_rubin_nights_dome_adapter()
-        self.overhead_adapter = (
-            overhead_adapter if overhead_adapter is not None else get_visit_overhead_adapter()
+        self.consdb_adapter = (
+            consdb_adapter
+            if consdb_adapter is not None
+            else get_consdb_exposures_adapter()
         )
-        self.almanac_adapter = almanac_adapter if almanac_adapter is not None else get_almanac_adapter()
+        self.dome_adapter = (
+            dome_adapter
+            if dome_adapter is not None
+            else get_rubin_nights_dome_adapter()
+        )
+        self.overhead_adapter = (
+            overhead_adapter
+            if overhead_adapter is not None
+            else get_visit_overhead_adapter()
+        )
+        self.almanac_adapter = (
+            almanac_adapter if almanac_adapter is not None else get_almanac_adapter()
+        )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return exposures and night-summary metrics for the range.
@@ -267,9 +305,13 @@ class ExposuresService(Service):
         inclusive_end = add_or_subtract_dayobs_days(day_obs_end, -1)
         fetched = self.fetch_concurrently(
             {
-                "consdb": lambda: self.consdb_adapter.fetch(instrument, day_obs_start, inclusive_end),
+                "consdb": lambda: self.consdb_adapter.fetch(
+                    instrument, day_obs_start, inclusive_end
+                ),
                 "dome": lambda: self.dome_adapter.fetch(day_obs_start, inclusive_end),
-                "overhead": lambda: self.overhead_adapter.fetch(instrument, day_obs_start, inclusive_end),
+                "overhead": lambda: self.overhead_adapter.fetch(
+                    instrument, day_obs_start, inclusive_end
+                ),
             }
         )
         # Exposures are the core payload, so a ConsDB failure fails the
@@ -278,7 +320,9 @@ class ExposuresService(Service):
             raise fetched["consdb"]
         response = self.collate_response(fetched["consdb"])
         response.update(self._dome_hours(fetched["dome"]))
-        response.update(self._time_accounting(fetched["overhead"], day_obs_start, day_obs_end))
+        response.update(
+            self._time_accounting(fetched["overhead"], day_obs_start, day_obs_end)
+        )
         logger.debug(
             f"Fetched {response['exposures_count']} exposures for dayObsStart: {day_obs_start}, "
             f"dayObsEnd: {day_obs_end} and instrument: {instrument}"
@@ -290,15 +334,24 @@ class ExposuresService(Service):
         # iterate dayobs in order, sorting each night's records by seq_num.
         records = []
         for dayobs in sorted(data):
-            records.extend(sorted(data[dayobs], key=lambda record: record.get("seq_num") or 0))
-        exposures = [{column: record.get(column) for column in EXPOSURE_COLUMNS} for record in records]
+            records.extend(
+                sorted(data[dayobs], key=lambda record: record.get("seq_num") or 0)
+            )
+        exposures = [
+            {column: record.get(column) for column in EXPOSURE_COLUMNS}
+            for record in records
+        ]
         on_sky = [exposure for exposure in exposures if exposure.get("can_see_sky")]
         return {
             "exposures": exposures,
             "exposures_count": len(exposures),
-            "sum_exposure_time": sum(exposure.get("exp_time") or 0 for exposure in exposures),
+            "sum_exposure_time": sum(
+                exposure.get("exp_time") or 0 for exposure in exposures
+            ),
             "on_sky_exposures_count": len(on_sky),
-            "total_on_sky_exposure_time": sum(exposure.get("exp_time") or 0 for exposure in on_sky),
+            "total_on_sky_exposure_time": sum(
+                exposure.get("exp_time") or 0 for exposure in on_sky
+            ),
         }
 
     def _dome_hours(self, dome_result: dict | Exception) -> dict:
@@ -312,18 +365,23 @@ class ExposuresService(Service):
             if isinstance(dome_result, Exception):
                 raise dome_result
             per_day = dome_result
-            open_dome_times_records = [record for dayobs in sorted(per_day) for record in per_day[dayobs]]
+            open_dome_times_records = [
+                record for dayobs in sorted(per_day) for record in per_day[dayobs]
+            ]
 
             try:
                 open_dome_hours_records = _aggregate_dome_hours(per_day)
             except Exception as e:
-                logger.error(f"Error aggregating open/close dome times: {e}", exc_info=True)
+                logger.error(
+                    f"Error aggregating open/close dome times: {e}", exc_info=True
+                )
                 open_dome_hours_records = None
                 open_dome_error = "Failed to aggregate dome open hours"
 
         except Exception as e:
             logger.error(
-                f"Error getting open/close dome times from rubin_nights through EFD: {e}", exc_info=True
+                f"Error getting open/close dome times from rubin_nights through EFD: {e}",
+                exc_info=True,
             )
             open_dome_times_records = None
             open_dome_hours_records = None
@@ -357,9 +415,13 @@ class ExposuresService(Service):
             else:
                 almanac = self.almanac_adapter.fetch(day_obs_start, day_obs_end)
                 almanac_info = [almanac[dayobs] for dayobs in sorted(almanac)]
-                night_time_on_sky_sums = _sum_on_sky_within_twilight(pd.DataFrame(rows), almanac_info)
+                night_time_on_sky_sums = _sum_on_sky_within_twilight(
+                    pd.DataFrame(rows), almanac_info
+                )
         except Exception as e:
-            logger.error(f"Error computing time accounting in /exposures: {e}", exc_info=True)
+            logger.error(
+                f"Error computing time accounting in /exposures: {e}", exc_info=True
+            )
             time_accounting_error = "Failed to compute night time accounting"
 
         return {

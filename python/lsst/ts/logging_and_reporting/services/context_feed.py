@@ -36,18 +36,22 @@ logger = logging.getLogger(__name__)
 
 
 class ContextFeedService(Service):
-    """Collates consolidated context-feed messages for a dayobs range.
+    """Collates consolidated context-feed messages for a dayobs range."""
 
-    dayObsEnd is **inclusive** here.
-    """
-
-    def __init__(self, context_adapter: RubinNightsContextAdapter | None = None) -> None:
+    def __init__(
+        self, context_adapter: RubinNightsContextAdapter | None = None
+    ) -> None:
         self.context_adapter = (
-            context_adapter if context_adapter is not None else get_rubin_nights_context_adapter()
+            context_adapter
+            if context_adapter is not None
+            else get_rubin_nights_context_adapter()
         )
 
     def handle(self, day_obs_start: int, day_obs_end: int) -> dict:
-        records = self.collate_response(self.context_adapter.fetch(day_obs_start, day_obs_end))
+        # dayObsEnd is _inclusive_ here
+        records = self.collate_response(
+            self.context_adapter.fetch(day_obs_start, day_obs_end)
+        )
         return {"data": records, "cols": CONTEXT_FEED_COLS}
 
     def collate_response(self, data: dict[int, list[dict]]) -> list[dict]:
@@ -58,11 +62,15 @@ class ContextFeedService(Service):
             return records
 
         # Recompute task-change rows timestampProcessEnd
-        task_changes = [i for i, r in enumerate(records) if r.get("finalStatus") == "Task Change"]
+        task_changes = [
+            i for i, r in enumerate(records) if r.get("finalStatus") == "Task Change"
+        ]
         for position, index in enumerate(task_changes):
             next_position = position + 1
             if next_position < len(task_changes):
-                records[index]["timestampProcessEnd"] = records[task_changes[next_position]]["time"]
+                records[index]["timestampProcessEnd"] = records[
+                    task_changes[next_position]
+                ]["time"]
             else:
                 records[index]["timestampProcessEnd"] = records[-1]["time"]
         return records

@@ -20,11 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Service for the /multi-night-visit-maps endpoint.
-
-The raw visit frame comes from `ConsdbVisitsAdapter`; augmentation and
-the opsim conversion the Bokeh builder needs run here, on read.
-"""
+"""Service for the /multi-night-visit-maps endpoint."""
 
 import copy
 import functools
@@ -186,11 +182,16 @@ def _get_visit_map_config(
         "star_size": profile_config["star_size"],
         "horizon_thickness": profile_config["horizon_thickness"],
         "show_extra_controls": profile_config["show_extra_controls"],
-        "control_styles": {"width": None, "styles": {"color": theme_config["CONTROL_COLOR"]}},
+        "control_styles": {
+            "width": None,
+            "styles": {"color": theme_config["CONTROL_COLOR"]},
+        },
     }
 
 
-def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, theme="DARK") -> UIElement | None:
+def build_visit_maps_using_builder(
+    visits: pd.DataFrame, applet_mode=False, theme="DARK"
+) -> UIElement | None:
     """Build interactive visit maps using the VisitMapBuilder
     class and uranography.
 
@@ -245,7 +246,9 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
             visit_fill_colors=config["visit_fill_colors"],
             figure_kwargs=config["figure_kwargs"],
         )
-        .add_footprint_outlines(footprint_regions, line_width=config["horizon_thickness"])
+        .add_footprint_outlines(
+            footprint_regions, line_width=config["horizon_thickness"]
+        )
         .hide_horizon_sliders()
         .add_eq_sliders()
         .add_graticules()
@@ -258,7 +261,9 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
         .highlight_recent_visits()
         .add_body("sun", size=config["star_size"], color="yellow", alpha=1.0)
         .add_body("moon", size=config["star_size"], color="orange", alpha=0.8)
-        .add_horizon(color=config["horizon_color"], line_width=config["horizon_thickness"])
+        .add_horizon(
+            color=config["horizon_color"], line_width=config["horizon_thickness"]
+        )
         .add_horizon(zd=70, color="red", line_width=config["horizon_thickness"])
         .add_hovertext(visit_tooltips=tooltips)
         .add_play_controls()
@@ -271,12 +276,10 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
     return viewable
 
 
-def build_visit_maps_payload(visits: pd.DataFrame, instrument: str, applet_mode: bool) -> dict | None:
+def build_visit_maps_payload(
+    visits: pd.DataFrame, instrument: str, applet_mode: bool
+) -> dict | None:
     """Augment the visits and return the map as an embeddable document.
-
-    Runs in a worker process, so it returns the serialised document
-    rather than the Bokeh model: the model does not pickle, and the
-    document is what the endpoint sends anyway.
 
     Parameters
     ----------
@@ -302,16 +305,24 @@ class VisitMapsService(WorkerPoolMixin, Service):
 
     The raw visit frame comes from `ConsdbVisitsAdapter`; augmentation
     and the map build both run in a worker process (`WorkerPoolMixin`),
-    never in the API process.
+    not the API process.
     """
 
     pool_preload = ("lsst.ts.logging_and_reporting.services.visit_maps",)
 
     def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
-        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
+        self.consdb_adapter = (
+            consdb_adapter
+            if consdb_adapter is not None
+            else get_consdb_visits_adapter()
+        )
 
     def handle(
-        self, day_obs_start: int, day_obs_end: int, instrument: str, applet_mode: bool = False
+        self,
+        day_obs_start: int,
+        day_obs_end: int,
+        instrument: str,
+        applet_mode: bool = False,
     ) -> dict:
         """Build the interactive visit map for the range.
 
@@ -330,14 +341,20 @@ class VisitMapsService(WorkerPoolMixin, Service):
         per_day = self.consdb_adapter.fetch(
             instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
         )
-        return self.collate_response(per_day, instrument=instrument, applet_mode=applet_mode)
+        return self.collate_response(
+            per_day, instrument=instrument, applet_mode=applet_mode
+        )
 
-    def collate_response(self, data: dict[int, list[dict]], *, instrument: str, applet_mode: bool) -> dict:
+    def collate_response(
+        self, data: dict[int, list[dict]], *, instrument: str, applet_mode: bool
+    ) -> dict:
         rows = [record for dayobs in sorted(data) for record in data[dayobs]]
         visits = pd.DataFrame(rows)
         if visits.empty:
             return {"interactive": None}
-        document = self.run_in_worker(build_visit_maps_payload, visits, instrument, applet_mode)
+        document = self.run_in_worker(
+            build_visit_maps_payload, visits, instrument, applet_mode
+        )
         return {"interactive": document}
 
 

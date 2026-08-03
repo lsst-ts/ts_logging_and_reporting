@@ -191,7 +191,8 @@ class StaticVisitMapService(WorkerPoolMixin, Service):
 Four class attributes tune a pool: `pool_workers`, `pool_queue`,
 `pool_timeout` and `pool_preload`. Only `pool_preload` is service
 specific in practice — naming the service's own module so its
-dependencies are imported once and shared, rather than per worker.
+dependencies are imported once at startup and shared, rather than 
+per worker or per request.
 
 All the pools share one forkserver, which reads its preload list only
 when it starts, so `preload_worker_modules` registers every service's

@@ -20,11 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Service for the /static-visit-map endpoint.
-
-A healpix visit-count PNG built directly from the raw ConsDB visit
-columns cached by `ConsdbVisitsAdapter`; no augmentation is needed.
-"""
+"""Service for the /static-visit-map endpoint."""
 
 import base64
 import functools
@@ -242,7 +238,11 @@ def build_static_visit_map(visits) -> bytes:
         Static visit map image as PNG bytes.
     """
 
-    map_data = visits[visits["science_program"].isin(SCIENCE_PROGRAMS)] if not visits.empty else visits
+    map_data = (
+        visits[visits["science_program"].isin(SCIENCE_PROGRAMS)]
+        if not visits.empty
+        else visits
+    )
 
     if map_data.empty:
         logger.warning("No science visits available for static map generation")
@@ -261,7 +261,9 @@ def build_static_visit_map(visits) -> bytes:
             _add_graticules(main_ax)
 
         buf = BytesIO()
-        fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight", facecolor=COLOR_BG)
+        fig.savefig(
+            buf, format="png", dpi=RENDER_DPI, bbox_inches="tight", facecolor=COLOR_BG
+        )
     finally:
         # pyplot holds the figure until it is closed, so an error here
         # would otherwise leak it for the life of the process.
@@ -297,13 +299,17 @@ class StaticVisitMapService(WorkerPoolMixin, Service):
 
     The count map reads the raw ConsDB visit columns directly, so no
     augmentation is needed. The map itself is built in a worker process
-    (`WorkerPoolMixin`), never in the API process.
+    (`WorkerPoolMixin`), not the API process.
     """
 
     pool_preload = ("lsst.ts.logging_and_reporting.services.static_visit_map",)
 
     def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
-        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
+        self.consdb_adapter = (
+            consdb_adapter
+            if consdb_adapter is not None
+            else get_consdb_visits_adapter()
+        )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Build the static visit map for the range.
@@ -326,7 +332,11 @@ class StaticVisitMapService(WorkerPoolMixin, Service):
     def collate_response(self, data: dict[int, list[dict]]) -> dict:
         rows = [record for dayobs in sorted(data) for record in data[dayobs]]
         visits = pd.DataFrame(rows)
-        png_bytes = self.run_in_worker(build_static_visit_map, visits) if not visits.empty else None
+        png_bytes = (
+            self.run_in_worker(build_static_visit_map, visits)
+            if not visits.empty
+            else None
+        )
         return {"static_map": _encode_png_payload(png_bytes)}
 
 

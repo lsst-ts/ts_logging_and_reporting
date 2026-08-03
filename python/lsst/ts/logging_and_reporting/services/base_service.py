@@ -20,13 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Service base class for the adapter-backed endpoint architecture.
-
-Services are thin collators:
-each subclass calls its adapter(s), merges the per-dayobs results, and
-returns via ``collate_response``. All caching lives in the adapter
-layer; no Redis interaction occurs here.
-"""
+"""Service base class for the adapter-backed endpoint architecture."""
 
 import logging
 from abc import ABC, abstractmethod
@@ -48,27 +42,18 @@ class Service(ABC):
     calls its adapter's ``fetch`` directly (single-adapter services) or
     fans several fetches out through the `fetch_concurrently` helper,
     then returns `collate_response` of the merged result.
-
-    Instances are singletons created at application startup by each
-    module's ``get_*_service`` factory and provided to endpoints via
-    ``fastapi.Depends``.
     """
 
     @abstractmethod
     def handle(self, *args: Any) -> dict:
-        """Do the work of one endpoint request.
-
-        Each subclass defines its own typed signature (the base class
-        deliberately does not prescribe parameters): fetch from the
-        adapter(s), merge, and return ``collate_response(merged)``.
-        """
+        """Do the work of one endpoint request."""
         raise NotImplementedError
 
     def handle_request(self, *args: Any, **kwargs: Any) -> dict:
         """Call `handle`, converting errors to HTTP responses.
 
-        Upstream request failures map to 502 Bad Gateway; anything
-        else unexpected maps to 500.
+        Upstream request failures map to 502 Bad Gateway; HTTPExceptions
+        are passed through, anything else unexpected maps to 500.
         """
         try:
             return self.handle(*args, **kwargs)
@@ -77,18 +62,22 @@ class Service(ABC):
         except requests.RequestException as e:
             name = type(self).__name__
             logger.exception(f"{name} upstream request failed")
-            raise HTTPException(status_code=502, detail=f"Upstream failure in {name}") from e
+            raise HTTPException(
+                status_code=502, detail=f"Upstream failure in {name}"
+            ) from e
         except Exception as e:
             name = type(self).__name__
             logger.exception(f"{name} request failed")
-            raise HTTPException(status_code=500, detail=f"Internal error in {name}") from e
+            raise HTTPException(
+                status_code=500, detail=f"Internal error in {name}"
+            ) from e
 
     def fetch_concurrently(self, tasks: dict[str, Callable[[], Any]]) -> dict[str, Any]:
         """Run each fetch thunk on a pool, returning result-or-exception.
 
         ``tasks`` maps a caller-chosen name to a zero-argument fetch
         callable. Each name maps back to its return value, or to the
-        exception it raised so one failing fetch never aborts the others.
+        exception it raised so one failing fetch does not abort the others.
         """
         if not tasks:
             return {}

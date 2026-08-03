@@ -45,7 +45,7 @@ def preload_worker_modules(services: Iterable["WorkerPoolMixin"]) -> None:
     Call once, before any pool is started. The forkserver is a singleton
     for the whole process, and reads its preload list only when it
     starts, so a service that sets the list while building its own pool
-    gets it silently ignored unless it happens to be first. Unioning the
+    gets it silently ignored unless it happens to be first. Combining the
     lists here is what makes the preload apply to every service.
 
     Parameters
@@ -53,7 +53,9 @@ def preload_worker_modules(services: Iterable["WorkerPoolMixin"]) -> None:
     services : iterable of `WorkerPoolMixin`
         Every service that will start a pool.
     """
-    modules = sorted({module for service in services for module in service.pool_preload})
+    modules = sorted(
+        {module for service in services for module in service.pool_preload}
+    )
     if not modules:
         return
     multiprocessing.get_context("forkserver").set_forkserver_preload(modules)
@@ -64,7 +66,8 @@ def name_worker(name: str) -> None:
     """Retitle a worker so `ps` identifies which pool it belongs to.
 
     Runs once per worker. Without it every worker shows the forkserver's
-    bootstrap command line, which carries the whole of `sys.path`.
+    bootstrap command line, which carries the whole of `sys.path` and makes
+    logs unreadable.
     """
     setproctitle.setproctitle(WORKER_TITLE.format(name=name))
 
@@ -74,9 +77,7 @@ class WorkerPoolMixin:
 
     Mixed in ahead of `Service` by services whose work is CPU-bound and
     so gains nothing from a thread. Each service gets its own pool, so
-    a burst on one endpoint cannot take capacity from another. The
-    processes themselves are forked from one shared forkserver, so they
-    all carry every pooled service's preloaded modules.
+    a burst on one endpoint cannot take capacity from another.
 
     Subclasses set the class attributes below and call `run_in_worker`.
     The application starts each pool on startup and releases it with
@@ -85,7 +86,7 @@ class WorkerPoolMixin:
     Attributes
     ----------
     pool_workers : `int`
-        Worker processes. Kept small; the work is memory-heavy.
+        Worker processes.
     pool_queue : `int`
         Requests allowed to wait beyond those already running. Past
         that the endpoint sheds load rather than occupying threadpool
@@ -154,18 +155,21 @@ class WorkerPoolMixin:
             slots.release()
 
     def start_worker_pool(self) -> tuple[Any, threading.Semaphore]:
-        """Return this service's pool, starting it if it is not running.
-
-        Called on application startup so that no request pays the cost
-        of importing this service's dependencies into the forkserver.
+        """Return this service's pool, starting it if it is not running. Called
+        on application startup so no request is forced to wait for the pool to
+        start.
         """
         with self._pool_guard:
             if self._pool is None:
                 name = type(self).__name__
                 context = multiprocessing.get_context("forkserver")
                 logger.info(f"{name} starting {self.pool_workers} workers")
-                self._pool = context.Pool(self.pool_workers, initializer=name_worker, initargs=(name,))
-                self._pool_slots = threading.Semaphore(self.pool_workers + self.pool_queue)
+                self._pool = context.Pool(
+                    self.pool_workers, initializer=name_worker, initargs=(name,)
+                )
+                self._pool_slots = threading.Semaphore(
+                    self.pool_workers + self.pool_queue
+                )
             return self._pool, self._pool_slots
 
     def shutdown_worker_pool(self) -> None:
