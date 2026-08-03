@@ -104,7 +104,9 @@ class RefreshWorker:
         cycle that overruns the interval leaves no wait at all, so the
         next one starts immediately.
         """
-        logger.info(f"RefreshWorker started: {len(self._adapters)} adapter(s), interval {self._interval}s")
+        logger.info(
+            f"RefreshWorker started: {len(self._adapters)} adapter(s), interval {self._interval}s"
+        )
         # wait() returns True when stop() sets the event, ending the
         # loop; a False return means the interval elapsed normally.
         elapsed = self._refresh_cycle()
@@ -137,7 +139,7 @@ class RefreshWorker:
         failures = 0
         try:
             today = current_dayobs()
-            if self._last_today is not None and today != self._last_today:
+            if self._last_today is not None and today > self._last_today:
                 logger.info(
                     f"RefreshWorker: dayobs rollover {self._last_today} -> {today}; "
                     f"finalising {self._last_today}"
