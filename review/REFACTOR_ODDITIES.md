@@ -878,10 +878,18 @@ returned an image that did not match the single-threaded result, about a quarter
 raising `IndexError` from inside healpy instead. Only separate processes fix that
 one, since the state is per-process by construction.
 
-Three operational consequences:
+Four operational consequences:
 
+- **One forkserver, shared.** `multiprocessing`'s forkserver is a process-wide
+  singleton that reads its preload list once, when it starts, so setting that list
+  per pool would silently preload only whichever service built its pool first.
+  `preload_worker_modules` unions the lists and registers them before any pool is
+  built. The consequence is that every worker carries both services' modules — but
+  they are copy-on-write shared from the one forkserver, so the pages cost nothing
+  extra, and it is cheaper than the alternative of each pool importing its own set
+  privately per worker.
 - **Process count and memory.** Each service's pool is `pool_workers` processes,
-  each holding that service's plotting stack and one render's working set. Neither
+  each holding the plotting stacks and one render's working set. Neither
   service overrides the mixin's defaults, so that is currently **4 workers per pool,
   8 worker processes in total** — both numbers are class attributes on
   `WorkerPoolMixin`, tunable per service without touching the mixin. The pools are
