@@ -47,6 +47,7 @@ from lsst.ts.logging_and_reporting.adapters.consdb_visits import (
     get_consdb_visits_adapter,
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
+from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 from lsst.utils.plotting import get_multiband_plot_colors
 
@@ -270,12 +271,41 @@ def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, them
     return viewable
 
 
-class VisitMapsService(Service):
+def build_visit_maps_payload(visits: pd.DataFrame, instrument: str, applet_mode: bool) -> dict | None:
+    """Augment the visits and return the map as an embeddable document.
+
+    Runs in a worker process, so it returns the serialised document
+    rather than the Bokeh model: the model does not pickle, and the
+    document is what the endpoint sends anyway.
+
+    Parameters
+    ----------
+    visits : `pandas.DataFrame`
+        Raw ConsDB visit records for the range.
+    instrument : `str`
+        Instrument the visits belong to.
+    applet_mode : `bool`
+        Render the simplified applet layout when `True`.
+
+    Returns
+    -------
+    document : `dict` or `None`
+        The Bokeh embed document, or `None` if there was no figure.
+    """
+    visits = rn_aug.augment_visits(visits, instrument=instrument.lower())
+    figure = build_visit_maps_using_builder(visits, applet_mode=applet_mode)
+    return json_item(figure) if figure is not None else None
+
+
+class VisitMapsService(WorkerPoolMixin, Service):
     """Serves /multi-night-visit-maps: the interactive Bokeh visit map.
 
-    The raw visit frame comes from `ConsdbVisitsAdapter`; augmentation and
-    the opsim conversion the Bokeh builder needs run here, on read.
+    The raw visit frame comes from `ConsdbVisitsAdapter`; augmentation
+    and the map build both run in a worker process (`WorkerPoolMixin`),
+    never in the API process.
     """
+
+    pool_preload = ("lsst.ts.logging_and_reporting.services.visit_maps",)
 
     def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
         self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
@@ -307,9 +337,8 @@ class VisitMapsService(Service):
         visits = pd.DataFrame(rows)
         if visits.empty:
             return {"interactive": None}
-        visits = rn_aug.augment_visits(visits, instrument=instrument.lower())
-        figure = build_visit_maps_using_builder(visits, applet_mode=applet_mode)
-        return {"interactive": json_item(figure) if figure is not None else None}
+        document = self.run_in_worker(build_visit_maps_payload, visits, instrument, applet_mode)
+        return {"interactive": document}
 
 
 @functools.cache
