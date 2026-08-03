@@ -40,9 +40,6 @@ class ExposurelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapter
 
     Messages for **all instruments** are cached together under one
     dayobs key — the services filter by instrument when collating.
-    This keeps the cache key purely ``(adapter, dayobs)`` and means
-    one upstream fetch (and one ``RefreshWorker`` refresh) covers
-    every instrument.
     """
 
     name = "exposurelog"

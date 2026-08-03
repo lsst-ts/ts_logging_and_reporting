@@ -43,12 +43,7 @@ logger = logging.getLogger(__name__)
 class RubinNightsDomeAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
     """Fetches and caches dome open/close records per dayobs.
 
-    There is no per-instrument split — the dome serves every instrument,
-    so one entry per dayobs is shared. Each cached record is one dome
-    open/close period (a night with no opening still yields one row), and
-    carries the night-hours / open-hours / twilight columns the
-    ``ExposuresService`` needs to compute open and closed hours. The
-    underlying query is an EFD (InfluxDB) query wrapped by rubin_nights,
+    The underlying query is an EFD query wrapped by rubin_nights,
     so the adapter drives ``get_dome_open_close`` directly rather than
     going through a `RestClient`.
     """
@@ -59,12 +54,15 @@ class RubinNightsDomeAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
         # get_dome_open_close's dayobs window is [start, end) at noon
         # UTC, so query to noon after run_end to cover the run.
         t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
-        t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
+        t_end = Time(
+            get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1))
+        )
         frame = get_dome_open_close(t_start, t_end, self._efd_client)
         if frame is None or frame.empty:
             return {}
         return self._partition_by_field(
-            make_json_safe(frame.to_dict(orient="records")), key=lambda row: int(row["day_obs"])
+            make_json_safe(frame.to_dict(orient="records")),
+            key=lambda row: int(row["day_obs"]),
         )
 
 

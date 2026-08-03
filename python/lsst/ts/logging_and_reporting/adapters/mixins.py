@@ -25,7 +25,7 @@
 Each concrete adapter is composed from a cache base (`*CachedAdapter`),
 a transport client (`*Client`), and zero or more of these mixins. The
 mixins carry cross-adapter behaviour — TTL policy, upstream auth, query
-shaping — without duplicating it in every adapter.
+shaping etc — without duplicating it in every adapter.
 """
 
 import datetime as dt
@@ -75,6 +75,7 @@ class JiraApiMixin:
 
     def _request_headers(self) -> dict:
         return {
+            # Will return jira token since auth_source = "jira"
             "Authorization": f"Basic {self._get_token()}",
             "content-type": "application/json",
         }
@@ -112,18 +113,26 @@ class ConsdbSqlMixin:
     instruments and malformed dayobs before they reach `_fetch_run`.
     """
 
-    def fetch(self, instrument: str, start_dayobs: int, end_dayobs: int) -> dict[int, list[dict]]:
-        self._validate_instrument(instrument)
+    def fetch(
+        self, instrument: str, start_dayobs: int, end_dayobs: int
+    ) -> dict[int, list[dict]]:
+        # These are checked again, as they are passed direct to SQL
+        # and would therefore be vulnerable to SQL injection. Since
+        # one is an enum and the other two are integers, this risk is
+        # mitigated.
+        instrument = self._validate_instrument(instrument)
         self._validate_dayobs(start_dayobs)
         self._validate_dayobs(end_dayobs)
         return super().fetch(instrument, start_dayobs, end_dayobs)
 
     def _validate_instrument(self, instrument: str) -> str:
-        """Return the normalised instrument, or raise 422 if unrecognised."""
+        """Return the instrument parameter, or raise 422 if unrecognised."""
         normalised = instrument.lower()
         if normalised not in self.INSTRUMENTS:
             logger.warning(f"Rejected unknown instrument: {instrument!r}")
-            raise HTTPException(status_code=422, detail=f"Unknown instrument: {instrument!r}")
+            raise HTTPException(
+                status_code=422, detail=f"Unknown instrument: {instrument!r}"
+            )
         return normalised
 
     @staticmethod
@@ -132,7 +141,9 @@ class ConsdbSqlMixin:
             dt.datetime.strptime(str(dayobs), "%Y%m%d")
         except ValueError as e:
             logger.warning(f"Rejected malformed dayobs: {dayobs!r}")
-            raise HTTPException(status_code=422, detail=f"Invalid dayobs: {dayobs!r}") from e
+            raise HTTPException(
+                status_code=422, detail=f"Invalid dayobs: {dayobs!r}"
+            ) from e
 
     def _rows_from_result(self, result: dict) -> list[dict]:
         # The quicklook join yields duplicate column names; keep the first
@@ -150,7 +161,9 @@ class ConsdbSqlMixin:
                     record[column] = value
             records.append(record)
         if duplicate_columns:
-            logger.debug(f"Merged duplicate ConsDB columns: {', '.join(sorted(duplicate_columns))}")
+            logger.debug(
+                f"Merged duplicate ConsDB columns: {', '.join(sorted(duplicate_columns))}"
+            )
         return records
 
 
@@ -160,6 +173,10 @@ class RubinNightsClientsMixin:
     Built once so credential discovery does not repeat on every fetch.
     Adapters that only need the EFD use `_efd_client`; the context feed
     needs the full dict and uses `_clients`.
+
+    Note that adapters which use this mixin no longer benefit from
+    per-request ACCESS_TOKEN rotation, and hold the ACCESS_TOKEN
+    they were created with until server shutdown.
     """
 
     @functools.cached_property

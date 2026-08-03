@@ -30,8 +30,12 @@ import pandas as pd
 import rubin_nights.augment_visits as rn_aug
 import rubin_nights.rubin_scheduler_addons as rn_sch
 
-from lsst.ts.logging_and_reporting.adapters.base_adapters import InstrumentDayobsCachedAdapter
-from lsst.ts.logging_and_reporting.adapters.consdb_exposures import get_consdb_exposures_adapter
+from lsst.ts.logging_and_reporting.adapters.base_adapters import (
+    InstrumentDayobsCachedAdapter,
+)
+from lsst.ts.logging_and_reporting.adapters.consdb_exposures import (
+    get_consdb_exposures_adapter,
+)
 from lsst.ts.logging_and_reporting.adapters.mixins import RubinNightsClientsMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.serialization import make_json_safe
@@ -45,17 +49,21 @@ SETTLE = 2.0
 MAX_SCATTER = 120.0
 
 # Per-visit columns the time-accounting reduction reads.
-OVERHEAD_COLUMNS = ["day_obs", "obs_start", "can_see_sky", "band", "overhead", "visit_gap"]
+OVERHEAD_COLUMNS = [
+    "day_obs",
+    "obs_start",
+    "can_see_sky",
+    "band",
+    "overhead",
+    "visit_gap",
+]
 
 
 class VisitOverheadAdapter(RubinNightsClientsMixin, InstrumentDayobsCachedAdapter):
     """Caches per-visit slew/overhead per instrument and dayobs.
 
-    The costly part of time accounting is the kinematic slew model, which
-    needs the EFD (applied TMA limits) on top of the visit sequence. This
-    adapter runs augment + slew-model per night and caches the per-visit
-    overhead rows; `ExposuresService` does the twilight-windowed reduction
-    over the range. Visits come from the ConsDB exposures adapter
+    This adapter runs augment + slew-model per night and caches the per-visit
+    overhead rows. Visits come from the ConsDB exposures adapter
     (composed), so no second ConsDB query is issued.
     """
 
@@ -65,19 +73,31 @@ class VisitOverheadAdapter(RubinNightsClientsMixin, InstrumentDayobsCachedAdapte
         super().__init__(redis_client)
         self._exposures_adapter = exposures_adapter
 
-    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
+    def _fetch_run(
+        self, instrument: str, run_start: int, run_end: int
+    ) -> dict[int, list[dict]]:
         per_day = self._exposures_adapter.fetch(instrument, run_start, run_end)
         exposures = [record for dayobs in sorted(per_day) for record in per_day[dayobs]]
         if not exposures:
             return {}
         # Slew/overhead modelling is Simonyi (lsstcam) kinematics.
-        visits = rn_aug.augment_visits(pd.DataFrame(exposures), "lsstcam", skip_rs_columns=True)
-        visits, _ = rn_sch.add_model_slew_times(
-            visits, self._efd_client, model_settle=WAIT_BEFORE_SLEW + SETTLE, dome_crawl=False
+        visits = rn_aug.augment_visits(
+            pd.DataFrame(exposures), "lsstcam", skip_rs_columns=True
         )
-        slew = np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values) + MAX_SCATTER
+        visits, _ = rn_sch.add_model_slew_times(
+            visits,
+            self._efd_client,
+            model_settle=WAIT_BEFORE_SLEW + SETTLE,
+            dome_crawl=False,
+        )
+        slew = (
+            np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values)
+            + MAX_SCATTER
+        )
         visits["overhead"] = np.min([slew, visits.visit_gap.values], axis=0)
-        return self._partition_by_field(make_json_safe(visits[OVERHEAD_COLUMNS].to_dict(orient="records")))
+        return self._partition_by_field(
+            make_json_safe(visits[OVERHEAD_COLUMNS].to_dict(orient="records"))
+        )
 
 
 @functools.cache
