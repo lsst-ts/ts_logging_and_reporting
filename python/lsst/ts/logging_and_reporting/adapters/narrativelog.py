@@ -55,23 +55,22 @@ class NarrativelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapte
 
     Messages for **all telescopes** are cached together under one
     dayobs key, each with a derived ``instrument`` field — the service
-    filters by instrument when collating. This keeps the cache key
-    purely ``(adapter, dayobs)`` and means one upstream fetch (and one
-    ``RefreshWorker`` refresh) covers every instrument.
-
-    The upstream API takes a ``date_begin`` time window rather than a
-    dayobs range, so each contiguous run of missing days is queried as
-    noon UTC on the first day to noon UTC after the last day, and the
-    messages are partitioned into dayobs by their ``date_begin``.
+    filters by instrument when collating.
     """
 
     name = "narrativelog"
 
-    def __init__(self, redis: Any, server_url: str | None = None, page_limit: int = 1000):
+    def __init__(
+        self, redis: Any, server_url: str | None = None, page_limit: int = 1000
+    ):
         super().__init__(redis, server_url=server_url)
         self._page_limit = page_limit
 
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        # The upstream API takes a ``date_begin`` time window rather than a
+        # dayobs range, so each contiguous run of missing days is queried as
+        # noon UTC on the first day to noon UTC after the last day, and the
+        # messages are partitioned into dayobs by their ``date_begin``.
         messages = self._get_json_paged(
             f"{self.server}/narrativelog/messages",
             params={
@@ -86,19 +85,19 @@ class NarrativelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapte
         for message in messages:
             self._add_instrument(message)
         return self._partition_by_field(
-            messages, key=lambda row: dayobs_at(dt.datetime.fromisoformat(row["date_begin"]))
+            messages,
+            key=lambda row: dayobs_at(dt.datetime.fromisoformat(row["date_begin"])),
         )
 
     @staticmethod
     def _add_instrument(message: dict) -> None:
-        """Set ``message["instrument"]`` from the telescope (side effect).
+        """Set ``message["instrument"]`` from the telescope."""
 
-        The Narrative Log records which telescope a message concerns
-        (``components_json``), not which instrument, but the dashboard
-        reports by instrument. AuxTel maps to LATISS; MainTel/Simonyi
-        maps to the LSSTCam-family camera mounted when the message was
-        added. Anything else maps to None.
-        """
+        # The Narrative Log records which telescope a message concerns
+        # (``components_json``), not which instrument, but the dashboard
+        # reports by instrument. AuxTel maps to LATISS; MainTel/Simonyi
+        # maps to the LSSTCam-family camera mounted when the message was
+        # added.
         components = message.get("components_json") or {}
         telescope = components.get("name")
         if telescope == "AuxTel":

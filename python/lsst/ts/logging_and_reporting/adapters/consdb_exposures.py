@@ -24,7 +24,9 @@
 
 import functools
 
-from lsst.ts.logging_and_reporting.adapters.base_adapters import InstrumentDayobsCachedAdapter
+from lsst.ts.logging_and_reporting.adapters.base_adapters import (
+    InstrumentDayobsCachedAdapter,
+)
 from lsst.ts.logging_and_reporting.adapters.base_clients import SqlClient
 from lsst.ts.logging_and_reporting.adapters.mixins import ConsdbSqlMixin
 from lsst.ts.logging_and_reporting.redis_client import get_redis_client
@@ -55,15 +57,19 @@ def efd_transform_available() -> bool:
 class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
     """Caches the full exposure record (exposure ⋈ quicklook ⋈ EFD).
 
-    One cache entry serves both endpoints: `ExposuresService` projects
+    One cache entry serves two endpoints: `ExposuresService` projects
     the curated night-summary columns, `DataLogService` returns the full
-    record. The transformed-EFD channels for the instrument are folded in
-    via a LEFT JOIN so no second query or merge is needed.
+    record.
+
+    Transformed-EFD is not available at the summit, so this adapter behaves slightly
+    differently based on EXTERNAL_INSTANCE_URL
     """
 
     name = "consdb_exposures"
 
-    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
+    def _fetch_run(
+        self, instrument: str, run_start: int, run_end: int
+    ) -> dict[int, list[dict]]:
         efd_fields = EFD_FIELDS.get(instrument, []) if efd_transform_available() else []
         efd_columns = "".join(f", f.{field}" for field in efd_fields)
         efd_join = (

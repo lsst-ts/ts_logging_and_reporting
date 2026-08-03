@@ -52,20 +52,19 @@ TIMESTAMP_INPUT_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 TIMESTAMP_OUTPUT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCachedAdapter):
+class JiraObsCachedAdapter(
+    JiraApiMixin, MutableDataMixin, RestClient, DayobsCachedAdapter
+):
     """Fetches and caches OBS Jira tickets per dayobs.
 
     A ticket belongs to a dayobs bucket when it was created or last
-    updated within that dayobs's noon-to-noon UTC window, matching the
-    upstream JQL query. Jira records only the latest update time, so a
+    updated within that dayobs's noon-to-noon UTC window.
+    Jira records only the latest update time, so a
     ticket can appear in up to two buckets (its creation day and its
     last-update day); the service deduplicates by key at collation.
 
     Tickets for **all instruments** are cached together per dayobs —
-    the service filters by instrument when collating. The
-    range-dependent ``isNew`` flag is likewise derived by the service,
-    from the cached ``created_utc`` field, so cached records stay
-    range-independent.
+    the service filters by instrument when collating.
     """
 
     name = "jira_obs"
@@ -90,17 +89,25 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCac
 
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
         rows: list[tuple[int, dict]] = []
-        for issue in self._search_window(run_start, add_or_subtract_dayobs_days(run_end, 1)):
+        for issue in self._search_window(
+            run_start, add_or_subtract_dayobs_days(run_end, 1)
+        ):
             record = self._to_record(issue)
-            created = dt.datetime.strptime(issue["fields"]["created"], TIMESTAMP_INPUT_FORMAT)
-            updated = dt.datetime.strptime(issue["fields"]["updated"], TIMESTAMP_INPUT_FORMAT)
+            created = dt.datetime.strptime(
+                issue["fields"]["created"], TIMESTAMP_INPUT_FORMAT
+            )
+            updated = dt.datetime.strptime(
+                issue["fields"]["updated"], TIMESTAMP_INPUT_FORMAT
+            )
             for dayobs in {
                 dayobs_at(created.astimezone(dt.timezone.utc)),
                 dayobs_at(updated.astimezone(dt.timezone.utc)),
             }:
                 rows.append((dayobs, record))
         partition = self._partition_by_field(rows, key=lambda r: r[0])
-        return {dayobs: [r[1] for r in records] for dayobs, records in partition.items()}
+        return {
+            dayobs: [r[1] for r in records] for dayobs, records in partition.items()
+        }
 
     def _search_window(self, start_dayobs: int, end_dayobs: int) -> list[dict]:
         """Query OBS issues created or updated in ``[start, end)``.
@@ -110,7 +117,9 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCac
         """
         start = self._jql_date(start_dayobs)
         end = self._jql_date(end_dayobs)
-        status_exclusions = " ".join(f'AND status != "{status}"' for status in self.EXCLUDED_STATUSES)
+        status_exclusions = " ".join(
+            f'AND status != "{status}"' for status in self.EXCLUDED_STATUSES
+        )
         jql_query = (
             f"project = OBS {status_exclusions} "
             f'AND ((created >= "{start}" '
@@ -126,10 +135,13 @@ class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCac
 
     def _jql_date(self, dayobs: int) -> str:
         return (
-            get_utc_datetime_from_dayobs_str(dayobs).astimezone(self._user_timezone).strftime(JQL_DATE_FORMAT)
+            get_utc_datetime_from_dayobs_str(dayobs)
+            .astimezone(self._user_timezone)
+            .strftime(JQL_DATE_FORMAT)
         )
 
     def _to_record(self, issue: dict) -> dict:
+        """Flatten a raw Jira issue into the cached ticket record."""
         fields = issue["fields"]
         created = dt.datetime.strptime(fields["created"], TIMESTAMP_INPUT_FORMAT)
         updated = dt.datetime.strptime(fields["updated"], TIMESTAMP_INPUT_FORMAT)

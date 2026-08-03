@@ -47,7 +47,7 @@ class ZephyrAdapter(MutableDataMixin, RestClient, IdCachedAdapter):
     Suffixed keys (``BLOCK-T123_a``) are variants of one test case
     that Zephyr Scale stores only under the parent key
     (``BLOCK-T123``), so the cache is keyed by parent and one entry
-    serves every suffix. Keys with no test case are cached as
+    serves every suffix. Keys with no test case found are cached as
     ``None`` so an unknown key does not trigger an upstream query on
     every request.
     """
@@ -63,6 +63,7 @@ class ZephyrAdapter(MutableDataMixin, RestClient, IdCachedAdapter):
     def _parent_key(key: str) -> str:
         return key.split("_", 1)[0]
 
+    # Override to fetch parent keys when requried
     def fetch_by_ids(self, ids: list[str]) -> dict[str, str | None]:
         parents = list(dict.fromkeys(self._parent_key(key) for key in ids))
         by_parent = self._fetch_cached(parents)
