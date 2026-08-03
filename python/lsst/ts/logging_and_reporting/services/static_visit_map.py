@@ -32,6 +32,7 @@ import logging
 from io import BytesIO
 
 import healpy as hp
+import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 import rubin_sim.maf as maf
@@ -43,6 +44,9 @@ from lsst.ts.logging_and_reporting.adapters.consdb_visits import (
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
+
+# Pin matplotlib backend.
+matplotlib.use("Agg")
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +225,11 @@ def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
 def build_static_visit_map(visits) -> bytes:
     """Build the primary static visit map.
 
+    Not safe to call concurrently. The render goes through pyplot's
+    process-global active figure and axes, which healpy and maf both
+    rely on, so simultaneous calls overwrite each other's state and
+    return images built from another call's figure.
+
     Parameters
     ----------
     visits : `pandas.DataFrame`
@@ -242,16 +251,20 @@ def build_static_visit_map(visits) -> bytes:
 
     plot = bundle.plot()
     fig = plt.figure(plot["SkyMap"])
-    main_ax = next((ax for ax in fig.axes if ax.images), None)
+    try:
+        main_ax = next((ax for ax in fig.axes if ax.images), None)
 
-    _style_figure(fig, main_ax)
+        _style_figure(fig, main_ax)
 
-    if main_ax is not None:
-        _add_graticules(main_ax)
+        if main_ax is not None:
+            _add_graticules(main_ax)
 
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight", facecolor=COLOR_BG)
-    plt.close(fig)
+        buf = BytesIO()
+        fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight", facecolor=COLOR_BG)
+    finally:
+        # pyplot holds the figure until it is closed, so an error here
+        # would otherwise leak it for the life of the process.
+        plt.close(fig)
     return buf.getvalue()
 
 
