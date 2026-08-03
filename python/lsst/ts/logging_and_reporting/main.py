@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__, services
 from .middleware import CacheControlMiddleware, DayobsValidationMiddleware
+from .services.worker_pool_mixin import preload_worker_modules
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
     uvicorn holds off accepting them until this returns.
     """
     pooled = [factory() for factory in services.WORKER_POOL_SERVICES]
+    preload_worker_modules(pooled)
     for service in pooled:
         service.start_worker_pool()
     yield
