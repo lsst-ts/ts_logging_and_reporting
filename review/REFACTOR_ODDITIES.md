@@ -1163,10 +1163,6 @@ preparation and Bokeh build/serialisation. That was never measured; timing the t
 phases on one request would settle it, and if the build dominates then the per-day
 prepared frame is not worth its second cache entry.
 
-### No news fragment
-
-`doc/news/` contains only `OSW-2415.perf.rst`. A towncrier fragment for this change
-still needs writing.
 
 ---
 
