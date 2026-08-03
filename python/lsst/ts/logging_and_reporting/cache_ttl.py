@@ -37,7 +37,7 @@ response) and a Redis TTL (how long the adapter layer keeps the
 entry). The two stack — a response built from a nearly expired Redis
 entry can then sit in a client cache for its full max-age — so the
 client TTLs are kept short relative to their Redis counterparts:
-only the Redis copy can be flushed by hand.
+only the Redis copy can be flushed centrally.
 """
 
 SECONDS_PER_DAY = 86400
@@ -52,23 +52,20 @@ TODAY_TTL = 300
 """Client max-age for responses covering today's dayobs.
 
 Also the RefreshWorker's default interval, so clients are never
-served data more stale than one refresh cycle.
+served or use data significantly more stale than one refresh cycle.
 """
 
 TODAY_TTL_REDIS = 900
 """Redis TTL for today's entry.
 
 Must comfortably exceed the RefreshWorker interval so today's entry
-cannot expire between refresh cycles; the worker overwrites the
-entry in place every interval regardless of remaining TTL, so this
-does not increase staleness — it only bounds how stale the entry can
-get if the worker stalls entirely.
+cannot expire between refresh cycles.
 """
 
 MUTABLE_TTL = 300
 """Client max-age for mutable data on past dayobs."""
 
-MUTABLE_TTL_REDIS = 3600
+MUTABLE_TTL_REDIS = 1800
 """Redis TTL for mutable entries on past dayobs.
 
 Long enough to spare the upstream service, short enough that edits

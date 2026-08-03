@@ -19,6 +19,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""FastAPI entrypoint and route definitions"""
 
 import logging
 import os
@@ -71,6 +72,12 @@ origins = [
     "http://nightlydigest-nginx-service",  # Kubernetes service name
 ]
 
+# add_middleware prepends, so the last added is the outermost:
+# CacheControl -> CORS -> DayobsValidation -> route. CORS has to stay
+# outside DayobsValidation, or its 422 reaches the browser without CORS
+# headers and surfaces as a CORS failure instead of the validation
+# message. CacheControl is outermost so it has the last word on
+# Cache-Control, and sees short-circuited responses like that 422.
 app.add_middleware(DayobsValidationMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -133,7 +140,9 @@ def read_exposures(
         the ConsDB exposure query fails. Dome-open and time-accounting
         sub-query failures are reported in the response payload instead.
     """
-    logger.info(f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
+    logger.info(
+        f"Getting exposures for start: {dayObsStart}, end: {dayObsEnd}, instrument: {instrument}"
+    )
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
@@ -143,7 +152,9 @@ def read_expected_exposures(
     dayObsEnd: int,
     service=Depends(services.get_expected_exposures_service),
 ):
-    logger.info(f"Getting expected exposures for start: {dayObsStart}, end: {dayObsEnd} ")
+    logger.info(
+        f"Getting expected exposures for start: {dayObsStart}, end: {dayObsEnd}"
+    )
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -154,7 +165,9 @@ def read_data_log(
     instrument: str,
     service=Depends(services.get_data_log_service),
 ):
-    logger.info(f"Getting data log for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}")
+    logger.info(
+        f"Getting data log for start: {dayObsStart}, end: {dayObsEnd}, instrument: {instrument}"
+    )
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
@@ -166,7 +179,7 @@ def read_jira_tickets(
     service=Depends(services.get_jira_tickets_service),
 ):
     logger.info(
-        f"Getting jira tickets for start: {dayObsStart}, end: {dayObsEnd} and instrument: {instrument}"
+        f"Getting jira tickets for start: {dayObsStart}, end: {dayObsEnd}, instrument: {instrument}"
     )
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
@@ -177,7 +190,9 @@ def read_almanac(
     dayObsEnd: int,
     service=Depends(services.get_almanac_service),
 ):
-    logger.info(f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    logger.info(
+        f"Getting almanac for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
+    )
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -189,8 +204,7 @@ def read_narrative_log(
     service=Depends(services.get_narrative_log_service),
 ):
     logger.info(
-        f"Getting Narrative Log records for dayObsStart: {dayObsStart}, "
-        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+        f"Getting narrative log for start: {dayObsStart}, end: {dayObsEnd},and instrument: {instrument}"
     )
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
@@ -203,8 +217,7 @@ def read_exposure_flags(
     service=Depends(services.get_exposure_flags_service),
 ):
     logger.info(
-        f"Getting Exposure Log flags for dayObsStart: {dayObsStart}, "
-        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+        f"Getting exposure flags for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}, instrument: {instrument}"
     )
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
@@ -217,8 +230,7 @@ def read_exposure_entries(
     service=Depends(services.get_exposure_entries_service),
 ):
     logger.info(
-        f"Getting Exposure Log entries for dayObsStart: {dayObsStart}, "
-        f"dayObsEnd: {dayObsEnd} and instrument: {instrument}"
+        f"Getting exposure entries for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}, instrument: {instrument}"
     )
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
@@ -229,7 +241,9 @@ def read_night_reports(
     dayObsEnd: int,
     service=Depends(services.get_night_report_service),
 ):
-    logger.info(f"Getting Night Report records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    logger.info(
+        f"Getting night report for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
+    )
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -239,7 +253,9 @@ def read_context_feed(
     dayObsEnd: int,
     service=Depends(services.get_context_feed_service),
 ):
-    logger.info(f"Getting context feed for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    logger.info(
+        f"Getting context feed for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}"
+    )
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -256,9 +272,17 @@ def read_obs_status(
     ),
     service=Depends(services.get_obs_status_service),
 ):
-    logger.info(f"Getting Observatory Status records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}")
+    logger.info(
+        f"Getting observatory status records for dayObsStart: {dayObsStart}, dayObsEnd: {dayObsEnd}, "
+        f"includeEntries: {includeEntries}, includeIntervals: {includeIntervals}, nightOnlyMetrics: {nightOnlyMetrics}, metrics: {metrics}"
+    )
     return service.handle_request(
-        dayObsStart, dayObsEnd, includeEntries, includeIntervals, nightOnlyMetrics, metrics
+        dayObsStart,
+        dayObsEnd,
+        includeEntries,
+        includeIntervals,
+        nightOnlyMetrics,
+        metrics,
     )
 
 
@@ -289,9 +313,7 @@ def read_multi_night_visit_maps(
         A dictionary containing the Bokeh JSON item for the interactive map.
     """
     logger.info(
-        f"Getting multi night visit maps for start: "
-        f"{dayObsStart}, end: {dayObsEnd} "
-        f"and instrument: {instrument} in appletMode: {appletMode}, "
+        f"Getting multi night visit maps for start: {dayObsStart}, end: {dayObsEnd}, instrument: {instrument}, appletMode: {appletMode}"
     )
     return service.handle_request(dayObsStart, dayObsEnd, instrument, appletMode)
 
@@ -301,7 +323,7 @@ def read_block_details(
     keys: list[str] = Query(..., alias="key"),
     service=Depends(services.get_block_details_service),
 ):
-    logger.info(f"Getting BLOCK details from Zephyr/Jira for: {keys}")
+    logger.info(f"Getting block details for keys: {keys}")
     return service.handle_request(keys)
 
 
@@ -330,9 +352,6 @@ def read_static_visit_map(
         visit map.
     """
     logger.info(
-        "Generating static map for visits between %s and %s (instrument: %s)",
-        dayObsStart,
-        dayObsEnd,
-        instrument,
+        "Getting static visit map for start: {dayObsStart}, end: {dayObsEnd}, instrument: {instrument}"
     )
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
