@@ -48,9 +48,8 @@ class RestClient:
     """Mixin adding authenticated REST access to a cached adapter.
 
     Provides server URL resolution, service-account authentication,
-    and JSON GET requests. Auth tokens are read per request from the
-    environment variable named by ``auth_source``, so token rotation
-    needs no restart.
+    and JSON GET requests. Auth tokens are read from the environment
+    variable named by ``auth_source``.
 
     requests Exceptions thrown by this class are caught by
     ``Service.handle_request`` and turned into a generic 502
@@ -85,9 +84,7 @@ class RestClient:
     def _request_headers(self) -> dict:
         return get_auth_header(self._get_token())
 
-    def _log_upstream(
-        self, method: str, url: str, status: int | str, elapsed: float
-    ) -> None:
+    def _log_upstream(self, method: str, url: str, status: int | str, elapsed: float) -> None:
         """Record one upstream call, warning past `SLOW_REQUEST_SECONDS`."""
         if elapsed >= self.SLOW_REQUEST_SECONDS:
             logger.warning(f"Slow upstream {method} {url}: {status} in {elapsed:.1f}s")
@@ -116,11 +113,7 @@ class RestClient:
         try:
             response = requests.get(
                 url,
-                params={
-                    key: value
-                    for key, value in (params or {}).items()
-                    if value is not None
-                },
+                params={key: value for key, value in (params or {}).items() if value is not None},
                 headers=self._request_headers(),
                 timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
             )
@@ -163,9 +156,7 @@ class RestClient:
             status = getattr(err.response, "status_code", type(err).__name__)
             self._log_upstream("POST", url, status, time.monotonic() - started)
             raise
-        self._log_upstream(
-            "POST", url, response.status_code, time.monotonic() - started
-        )
+        self._log_upstream("POST", url, response.status_code, time.monotonic() - started)
         response.raise_for_status()
         return response.json()
 
@@ -222,9 +213,7 @@ class SqlClient(RestClient):
         try:
             result = self._post_json(url, {"query": sql})
         except requests.HTTPError as err:
-            logger.error(
-                f"ConsDB query failed: {self._error_message(err)}. SQL: {sql!r}"
-            )
+            logger.error(f"ConsDB query failed: {self._error_message(err)}. SQL: {sql!r}")
             raise
         return self._rows_from_result(result)
 

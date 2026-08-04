@@ -951,7 +951,9 @@ and an unset one fails the request with a 500.
 Both containers need them — the API and the refresh worker. The worker has no
 request context and no notebook to fall back on, so a worker deployed without them
 will log a token error on every adapter, every cycle, and warm nothing. `JIRA_API_HOSTNAME`
-is required alongside them for the Jira and Zephyr BLOCK URLs.
+is required alongside them for the Jira and Zephyr BLOCK URLs. None of them are
+checked at startup; validating them there is potential deferred work
+([§13](#required-environment-variables-are-not-checked-at-startup)).
 
 The two disable switches exist for debugging: when a value looks wrong, you need to
 be able to tell whether the backend is producing it or a cache is replaying it.
@@ -1250,6 +1252,51 @@ values that are not JSON-representable cannot survive the cache round-trip at al
 Resolving this means deciding, per endpoint, whether a given field is *used* (and
 so needs a number) or *displayed* (and so belongs to the frontend). Not attempted
 here; no ticket yet.
+
+### Required environment variables are not checked at startup
+
+Nothing verifies the deployment's configuration before serving. A missing
+`ACCESS_TOKEN` is discovered by the first fetch that needs it, which logs a
+CRITICAL and returns a 500 ([§10](#misconfiguration-logs-at-critical)); the same
+goes for `JIRA_API_TOKEN`, `ZEPHYR_API_TOKEN`, `JIRA_API_HOSTNAME` and
+`EXTERNAL_INSTANCE_URL`.
+
+Both containers fail badly at this, in different ways. `/health` returns
+`{"status": "ok"}` unconditionally and backs the Kubernetes readiness probe, so a
+misconfigured API pod is marked Ready, takes traffic, and 500s every data request
+while the deployment reports healthy — nothing rolls back. The refresh worker is
+worse: `_refresh_cycle` catches per-adapter failures so the loop cannot die, so a
+worker with no credentials stays up, logs a token error per adapter per cycle
+forever, and warms nothing — and because the process is alive, Kubernetes sees a
+healthy worker.
+
+Nothing here has been decided or ticketed. A presence check would be cheap: one
+`check_required_env()` returning the missing names, called from the FastAPI
+`lifespan` before the worker pools start (raising there aborts uvicorn's startup)
+and from `run_refresh_worker` before the worker is constructed, exiting non-zero.
+It would want to log **one** consolidated CRITICAL naming every missing variable,
+so bringing up a fresh environment does not take five deploy-fix cycles.
+`EXTERNAL_INSTANCE_URL` wants a value check rather than a presence check, since it
+has to match one of the five known deployment URLs; a `Server.get_url()` call does
+that already. Tokens can only be checked for presence — verifying one takes a
+network call, which does not belong in startup.
+
+**The AWS credentials belong in the same check.** `/expected-exposures` reads the
+simulation archive through `rubin_sim.sim_archive.fetch_sim_stats_for_night`,
+which pulls from S3; without those credentials the endpoint fails while every
+other endpoint works, which is a slow thing to diagnose. They are the only
+credentials in the set not read through `utils/auth.py`, so they appear nowhere in
+this repository's configuration surface — not in `AUTH_SOURCES`, not in the
+environment-variable appendix of the infrastructure doc. Confirm the exact
+variable names against the deployment before writing the check; they are set for
+`rubin_sim`'s benefit, not ours.
+
+One thing blocks the API half: `run_logging_and_reporting` passes `reload=True` to
+`uvicorn.run`. Under the reloader the app runs in a supervised child process, so a
+startup abort kills the child while the supervisor keeps watching files, and the
+container may never exit non-zero. That flag is worth removing from a production
+entrypoint regardless — it also ships a file watcher into every deployment — but
+it has to go for fail-fast to actually fail.
 
 ### Visit-map rendering is not cached
 
