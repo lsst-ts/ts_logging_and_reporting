@@ -19,6 +19,11 @@ from lsst.ts.logging_and_reporting.cache_ttl import (
 )
 from lsst.ts.logging_and_reporting.refresh_worker import RefreshWorker
 from lsst.ts.logging_and_reporting.utils.dayobs import dayobs_range
+from lsst.ts.logging_and_reporting.utils.logging_config import (
+    NO_TRACE_ID,
+    current_trace_id,
+    set_trace_id,
+)
 
 
 class StubAdapter:
@@ -95,10 +100,7 @@ class CachingAdapter(DayobsCachedAdapter):
 
     def _fetch_run(self, run_start, run_end):
         self.fetches += 1
-        return {
-            dayobs: f"{dayobs}-fetch-{self.fetches}"
-            for dayobs in dayobs_range(run_start, run_end)
-        }
+        return {dayobs: f"{dayobs}-fetch-{self.fetches}" for dayobs in dayobs_range(run_start, run_end)}
 
 
 class MutableCachingAdapter(MutableDataMixin, CachingAdapter):
@@ -112,9 +114,7 @@ class CachingInstrumentAdapter(InstrumentDayobsCachedAdapter):
     INSTRUMENTS = ("lsstcam", "latiss")
 
     def _fetch_run(self, instrument, run_start, run_end):
-        return {
-            dayobs: [{"day_obs": dayobs}] for dayobs in dayobs_range(run_start, run_end)
-        }
+        return {dayobs: [{"day_obs": dayobs}] for dayobs in dayobs_range(run_start, run_end)}
 
 
 def fix_today(monkeypatch, dayobs):
@@ -210,9 +210,7 @@ class TestRolloverStorage:
     a long TTL — is visible.
     """
 
-    def test_finalised_dayobs_is_refetched_under_the_historical_ttl(
-        self, monkeypatch, fake_redis
-    ):
+    def test_finalised_dayobs_is_refetched_under_the_historical_ttl(self, monkeypatch, fake_redis):
         adapter = CachingAdapter(fake_redis)
         worker = RefreshWorker([adapter], interval_seconds=300)
         fix_today(monkeypatch, 20250101)
@@ -236,9 +234,7 @@ class TestRolloverStorage:
         worker._refresh_cycle()
         assert fake_redis.ttls["adapter:caching:20250102"] == TODAY_TTL_REDIS
 
-    def test_mutable_adapters_finalise_under_the_mutable_ttl(
-        self, monkeypatch, fake_redis
-    ):
+    def test_mutable_adapters_finalise_under_the_mutable_ttl(self, monkeypatch, fake_redis):
         # A closed night's log messages can still be edited, so the
         # finalisation pass must not grant them the historical TTL.
         adapter = MutableCachingAdapter(fake_redis)
@@ -250,9 +246,7 @@ class TestRolloverStorage:
         assert fake_redis.ttls["adapter:caching:20250101"] == MUTABLE_TTL_REDIS
         assert cached(fake_redis, "adapter:caching:20250101") == "20250101-fetch-2"
 
-    def test_instrument_keys_are_finalised_per_instrument(
-        self, monkeypatch, fake_redis
-    ):
+    def test_instrument_keys_are_finalised_per_instrument(self, monkeypatch, fake_redis):
         adapter = CachingInstrumentAdapter(fake_redis)
         worker = RefreshWorker([adapter], interval_seconds=300)
         fix_today(monkeypatch, 20250101)
@@ -264,9 +258,7 @@ class TestRolloverStorage:
             assert fake_redis.ttls[key] == HISTORIC_TTL_REDIS
             assert cached(fake_redis, key) == [{"day_obs": 20250101}]
 
-    def test_without_rollover_today_is_never_given_a_long_ttl(
-        self, monkeypatch, fake_redis
-    ):
+    def test_without_rollover_today_is_never_given_a_long_ttl(self, monkeypatch, fake_redis):
         adapter = CachingAdapter(fake_redis)
         worker = RefreshWorker([adapter], interval_seconds=300)
         fix_today(monkeypatch, 20250101)
@@ -328,10 +320,7 @@ class TestCycleLogging:
         RefreshWorker(adapters, interval_seconds=300)._refresh_cycle()
         messages = cycle_log(caplog)
         assert messages[0] == "RefreshWorker: refresh cycle started"
-        assert (
-            messages[-1]
-            == "RefreshWorker: refresh cycle finished in 2.5s (2 succeeded, 1 failed)"
-        )
+        assert messages[-1] == "RefreshWorker: refresh cycle finished in 2.5s (2 succeeded, 1 failed)"
 
     def test_rollover_cycle_counts_both_passes(self, monkeypatch, caplog):
         adapter = StubAdapter()
@@ -344,8 +333,7 @@ class TestCycleLogging:
         worker._refresh_cycle()
         # Finalising 20250101 plus refreshing 20250102: two successes.
         assert (
-            cycle_log(caplog)[-1]
-            == "RefreshWorker: refresh cycle finished in 1.0s (2 succeeded, 0 failed)"
+            cycle_log(caplog)[-1] == "RefreshWorker: refresh cycle finished in 1.0s (2 succeeded, 0 failed)"
         )
 
     def test_finish_is_logged_when_the_cycle_itself_fails(self, monkeypatch, caplog):
@@ -357,10 +345,57 @@ class TestCycleLogging:
         RefreshWorker([StubAdapter()], interval_seconds=300)._refresh_cycle()
         messages = cycle_log(caplog)
         assert messages[0] == "RefreshWorker: refresh cycle started"
-        assert (
-            messages[-1]
-            == "RefreshWorker: refresh cycle finished in 0.3s (0 succeeded, 0 failed)"
-        )
+        assert messages[-1] == "RefreshWorker: refresh cycle finished in 0.3s (0 succeeded, 0 failed)"
+
+
+class TestCycleId:
+    @pytest.fixture(autouse=True)
+    def clear_trace_id(self):
+        """Keep one cycle's ID out of the next test's context."""
+        yield
+        set_trace_id(NO_TRACE_ID)
+
+    def watcher(self, seen):
+        """An adapter that records the ID in scope while it refreshes."""
+        return StubAdapter(on_refresh=lambda: seen.append(current_trace_id()))
+
+    def test_the_adapters_run_under_an_id(self, monkeypatch):
+        fix_today(monkeypatch, 20250101)
+        seen = []
+        RefreshWorker([self.watcher(seen)], interval_seconds=300)._refresh_cycle()
+        assert seen[0] != NO_TRACE_ID
+
+    def test_each_cycle_gets_its_own(self, monkeypatch):
+        fix_today(monkeypatch, 20250101)
+        seen = []
+        worker = RefreshWorker([self.watcher(seen)], interval_seconds=300)
+        worker._refresh_cycle()
+        worker._refresh_cycle()
+        assert len(set(seen)) == 2
+
+    def test_it_has_the_shape_a_requests_trace_id_has(self, monkeypatch):
+        fix_today(monkeypatch, 20250101)
+        seen = []
+        RefreshWorker([self.watcher(seen)], interval_seconds=300)._refresh_cycle()
+        assert len(seen[0]) == 8
+        int(seen[0], 16)
+
+    def test_a_failing_adapter_still_leaves_the_cycle_identified(self, monkeypatch):
+        fix_today(monkeypatch, 20250101)
+        seen = []
+        adapters = [
+            StubAdapter("failing", error=RuntimeError("upstream down")),
+            self.watcher(seen),
+        ]
+        RefreshWorker(adapters, interval_seconds=300)._refresh_cycle()
+        assert seen[0] != NO_TRACE_ID
+
+    def test_the_last_cycles_id_does_not_tag_the_stop_line(self, monkeypatch):
+        fix_today(monkeypatch, 20250101)
+        worker = RefreshWorker([StubAdapter()], interval_seconds=300)
+        worker._stop_event = RecordingEvent(cycles=1)
+        worker.run()
+        assert current_trace_id() == NO_TRACE_ID
 
 
 class TestSlowCycleWarning:
@@ -397,8 +432,7 @@ class TestSlowCycleWarning:
     def test_slow_cycle_still_logs_the_finish_line(self, monkeypatch, caplog):
         self.run_cycle(monkeypatch, elapsed=200.0)
         assert (
-            cycle_log(caplog)[-1]
-            == "RefreshWorker: refresh cycle finished in 200.0s (1 succeeded, 0 failed)"
+            cycle_log(caplog)[-1] == "RefreshWorker: refresh cycle finished in 200.0s (1 succeeded, 0 failed)"
         )
 
 

@@ -21,6 +21,8 @@
 
 import uvicorn
 
+from lsst.ts.logging_and_reporting.utils.logging_config import log_level
+
 
 def run_logging_and_reporting() -> None:
     """Run the night report REST API web server."""
@@ -29,7 +31,7 @@ def run_logging_and_reporting() -> None:
         "lsst.ts.logging_and_reporting.main:app",
         host="0.0.0.0",
         port=8080,
-        log_level="info",
+        log_level=log_level().lower(),
         reload=True,
     )
 

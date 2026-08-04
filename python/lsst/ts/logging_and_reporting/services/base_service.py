@@ -29,6 +29,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+import redis
 import requests
 from fastapi import HTTPException
 
@@ -60,18 +61,18 @@ class Service(ABC):
             return self.handle(*args, **kwargs)
         except HTTPException:
             raise
+        except redis.RedisError as e:
+            name = type(self).__name__
+            logger.critical(f"{name} could not reach the cache", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Internal error in {name}") from e
         except requests.RequestException as e:
             name = type(self).__name__
             logger.exception(f"{name} upstream request failed")
-            raise HTTPException(
-                status_code=502, detail=f"Upstream failure in {name}"
-            ) from e
+            raise HTTPException(status_code=502, detail=f"Upstream failure in {name}") from e
         except Exception as e:
             name = type(self).__name__
             logger.exception(f"{name} request failed")
-            raise HTTPException(
-                status_code=500, detail=f"Internal error in {name}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Internal error in {name}") from e
 
     def fetch_concurrently(self, tasks: dict[str, Callable[[], Any]]) -> dict[str, Any]:
         """Run each fetch thunk on a pool, returning result-or-exception.
@@ -88,8 +89,7 @@ class Service(ABC):
         # without one.
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
             futures = {
-                executor.submit(contextvars.copy_context().run, task): name
-                for name, task in tasks.items()
+                executor.submit(contextvars.copy_context().run, task): name for name, task in tasks.items()
             }
             for future in as_completed(futures):
                 name = futures[future]
