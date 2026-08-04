@@ -106,8 +106,8 @@ which allows you to use an arbitrary, opaque ID for each
 element you need to cache.
 
 **A transport client** (`adapters/base_clients.py`) supplies the request
-machinery. `RestClient` provides server-URL resolution, per-request
-auth token retrieval, timeouts, `_get_json`, `_post_json`, and
+machinery. `RestClient` provides server-URL resolution, auth token
+retrieval, timeouts, `_get_json`, `_post_json`, and
 `_get_json_paged`. `SqlClient` extends it with ConsDB's `/consdb/query`
 endpoint and row shaping. An adapter with no HTTP upstream (the almanac,
 computed locally with astroplan; expected exposures, read via
@@ -1130,12 +1130,6 @@ An unset variable is a misconfigured deployment rather than a
 bad request, so it raises a **500** — logged naming the source,
 returned to the client as a bare "Server configuration error". The failure 
 surfaces on the first fetch that needs the token, not at startup.
-
-The lookup runs per fetch rather than being cached on the adapter, so
-a rotated token takes effect without a restart. `RubinNightsClientsMixin` 
-is the exception: it resolves the RSP token once, when it builds its clients
-([§7](#7-dependency-injection)), so rotating that token does need a
-restart before the EFD and context-feed adapters pick it up.
 
 Header construction differs by source: `RestClient._request_headers`
 uses `get_auth_header`, a bearer header, while `JiraApiMixin`
