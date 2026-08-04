@@ -6,11 +6,16 @@ import pytest
 from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
+from lsst.ts.logging_and_reporting.utils.logging_config import (
+    NO_REQUEST_ID,
+    current_request_id,
+    set_request_id,
+)
 
-# Every function submitted below is a stdlib one. Workers import the
-# function by module path to unpickle it, and the stdlib is importable
-# everywhere, so the tests do not depend on this test module being
-# importable inside a worker process.
+# Every function submitted below comes from the stdlib or this app's
+# own package. Workers import the function by module path to unpickle
+# it, and both are importable there, so the tests do not depend on this
+# test module being importable inside a worker process.
 
 
 class Worker(WorkerPoolMixin):
@@ -51,6 +56,34 @@ class TestIsolation:
             other.shutdown_worker_pool()
 
 
+class TestRequestId:
+    """The calling request's ID reaches the worker process."""
+
+    @pytest.fixture(autouse=True)
+    def clear_request_id(self):
+        yield
+        set_request_id(NO_REQUEST_ID)
+
+    def test_the_worker_runs_under_the_callers_id(self, worker):
+        set_request_id("abc12345")
+        assert worker.run_in_worker(current_request_id) == "abc12345"
+
+    def test_a_call_outside_a_request_gets_the_marker(self, worker):
+        assert worker.run_in_worker(current_request_id) == NO_REQUEST_ID
+
+    def test_the_id_does_not_persist_into_the_next_call(self, worker):
+        # Workers are reused, so each call has to re-establish the ID
+        # rather than inherit whatever the last one left behind.
+        set_request_id("abc12345")
+        assert worker.run_in_worker(current_request_id) == "abc12345"
+        set_request_id("def67890")
+        assert worker.run_in_worker(current_request_id) == "def67890"
+
+    def test_the_result_still_comes_back_unchanged(self, worker):
+        set_request_id("abc12345")
+        assert worker.run_in_worker(abs, -3) == 3
+
+
 class TestLimits:
     def test_timeout_raises_504(self, worker):
         worker.pool_timeout = 0.2
@@ -64,7 +97,9 @@ class TestLimits:
         # their slots inside run_in_worker, which cannot be observed
         # from here, so retry until they have or the deadline passes.
         slots = worker.pool_workers + worker.pool_queue
-        occupiers = [threading.Thread(target=occupy, args=(worker, 5)) for _ in range(slots)]
+        occupiers = [
+            threading.Thread(target=occupy, args=(worker, 5)) for _ in range(slots)
+        ]
         for thread in occupiers:
             thread.start()
         try:

@@ -6,6 +6,11 @@ import requests
 from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.services.base_service import Service
+from lsst.ts.logging_and_reporting.utils.logging_config import (
+    NO_REQUEST_ID,
+    current_request_id,
+    set_request_id,
+)
 
 
 class StubAdapter:
@@ -25,7 +30,10 @@ class PassthroughService(Service):
 
     def handle(self, start_dayobs, end_dayobs):
         results = self.fetch_concurrently(
-            {name: (lambda a=a: a.fetch(start_dayobs, end_dayobs)) for name, a in self.adapters.items()}
+            {
+                name: (lambda a=a: a.fetch(start_dayobs, end_dayobs))
+                for name, a in self.adapters.items()
+            }
         )
         return self.collate_response(results)
 
@@ -40,7 +48,10 @@ class TestService:
 
     def test_handle_collates_results_by_name(self):
         service = PassthroughService(
-            adapters={"one": StubAdapter("one", {20250101: "x"}), "two": StubAdapter("two", {20250101: "y"})}
+            adapters={
+                "one": StubAdapter("one", {20250101: "x"}),
+                "two": StubAdapter("two", {20250101: "y"}),
+            }
         )
         response = service.handle(20250101, 20250102)
         assert response == {"results": [{20250101: "x"}, {20250101: "y"}]}
@@ -49,7 +60,10 @@ class TestService:
 class TestFetchConcurrently:
     def test_returns_each_result_by_name(self):
         service = PassthroughService(adapters={})
-        assert service.fetch_concurrently({"a": lambda: 1, "b": lambda: 2}) == {"a": 1, "b": 2}
+        assert service.fetch_concurrently({"a": lambda: 1, "b": lambda: 2}) == {
+            "a": 1,
+            "b": 2,
+        }
 
     def test_empty_tasks_returns_empty(self):
         service = PassthroughService(adapters={})
@@ -61,7 +75,9 @@ class TestFetchConcurrently:
         def fail():
             raise boom
 
-        results = PassthroughService(adapters={}).fetch_concurrently({"ok": lambda: "fine", "bad": fail})
+        results = PassthroughService(adapters={}).fetch_concurrently(
+            {"ok": lambda: "fine", "bad": fail}
+        )
         assert results["ok"] == "fine"
         assert results["bad"] is boom
 
@@ -74,8 +90,54 @@ class TestFetchConcurrently:
             barrier.wait()
             return "done"
 
-        results = PassthroughService(adapters={}).fetch_concurrently({"a": task, "b": task})
+        results = PassthroughService(adapters={}).fetch_concurrently(
+            {"a": task, "b": task}
+        )
         assert results == {"a": "done", "b": "done"}
+
+
+class TestRequestIdPropagation:
+    """Each fetch thread logs under the request that started it."""
+
+    @pytest.fixture(autouse=True)
+    def clear_request_id(self):
+        yield
+        set_request_id(NO_REQUEST_ID)
+
+    def test_tasks_see_the_request_id(self):
+        set_request_id("abc12345")
+        results = PassthroughService(adapters={}).fetch_concurrently(
+            {"a": current_request_id, "b": current_request_id}
+        )
+        assert results == {"a": "abc12345", "b": "abc12345"}
+
+    def test_tasks_outside_a_request_see_the_marker(self):
+        results = PassthroughService(adapters={}).fetch_concurrently(
+            {"a": current_request_id}
+        )
+        assert results == {"a": NO_REQUEST_ID}
+
+    def test_overlapping_tasks_each_get_their_own_context(self):
+        # One shared Context cannot be entered by two threads at once,
+        # so a single copy for all tasks would fail them here.
+        set_request_id("abc12345")
+        barrier = threading.Barrier(3, timeout=5)
+
+        def task():
+            barrier.wait()
+            return current_request_id()
+
+        results = PassthroughService(adapters={}).fetch_concurrently(
+            {"a": task, "b": task, "c": task}
+        )
+        assert results == {"a": "abc12345", "b": "abc12345", "c": "abc12345"}
+
+    def test_a_task_setting_the_id_does_not_affect_the_caller(self):
+        set_request_id("abc12345")
+        PassthroughService(adapters={}).fetch_concurrently(
+            {"a": lambda: set_request_id("overwritten")}
+        )
+        assert current_request_id() == "abc12345"
 
 
 class FailingService(Service):
@@ -100,7 +162,9 @@ class TestHandleRequest:
         assert "Service exploded" in caplog.text
 
     def test_http_exception_passes_through(self):
-        service = FailingService(HTTPException(status_code=404, detail="No simulation for 20240101"))
+        service = FailingService(
+            HTTPException(status_code=404, detail="No simulation for 20240101")
+        )
         with pytest.raises(HTTPException) as exc_info:
             service.handle_request()
         assert exc_info.value.status_code == 404
@@ -117,5 +181,9 @@ class TestHandleRequest:
         assert "upstream unreachable" in caplog.text
 
     def test_success_returns_response(self):
-        service = PassthroughService(adapters={"one": StubAdapter("one", {20250101: "x"})})
-        assert service.handle_request(20250101, 20250101) == {"results": [{20250101: "x"}]}
+        service = PassthroughService(
+            adapters={"one": StubAdapter("one", {20250101: "x"})}
+        )
+        assert service.handle_request(20250101, 20250101) == {
+            "results": [{20250101: "x"}]
+        }

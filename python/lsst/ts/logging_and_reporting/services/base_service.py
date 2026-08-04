@@ -22,6 +22,7 @@
 
 """Service base class for the adapter-backed endpoint architecture."""
 
+import contextvars
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -82,8 +83,14 @@ class Service(ABC):
         if not tasks:
             return {}
         results: dict[str, Any] = {}
+        # A new thread starts with an empty context, so the request ID
+        # is carried over explicitly; without it these fetches log
+        # without one.
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-            futures = {executor.submit(task): name for name, task in tasks.items()}
+            futures = {
+                executor.submit(contextvars.copy_context().run, task): name
+                for name, task in tasks.items()
+            }
             for future in as_completed(futures):
                 name = futures[future]
                 try:
