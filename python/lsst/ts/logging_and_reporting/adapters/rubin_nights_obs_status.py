@@ -55,24 +55,16 @@ class RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
 
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
         t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
-        t_end = Time(
-            get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1))
-        )
-        frame = self._efd_client.select_time_series(
-            OBS_STATUS_TOPIC, OBS_STATUS_FIELDS, t_start, t_end
-        )
+        t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
+        frame = self._efd_client.select_time_series(OBS_STATUS_TOPIC, OBS_STATUS_FIELDS, t_start, t_end)
         if frame is None or frame.empty:
             return {}
         frame = frame.reset_index(names="time")
-        frame["time_ms"] = frame["time"].dt.as_unit("ms").astype("int64") // 1_000_000
+        frame["time_ms"] = frame["time"].dt.as_unit("ms").astype("int64")
         event_dayobs = [dayobs_at(time) for time in frame["time"]]
         records = make_json_safe(frame.to_dict(orient="records"))
-        partition = self._partition_by_field(
-            list(zip(event_dayobs, records)), key=lambda pair: pair[0]
-        )
-        return {
-            dayobs: [pair[1] for pair in pairs] for dayobs, pairs in partition.items()
-        }
+        partition = self._partition_by_field(list(zip(event_dayobs, records)), key=lambda pair: pair[0])
+        return {dayobs: [pair[1] for pair in pairs] for dayobs, pairs in partition.items()}
 
 
 @functools.cache
