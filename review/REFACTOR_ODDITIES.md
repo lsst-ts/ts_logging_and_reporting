@@ -148,21 +148,17 @@ pytest tests/adapters tests/services tests/utils
 
 ### Two rename detections are misleading
 
-Git reports `web_app/services/scheduler_service.py → services/visit_maps.py` as a
-51%-similar rename. It is substantially a rewrite; treat it as new code.
+Git reports `web_app/__init__.py → utils/__init__.py` as a **100%** rename. Both
+files are empty package markers, and empty content matches empty content
+perfectly, so the detection is arithmetically right and semantically meaningless:
+one marks a package that was deleted, the other a package that is new. Nothing
+moved between them.
 
-Git also reports `tests/test_all_sources.py → utils/__init__.py` as a 54% rename.
-The two files are unrelated — one is a deleted legacy test module, the other a new
-package marker — but this is not a git defect, and it is worth understanding
-because the same trap catches any small file in this repository.
-
-Both files are mostly the 21-line GPL header that goes at the top of every file
-here. `utils/__init__.py` is 1143 bytes, of which roughly 1000 is that header;
-`test_all_sources.py` is 1738 bytes containing the same 1000. Twenty lines are
-byte-identical. The two genuinely are ~54% the same content — git is measuring
-accurately, the content it is measuring is just boilerplate. `utils/__init__.py`
-has four non-boilerplate lines, making it the smallest added file in the change
-and the most exposed to this.
+Lower the threshold and a second one appears.
+`web_app/services/scheduler_service.py → services/visit_maps.py` is 49% similar —
+just under git's default of 50%, so it is *not* reported unless you ask for it
+(`-M40%`), and a review tool with a lower threshold will show it. It is
+substantially a rewrite; treat it as new code either way.
 
 The one file handled as a genuine, intentional move is
 `tests/test_get_time_accounting.py → tests/services/test_time_accounting_helpers.py`
@@ -497,7 +493,7 @@ references outside the package changed: the uvicorn entrypoint string in
 `run_logging_and_reporting.py`, and a stale `.gitignore` path
 (`web_app/data/*` → `data/*`).
 
-`web_app/main.py → main.py` is 27% similar and will not be rename-detected. Most
+`web_app/main.py → main.py` is 21% similar and will not be rename-detected. Most
 old-service to new-service pairs are the same.
 
 ### `utils.py` became a package
