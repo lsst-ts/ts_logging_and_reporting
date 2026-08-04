@@ -8,7 +8,7 @@ the change, decisions that departed from the plan, and the handful of places whe
 the code is deliberately left imperfect.
 
 It is not a summary of the refactor. For the architecture itself see
-`doc/service-adapter-infrastructure.md`; for the reasoning behind it see
+`doc/service-adapter-infrastructure.md` and `doc/logging.md`; for the reasoning behind it see
 `review/BACKEND_REFACTOR_PLAN.md`, and for the plan as first written
 `review/BACKEND_REFACTOR_PLAN_ORIGINAL.md` (both deleted before merge — see
 [§14](#14-divergence-from-the-original-refactor-plan)). See also
@@ -663,6 +663,9 @@ def handle_request(self, *args, **kwargs) -> dict:
         return self.handle(*args, **kwargs)
     except HTTPException:
         raise
+    except redis.RedisError as e:
+        logger.critical(f"{name} could not reach the cache", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal error in {name}") from e
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"Upstream failure in {name}") from e
     except Exception as e:
@@ -673,6 +676,11 @@ Previously each endpoint hand-rolled its own `try`/`except` with inconsistent
 coverage: some caught `ConsdbQueryError` and mapped it to 502, some caught
 `BaseLogrepError`, most caught bare `Exception` and returned 500, and two swallowed
 errors entirely.
+
+The `RedisError` branch exists only to log. It produces the same 500 as the
+generic handler below it, but a cache the application cannot reach is a
+deployment fault rather than a bug in a request, so it is logged at `CRITICAL`
+instead of arriving anonymously ([§10](#10-logging)).
 
 ### Exception detail no longer reaches the client
 
@@ -746,39 +754,34 @@ as-is.
 render and needs a placeholder of its own: `--`. Truthiness checks on those fields
 change meaning too, since `"NaT"` was truthy and `null` is not.
 
-### `/data-log` record order is unspecified; `/exposures` is now guaranteed
+### `/data-log` and `/exposures` record order is now guaranteed
 
-The two endpoints read the same cache entry, and only one of them sorts it.
-
-`ExposuresService.collate_response` orders explicitly — nights ascending, and
-within a night by `seq_num`:
-
-```python
-for dayobs in sorted(data):
-    records.extend(sorted(data[dayobs], key=lambda record: record.get("seq_num") or 0))
-```
-
-`DataLogService.collate_response` sorts only the dayobs keys, so rows within a
-night keep whatever order they arrived in:
+The two endpoints read the same cache entry, and both now sort it the same way —
+nights ascending, and within a night by `seq_num` — through the shared
+`flatten_within_dayobs` helper in `utils/collation.py`:
 
 ```python
-records = [record for dayobs in sorted(data) for record in data[dayobs]]
+records = flatten_within_dayobs(data, "seq_num")
 ```
 
-Neither the old nor the new ConsDB query has an `ORDER BY`, and neither path has
-ever sorted in Python, so `/data-log`'s within-night order has always been
-whatever Postgres returned. In practice that has probably always *looked*
-time-ordered: `exposure` is append-only, rows go in in time order, and a plain
-sequential scan tends to return them in physical order. That is a property of the
-query plan, not a contract.
+This is worth calling out because neither the old nor the new ConsDB query has an
+`ORDER BY`, and the old code did not sort in Python either, so `/data-log`'s
+within-night order used to be whatever Postgres returned. In practice that
+probably always *looked* time-ordered: `exposure` is append-only, rows go in in
+time order, and a plain sequential scan tends to return them in physical order.
+That was a property of the query plan, not a contract — and the plan changed. The
+old query was a single-table scan; the new one is
+`exposure LEFT JOIN visit1_quicklook` plus, where available, a transformed-EFD
+join, and a hash or merge join can emit rows in an order unrelated to the driving
+table's physical order.
 
-What is new is that the plan changed. The old query was a single-table scan; the
-new one is `exposure LEFT JOIN visit1_quicklook` plus, where available, a
-transformed-EFD join. A hash or merge join can emit rows in an order unrelated to
-the driving table's physical order, where a sequential scan cannot.
+So the sort is not cosmetic: it replaces an incidental ordering that the new query
+would no longer have produced reliably. The frontend sorts this data by `seq_num`
+itself, so no user-visible behaviour depended on it either way.
 
-Anyone relying on `/data-log` arriving in time order should not. The frontend
-sorts this data by `seq_num` so this does not present an actual issue.
+`flatten_within_dayobs` is separate from `flatten_sorted` because `seq_num` only
+counts within a night — one global sort across the assembled range would
+interleave nights.
 
 ### The dayObs range convention is inconsistent, and this refactor makes it visible
 
@@ -864,13 +867,19 @@ container in compose, a single-replica deployment in Kubernetes). See
 [§14](#14-divergence-from-the-original-refactor-plan), item 11, for what was
 originally specified instead.
 
-Registration order in `run_refresh_worker.py` matters: `visit_overhead` is listed
-after `consdb_exposures` because it reads that adapter's cache.
+Which adapters it warms is `REFRESH_ADAPTERS` in `adapters/__init__.py`, beside
+`__all__`, rather than a list in the entrypoint — warming is a property of the
+adapters, not of the process that happens to start the worker, and having both
+lists in one file means adding an adapter puts the second one in front of you.
+Registration order matters and the tuple keeps it rather than matching the sorted
+exports: `visit_overhead` is listed after `consdb_exposures` because it reads that
+adapter's cache.
 
 The almanac adapter is deliberately **not** registered — its data is computed
 locally and never changes, so it takes the historic TTL even for today.
 `IdCachedAdapter` subclasses (`zephyr`, `jira_block`) are not registered either;
-they have no "today" entry to refresh.
+they have no "today" entry to refresh. Both exclusions are asserted in
+`tests/test_refresh_worker.py` rather than only described here.
 
 ### The map endpoints render in worker processes
 
@@ -928,7 +937,7 @@ Four operational consequences:
 |---|---|
 | `ND_CACHING_DISABLE_REDIS` | Replaces the Redis client with `DisabledRedis` — every read misses, every write is dropped, every lock is won. The refresh worker logs a warning and exits immediately, since it would have nothing to warm. |
 | `ND_CACHING_DISABLE_NGINX` | *(frontend repo)* Makes nginx bypass the proxy cache so all requests hit the backend directly. `docker/nginx.conf` became `nginx.conf.template` to support this. |
-| `LOG_LEVEL` | Drives `logging.basicConfig` in both entrypoints. Defaults to `INFO`. |
+| `LOG_LEVEL` | Sets the level for the application, uvicorn and the map-render workers. Unset, blank or unrecognised falls back to `INFO` ([§10](#10-logging)). |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB` | Redis connection. Default to `localhost:6379` db 0; the dev compose stack sets `REDIS_HOST=redis`. |
 
 ### The auth environment variables are now mandatory, with no fallback
@@ -995,6 +1004,9 @@ long a request can hang if that assumption breaks.
 
 ## 10. Logging
 
+This section is the delta. `doc/logging.md` describes the result, and is
+the document to read to *use* the logging rather than to review the change to it.
+
 ### `getLogger("uvicorn.error")` is gone
 
 Several modules did this:
@@ -1006,7 +1018,7 @@ logger.setLevel(logging.DEBUG)
 
 That hijacks uvicorn's own logger and forces it to DEBUG globally, at import time,
 for the whole process. Every module now uses `logging.getLogger(__name__)`, and
-level is set once per entrypoint from `LOG_LEVEL`.
+level is set once per process from `LOG_LEVEL`.
 
 ### `print` is gone
 
@@ -1014,11 +1026,107 @@ Roughly twenty-five `print()` calls went with `source_adapters.py`, `consdb.py` 
 `efd.py`, along with the `verbose` flag plumbing that gated them. Anything worth
 keeping is now `logger.debug`.
 
+### Configuration is shared, because three kinds of process need it
+
+`utils/logging_config.py` holds the format, the level lookup and the trace-ID
+machinery, and `configure_logging()` is called by `main.py`, by
+`run_refresh_worker.py` — and by each map-render worker as it starts.
+
+That third caller is the reason the configuration is a module rather than two
+`basicConfig` calls in the entrypoints. Pool workers are forked from the
+forkserver, which imports only the preload modules, so they never ran the
+entrypoint at all: their debug and info records went nowhere, and their warnings
+fell through to `logging.lastResort` without the application's format.
+
+### `LOG_LEVEL` now drives uvicorn as well as the application
+
+The access and error logs move with everything else instead of being pinned at
+info. One helper reads the variable for both.
+
+It is also validated rather than passed through. Unset, blank and unrecognised
+values all fall back to `INFO`, because both consumers fail hard on a bad one:
+compose expands a missing variable to an empty string, which `basicConfig`
+rejects outright, and a level name uvicorn does not know raises `KeyError` and
+takes the server down at startup. A value that was set but not understood is
+warned about once logging is up, so the fallback is not silent.
+
+### Every record carries a trace ID
+
+The format is `LEVEL [logger] [trace_id] message`. The ID is attached by a filter
+on the root handler rather than passed at each call site, so every existing
+`logger.debug(...)` in the tree picks it up unchanged, including records from
+libraries. Records logged outside any traced unit of work show `-`.
+
+It is a trace ID rather than a request ID because it has never been about
+requests alone: `RequestLoggingMiddleware` sets one per request, and the refresh
+worker sets one per cycle, so a cycle's own lines and everything the adapters log
+underneath it share a tag. The worker clears it before the stopped line, which
+belongs to no cycle.
+
+The ID lives in a `ContextVar`, which crosses neither concurrency boundary this
+application uses, so both are bridged explicitly:
+
+- `Service.fetch_concurrently` submits `contextvars.copy_context().run` rather
+  than the thunk itself — a copy per task, since one `Context` cannot be entered
+  by two threads at once.
+- `WorkerPoolMixin.run_in_worker` pickles the current ID across as an argument and
+  re-establishes it inside the worker.
+
+### Request logging moved into middleware
+
+Thirteen endpoints each logged their own near-identical arrival line, there was no
+completion line anywhere, and requests that never reached a service — FastAPI's
+422 for a bad parameter, a rejection from the dayobs validation middleware — were
+not logged at all.
+
+`RequestLoggingMiddleware` logs arrival at info with the query string, and
+completion at debug with the status and duration, escalating to a warning past
+`SLOW_REQUEST_SECONDS` (10 s). It is added last, so it is the outermost
+middleware and its timing covers validation, CORS and cache-control rather than
+just the handler. `/health` is logged by neither line: the Kubernetes probes hit
+it often enough to drown everything else.
+
+### The cache and upstream layers are no longer opaque
+
+Nothing previously recorded whether a request was served from Redis or went
+upstream, how big the cached entries were, or how long an upstream call took.
+
+`CachedAdapter` logs each hit and miss with the entry size, each store with its
+size and TTL, a per-fetch summary of how many keys came from cache, and — when a
+request blocks on another's single-flight lock — how long it waited. `RestClient`
+times every GET and POST, and its failure path names the status or the exception
+type.
+
+All of this is debug, so it is off in normal operation, and the hot paths guard
+their calls with `isEnabledFor` so neither the f-strings nor the payload summaries
+are built when it is. The two slow-call warnings are the exception: an upstream
+past `SLOW_REQUEST_SECONDS` and a worker render past `SLOW_CALL_SECONDS` (30 s)
+warn regardless of level, so a degraded upstream shows up without anyone having
+turned debug logging on first.
+
 ### The refresh worker reports on itself
 
-Each cycle logs its duration and a success/failure count per adapter, and warns
-when a cycle consumes more than half its interval — the signal that the worker is
-about to fall behind.
+Each cycle logs its duration and a success/failure count across adapters, names
+the adapter on a per-adapter failure, and warns when a cycle consumes more than
+half its interval — the signal that the worker is about to fall behind.
+
+### Misconfiguration logs at CRITICAL
+
+A deployment fault is not an error in the same sense as a failed request: the
+service will not work at all until someone changes the environment. Four cases are
+logged at `CRITICAL` so they are visible at any level a deployment might be
+running at:
+
+| Case | Previously |
+|---|---|
+| Service-account token unset | logged at error |
+| `JIRA_API_HOSTNAME` unset | logged at error |
+| `EXTERNAL_INSTANCE_URL` unset or not a known deployment | raised `ValueError` with nothing logged at all |
+| Redis unreachable | not caught by name; surfaced as an anonymous 500 |
+
+Redis is the only behavioural change of the four, and only in what is logged:
+`Service.handle_request` now catches `redis.RedisError` ahead of its generic
+handler. The status stays 500 and the response detail is unchanged.
 
 ---
 
