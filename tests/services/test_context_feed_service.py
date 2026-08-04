@@ -8,6 +8,17 @@ def row(time, final_status=None, name=None, **extra):
     return record
 
 
+def task_change(time, name):
+    """A task-change row, whose start is distinct from its time."""
+    return row(
+        time,
+        "Task Change",
+        name=name,
+        timestampProcessStart=f"{time}-start",
+        timestampProcessEnd="stale",
+    )
+
+
 class StubContextAdapter:
     def __init__(self, buckets):
         self.buckets = buckets
@@ -49,27 +60,53 @@ class TestCollateResponse:
         service = make_service()
         buckets = {
             20250101: [
-                row("t0", "Task Change", name="BLOCK-1", timestampProcessEnd="stale"),
+                task_change("t0", "BLOCK-1"),
                 row("t1"),
-                row("t2", "Task Change", name="BLOCK-2", timestampProcessEnd="stale"),
+                task_change("t2", "BLOCK-2"),
                 row("t3"),
             ]
         }
         records = service.collate_response(buckets)
         # First task change spans to the next one's start.
-        assert records[0]["timestampProcessEnd"] == "t2"
+        assert records[0]["timestampProcessEnd"] == "t2-start"
         # The final task change spans to the last message in the range.
         assert records[2]["timestampProcessEnd"] == "t3"
 
     def test_task_change_chains_across_dayobs_buckets(self):
         service = make_service()
         buckets = {
-            20250101: [row("t0", "Task Change", name="BLOCK-1", timestampProcessEnd="stale")],
-            20250102: [row("t2", "Task Change", name="BLOCK-2", timestampProcessEnd="stale")],
+            20250101: [task_change("t0", "BLOCK-1")],
+            20250102: [task_change("t2", "BLOCK-2")],
         }
         records = service.collate_response(buckets)
-        assert records[0]["timestampProcessEnd"] == "t2"
+        assert records[0]["timestampProcessEnd"] == "t2-start"
         assert records[1]["timestampProcessEnd"] == "t2"
+
+    def test_task_change_end_keeps_the_unshifted_instant(self):
+        # A task-change row's time is a nanosecond behind the instant it
+        # announces; timestampProcessStart holds the unshifted value.
+        service = make_service()
+        buckets = {
+            20250101: [
+                row(
+                    "2025-08-03T12:00:00.290645999+00:00",
+                    "Task Change",
+                    name="BLOCK-1",
+                    timestampProcessStart="2025-08-03T12:00:00.290646+00:00",
+                    timestampProcessEnd="stale",
+                ),
+                row(
+                    "2025-08-03T13:00:00.499999999+00:00",
+                    "Task Change",
+                    name="BLOCK-2",
+                    timestampProcessStart="2025-08-03T13:00:00.500000+00:00",
+                    timestampProcessEnd="stale",
+                ),
+                row("2025-08-03T14:00:00.123456+00:00"),
+            ]
+        }
+        records = service.collate_response(buckets)
+        assert records[0]["timestampProcessEnd"] == "2025-08-03T13:00:00.500000+00:00"
 
     def test_non_task_change_end_untouched(self):
         service = make_service()
