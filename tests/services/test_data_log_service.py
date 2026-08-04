@@ -26,6 +26,16 @@ class TestDataLog:
         response = make_service(per_day).handle_request(20250101, 20250103, "LSSTCam")
         assert [record["exposure_id"] for record in response["data_log"]] == [1, 2]
 
+    def test_orders_by_dayobs_then_seq_num(self):
+        # ConsDB returns each night's rows unordered, so the service has
+        # to impose the order rather than trust the adapter's list.
+        per_day = {
+            20250102: [{"exposure_id": 4, "seq_num": 1}],
+            20250101: [{"exposure_id": 2, "seq_num": 2}, {"exposure_id": 1, "seq_num": 1}],
+        }
+        response = make_service(per_day).handle_request(20250101, 20250103, "LSSTCam")
+        assert [record["exposure_id"] for record in response["data_log"]] == [1, 2, 4]
+
     def test_special_floats_rendered_as_strings(self):
         per_day = {20250101: [{"exposure_id": 1, "value": float("nan")}]}
         response = make_service(per_day).handle_request(20250101, 20250102, "LSSTCam")

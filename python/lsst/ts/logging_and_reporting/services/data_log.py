@@ -32,6 +32,7 @@ from lsst.ts.logging_and_reporting.adapters.consdb_exposures import (
     get_consdb_exposures_adapter,
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
+from lsst.ts.logging_and_reporting.utils.collation import flatten_within_dayobs
 from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_days
 from lsst.ts.logging_and_reporting.utils.serialization import (
     make_json_safe,
@@ -49,11 +50,7 @@ class DataLogService(Service):
     """
 
     def __init__(self, consdb_adapter: ConsdbExposuresAdapter | None = None) -> None:
-        self.consdb_adapter = (
-            consdb_adapter
-            if consdb_adapter is not None
-            else get_consdb_exposures_adapter()
-        )
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_exposures_adapter()
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Return the detailed data log for the range and instrument.
@@ -79,7 +76,7 @@ class DataLogService(Service):
         return response
 
     def collate_response(self, data: dict[int, list[dict]]) -> dict:
-        records = [record for dayobs in sorted(data) for record in data[dayobs]]
+        records = flatten_within_dayobs(data, "seq_num")
         # Records for different days can have different keys (e.g. an
         # EFD-joined column only present on some rows); the DataFrame gives
         # every row every column, missing ones as NaN, which stringify then
