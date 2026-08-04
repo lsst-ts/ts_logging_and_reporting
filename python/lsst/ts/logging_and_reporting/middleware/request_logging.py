@@ -27,7 +27,7 @@ import uuid
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from lsst.ts.logging_and_reporting.utils.logging_config import set_request_id
+from lsst.ts.logging_and_reporting.utils.logging_config import set_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Set before call_next: the downstream task copies the context
         # as it is created, so every record logged while serving this
         # request carries the ID.
-        set_request_id(uuid.uuid4().hex[:8])
+        set_trace_id(uuid.uuid4().hex[:8])
         query = request.url.query or "no parameters"
         logger.info(f"Fetching {path} with {query}")
 
@@ -64,17 +64,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
-            logger.warning(
-                f"Request {path} with {query} failed after "
-                f"{time.monotonic() - started:.1f}s"
-            )
+            logger.warning(f"Request {path} with {query} failed after {time.monotonic() - started:.1f}s")
             raise
         elapsed = time.monotonic() - started
 
         if elapsed >= SLOW_REQUEST_SECONDS:
             logger.warning(
-                f"Slow request: {path} with {query} responded "
-                f"{response.status_code} in {elapsed:.1f}s"
+                f"Slow request: {path} with {query} responded {response.status_code} in {elapsed:.1f}s"
             )
         elif logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"{path} responded {response.status_code} in {elapsed:.1f}s")

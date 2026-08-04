@@ -26,42 +26,57 @@ import logging
 import os
 from contextvars import ContextVar
 
-NO_REQUEST_ID = "-"
-"""Stand-in for records logged outside a request."""
+NO_TRACE_ID = "-"
+"""Stand-in for records logged outside a traced unit of work."""
 
-_request_id: ContextVar[str] = ContextVar("request_id", default=NO_REQUEST_ID)
+_trace_id: ContextVar[str] = ContextVar("trace_id", default=NO_TRACE_ID)
 
-LOG_FORMAT = "%(levelname)s [%(name)s] [%(request_id)s] %(message)s"
+LOG_FORMAT = "%(levelname)s [%(name)s] [%(trace_id)s] %(message)s"
 
+DEFAULT_LOG_LEVEL = "INFO"
 
-def set_request_id(request_id: str) -> None:
-    """Tag every record logged from here on with ``request_id``."""
-    _request_id.set(request_id)
-
-
-def current_request_id() -> str:
-    """The request ID in scope, or `NO_REQUEST_ID` outside a request."""
-    return _request_id.get()
+LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
+"""Levels ``LOG_LEVEL`` accepts. Matches uvicorn's allowable log levels."""
 
 
-class RequestIdFilter(logging.Filter):
-    """Give every record a ``request_id``, so `LOG_FORMAT` can use it.
+def log_level() -> str:
+    """The level named by ``LOG_LEVEL``, or `DEFAULT_LOG_LEVEL`."""
+    level = os.environ.get("LOG_LEVEL", "").strip().upper()
+    return level if level in LOG_LEVELS else DEFAULT_LOG_LEVEL
+
+
+def set_trace_id(trace_id: str) -> None:
+    """Tag every record logged from here on with ``trace_id``."""
+    _trace_id.set(trace_id)
+
+
+def current_trace_id() -> str:
+    """The trace ID in scope, or `NO_TRACE_ID` outside a traced unit."""
+    return _trace_id.get()
+
+
+class TraceIdFilter(logging.Filter):
+    """Give every record a ``trace_id``, so `LOG_FORMAT` can use it.
 
     Attached to the handler rather than to a logger: a handler filter
     sees every record that reaches it, whichever logger emitted it.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = current_request_id()
+        record.trace_id = current_trace_id()
         return True
 
 
 def configure_logging() -> None:
     """Configure logging for the current process."""
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format=LOG_FORMAT,
-    )
+    requested = os.environ.get("LOG_LEVEL", "").strip()
+    logging.basicConfig(level=log_level(), format=LOG_FORMAT)
     for handler in logging.getLogger().handlers:
-        if not any(isinstance(f, RequestIdFilter) for f in handler.filters):
-            handler.addFilter(RequestIdFilter())
+        if not any(isinstance(f, TraceIdFilter) for f in handler.filters):
+            handler.addFilter(TraceIdFilter())
+    # Warned about only once logging is configured, and at a level the
+    # default lets through, so the fallback is not silent.
+    if requested and requested.upper() not in LOG_LEVELS:
+        logging.getLogger(__name__).warning(
+            f"Unrecognised LOG_LEVEL {requested!r}, using {DEFAULT_LOG_LEVEL}"
+        )

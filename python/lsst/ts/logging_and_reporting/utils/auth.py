@@ -81,6 +81,7 @@ class Server:
             case Server.base:
                 return Server.base
             case _:
+                logger.critical(f"Unset or invalid {env_var_name}: {current!r}")
                 raise ValueError(f"Unset or invalid {env_var_name}: {current}")
 
 
@@ -97,7 +98,7 @@ def retrieve_access_token(config: dict) -> str:
     if env_token is not None:
         return env_token
 
-    logger.error(f"{config['label']} service-account token is unset ({config['env_var']} not configured)")
+    logger.critical(f"{config['label']} service-account token is unset ({config['env_var']} not configured)")
     raise HTTPException(status_code=500, detail="Server configuration error")
 
 
@@ -156,6 +157,7 @@ def get_jira_hostname():
     """
     hostname = os.getenv("JIRA_API_HOSTNAME")
     if not hostname:
+        logger.critical("Jira hostname is unset (JIRA_API_HOSTNAME not configured)")
         raise HTTPException(
             status_code=500,
             detail="Jira hostname not configured",

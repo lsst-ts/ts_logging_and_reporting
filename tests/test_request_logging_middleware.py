@@ -32,8 +32,8 @@ from lsst.ts.logging_and_reporting.middleware.request_logging import (
     RequestLoggingMiddleware,
 )
 from lsst.ts.logging_and_reporting.utils.logging_config import (
-    NO_REQUEST_ID,
-    current_request_id,
+    NO_TRACE_ID,
+    current_trace_id,
 )
 
 
@@ -55,13 +55,13 @@ def _make_app():
     def health():
         # Reports the ID so the tests can show an unlogged path is
         # never given one.
-        return {"status": "ok", "request_id": current_request_id()}
+        return {"status": "ok", "trace_id": current_trace_id()}
 
     @app.get("/echo-id")
     def echo_id():
         # Reads the ID from inside the endpoint, which is what proves
         # the middleware's context reached the handler.
-        return {"request_id": current_request_id()}
+        return {"trace_id": current_trace_id()}
 
     @app.get("/not-found")
     def not_found():
@@ -104,15 +104,12 @@ class TestArrivalLine:
             },
         )
         assert messages_at(caplog, logging.INFO) == [
-            "Fetching /exposures with "
-            "dayObsStart=20250101&dayObsEnd=20250102&instrument=LSSTCam"
+            "Fetching /exposures with dayObsStart=20250101&dayObsEnd=20250102&instrument=LSSTCam"
         ]
 
     def test_request_without_query_says_so(self, client, caplog):
         client.get("/version")
-        assert messages_at(caplog, logging.INFO) == [
-            "Fetching /version with no parameters"
-        ]
+        assert messages_at(caplog, logging.INFO) == ["Fetching /version with no parameters"]
 
     def test_arrival_is_logged_before_the_response(self, client, caplog):
         client.get("/exposures")
@@ -138,23 +135,23 @@ class TestUnloggedPaths:
         assert len(messages_at(caplog, logging.INFO)) == 1
 
 
-class TestRequestId:
+class TestTraceId:
     def test_the_endpoint_sees_an_id(self, client):
-        request_id = client.get("/echo-id").json()["request_id"]
-        assert request_id != NO_REQUEST_ID
-        assert len(request_id) == 8
+        trace_id = client.get("/echo-id").json()["trace_id"]
+        assert trace_id != NO_TRACE_ID
+        assert len(trace_id) == 8
 
     def test_each_request_gets_its_own_id(self, client):
-        first = client.get("/echo-id").json()["request_id"]
-        second = client.get("/echo-id").json()["request_id"]
+        first = client.get("/echo-id").json()["trace_id"]
+        second = client.get("/echo-id").json()["trace_id"]
         assert first != second
 
     def test_unlogged_paths_are_not_given_an_id(self, client):
-        assert client.get("/health").json()["request_id"] == NO_REQUEST_ID
+        assert client.get("/health").json()["trace_id"] == NO_TRACE_ID
 
     def test_the_id_does_not_leak_out_of_the_request(self, client):
         client.get("/echo-id")
-        assert current_request_id() == NO_REQUEST_ID
+        assert current_trace_id() == NO_TRACE_ID
 
 
 class TestCompletionLine:
@@ -167,9 +164,7 @@ class TestCompletionLine:
 
     def test_error_status_is_reported(self, client, caplog):
         client.get("/not-found")
-        assert messages_at(caplog, logging.DEBUG)[0].startswith(
-            "/not-found responded 404 in "
-        )
+        assert messages_at(caplog, logging.DEBUG)[0].startswith("/not-found responded 404 in ")
 
     def test_no_completion_line_when_debug_is_off(self, client, caplog):
         caplog.set_level(logging.INFO, logger=request_logging.__name__)
@@ -184,9 +179,7 @@ class TestSlowRequests:
         client.get("/exposures", params={"dayObsStart": 20250101})
         warnings = messages_at(caplog, logging.WARNING)
         assert len(warnings) == 1
-        assert warnings[0].startswith(
-            "Slow request: /exposures with dayObsStart=20250101 responded 200 in "
-        )
+        assert warnings[0].startswith("Slow request: /exposures with dayObsStart=20250101 responded 200 in ")
 
     @patch.object(request_logging, "SLOW_REQUEST_SECONDS", 0)
     def test_slow_request_does_not_also_log_at_debug(self, client, caplog):
@@ -209,6 +202,4 @@ class TestFailedRequests:
     def test_failure_still_logs_the_arrival_line(self, client, caplog):
         with pytest.raises(RuntimeError):
             client.get("/boom")
-        assert messages_at(caplog, logging.INFO) == [
-            "Fetching /boom with no parameters"
-        ]
+        assert messages_at(caplog, logging.INFO) == ["Fetching /boom with no parameters"]

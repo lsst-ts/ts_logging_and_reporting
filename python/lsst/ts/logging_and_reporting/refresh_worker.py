@@ -38,8 +38,13 @@ full previous dayobs is captured.
 import logging
 import threading
 import time
+import uuid
 
 from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
+from lsst.ts.logging_and_reporting.utils.logging_config import (
+    NO_TRACE_ID,
+    set_trace_id,
+)
 
 from .adapters.base_adapters import DayobsCachedAdapter, InstrumentDayobsCachedAdapter
 from .cache_ttl import TODAY_TTL
@@ -90,14 +95,13 @@ class RefreshWorker:
         cycle that overruns the interval leaves no wait at all, so the
         next one starts immediately.
         """
-        logger.info(
-            f"RefreshWorker started: {len(self._adapters)} adapter(s), interval {self._interval}s"
-        )
+        logger.info(f"RefreshWorker started: {len(self._adapters)} adapter(s), interval {self._interval}s")
         # wait() returns True when stop() sets the event, ending the
         # loop; a False return means the interval elapsed normally.
         elapsed = self._refresh_cycle()
         while not self._stop_event.wait(max(0.0, self._interval - elapsed)):
             elapsed = self._refresh_cycle()
+        set_trace_id(NO_TRACE_ID)
         logger.info("RefreshWorker stopped")
 
     def stop(self) -> None:
@@ -118,7 +122,9 @@ class RefreshWorker:
 
         Returns the seconds the pass took
         """
-
+        # The same ID a request carries, so everything one cycle logs —
+        # including the adapters it drives — is attributable to it.
+        set_trace_id(uuid.uuid4().hex[:8])
         logger.info("RefreshWorker: refresh cycle started")
         started = time.monotonic()
         successes = 0
