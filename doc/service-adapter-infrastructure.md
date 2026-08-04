@@ -421,7 +421,7 @@ copy can be flushed by hand.
 |---|---|---|
 | Historic | `HISTORIC_TTL` 1 day | `HISTORIC_TTL_REDIS` 30 days |
 | Today | `TODAY_TTL` 5 min | `TODAY_TTL_REDIS` 15 min |
-| Mutable (past dayobs) | `MUTABLE_TTL` 5 min | `MUTABLE_TTL_REDIS` 1 hour |
+| Mutable (past dayobs) | `MUTABLE_TTL` 5 min | `MUTABLE_TTL_REDIS` 30 min |
 
 All six constants live in `cache_ttl.py`; change them there and nowhere
 else.
