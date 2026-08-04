@@ -97,20 +97,18 @@ class TestLimits:
         # their slots inside run_in_worker, which cannot be observed
         # from here, so retry until they have or the deadline passes.
         slots = worker.pool_workers + worker.pool_queue
-        occupiers = [
-            threading.Thread(target=occupy, args=(worker, 5)) for _ in range(slots)
-        ]
+        occupiers = [threading.Thread(target=occupy, args=(worker, 2)) for _ in range(slots)]
         for thread in occupiers:
             thread.start()
         try:
-            deadline = time.monotonic() + 10
+            deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
                 try:
                     worker.run_in_worker(os.getpid)
                 except HTTPException as error:
                     assert error.status_code == 503
                     break
-                time.sleep(0.05)
+                time.sleep(0.01)
             else:
                 pytest.fail("pool admitted a request beyond its capacity")
         finally:
@@ -133,7 +131,7 @@ class TestLimits:
 
 class TestWorkerDeath:
     def test_pool_survives_a_killed_worker(self, worker):
-        worker.pool_timeout = 2.0
+        worker.pool_timeout = 0.3
         # os._exit skips cleanup, so the worker dies without reporting a
         # result: the request waits out its deadline.
         with pytest.raises(HTTPException) as excinfo:
