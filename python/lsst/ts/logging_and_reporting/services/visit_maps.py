@@ -341,6 +341,11 @@ class VisitMapsService(WorkerPoolMixin, Service):
         per_day = self.consdb_adapter.fetch(
             instrument, day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
         )
+        logger.debug(
+            f"Fetched {sum(len(rows) for rows in per_day.values())} visits for the "
+            f"visit maps for dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end}, "
+            f"instrument: {instrument}, appletMode: {applet_mode}"
+        )
         return self.collate_response(
             per_day, instrument=instrument, applet_mode=applet_mode
         )

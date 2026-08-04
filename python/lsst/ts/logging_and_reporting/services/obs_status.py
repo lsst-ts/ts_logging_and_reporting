@@ -361,6 +361,11 @@ class ObsStatusService(Service):
             response["metrics"] = metrics
 
         response["availability"] = get_availability(day_obs_start, day_obs_end)
+        logger.debug(
+            f"Collated {len(entries)} observatory status entries and "
+            f"{len(response.get('metrics', {}))} metric(s) for "
+            f"dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end}"
+        )
         return response
 
     def collate_response(self, data: dict[int, list[dict]]) -> list[dict]:

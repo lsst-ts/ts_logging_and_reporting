@@ -29,6 +29,7 @@ SQL query endpoint on top.
 """
 
 import logging
+import time
 from typing import Any
 
 import requests
@@ -67,6 +68,9 @@ class RestClient:
     MAX_RECORDS = 9000
     """Upper bound on records fetched by one paged request."""
 
+    SLOW_REQUEST_SECONDS = 10.0
+    """Upstream call duration that is logged as a warning."""
+
     def __init__(self, redis: Any, server_url: str | None = None):
         super().__init__(redis)
         self._server_url = server_url
@@ -80,6 +84,15 @@ class RestClient:
 
     def _request_headers(self) -> dict:
         return get_auth_header(self._get_token())
+
+    def _log_upstream(
+        self, method: str, url: str, status: int | str, elapsed: float
+    ) -> None:
+        """Record one upstream call, warning past `SLOW_REQUEST_SECONDS`."""
+        if elapsed >= self.SLOW_REQUEST_SECONDS:
+            logger.warning(f"Slow upstream {method} {url}: {status} in {elapsed:.1f}s")
+        elif logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Upstream {method} {url}: {status} in {elapsed:.1f}s")
 
     def _get_json(self, url: str, params: dict | None = None) -> Any:
         """GET ``url`` and return the decoded JSON body.
@@ -99,14 +112,25 @@ class RestClient:
         requests.ConnectionError
             If the server is unreachable.
         """
-        response = requests.get(
-            url,
-            params={
-                key: value for key, value in (params or {}).items() if value is not None
-            },
-            headers=self._request_headers(),
-            timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
-        )
+        started = time.monotonic()
+        try:
+            response = requests.get(
+                url,
+                params={
+                    key: value
+                    for key, value in (params or {}).items()
+                    if value is not None
+                },
+                headers=self._request_headers(),
+                timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
+            )
+        except requests.RequestException as err:
+            # A connection error or timeout carries no response; name the
+            # failure instead.
+            status = getattr(err.response, "status_code", type(err).__name__)
+            self._log_upstream("GET", url, status, time.monotonic() - started)
+            raise
+        self._log_upstream("GET", url, response.status_code, time.monotonic() - started)
         response.raise_for_status()
         return response.json()
 
@@ -127,11 +151,20 @@ class RestClient:
         requests.ConnectionError
             If the server is unreachable.
         """
-        response = requests.post(
-            url,
-            json=json_body,
-            headers=self._request_headers(),
-            timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
+        started = time.monotonic()
+        try:
+            response = requests.post(
+                url,
+                json=json_body,
+                headers=self._request_headers(),
+                timeout=(self.CONNECT_TIMEOUT, self.READ_TIMEOUT),
+            )
+        except requests.RequestException as err:
+            status = getattr(err.response, "status_code", type(err).__name__)
+            self._log_upstream("POST", url, status, time.monotonic() - started)
+            raise
+        self._log_upstream(
+            "POST", url, response.status_code, time.monotonic() - started
         )
         response.raise_for_status()
         return response.json()

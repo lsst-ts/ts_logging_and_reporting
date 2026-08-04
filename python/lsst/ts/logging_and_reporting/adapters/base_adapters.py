@@ -43,6 +43,17 @@ from lsst.ts.logging_and_reporting.utils.dayobs import (
 logger = logging.getLogger(__name__)
 
 
+def _payload_summary(payload: dict) -> str:
+    """Key and row counts of a fetched payload, for debug logging.
+
+    Values that are not row lists (an almanac's per-night dict, a
+    Zephyr test-case string) contribute no row count.
+    """
+    rows = sum(len(value) for value in payload.values() if isinstance(value, list))
+    keys = f"{len(payload)} key(s)"
+    return f"{keys}, {rows} row(s)" if rows else keys
+
+
 class CachedAdapter:
     """Base for all cached adapters: a Redis cache loop with per-key
     single-flight locks.
@@ -133,8 +144,15 @@ class CachedAdapter:
             dayobs: self._empty_value() for dayobs in dayobs_list
         }
         for run_start, run_end in contiguous_runs(dayobs_list):
-            logger.debug(f"Fetching {self.name} for dayobs {run_start}..{run_end}")
-            for dayobs, value in fetch_run(run_start, run_end).items():
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Fetching {self.name} for dayobs {run_start}..{run_end}")
+            fetched = fetch_run(run_start, run_end)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Fetched {self.name} for dayobs {run_start}..{run_end}: "
+                    f"{_payload_summary(fetched)}"
+                )
+            for dayobs, value in fetched.items():
                 if dayobs in results:
                     results[dayobs] = value
         return results
@@ -159,9 +177,14 @@ class CachedAdapter:
 
         The flag distinguishes a miss from a cached JSON ``null``.
         """
-        raw = self._redis.get(self._cache_key(key))
+        cache_key = self._cache_key(key)
+        raw = self._redis.get(cache_key)
         if raw is None:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Cache miss for {cache_key}")
             return False, None
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Cache hit for {cache_key}: {len(raw)} bytes")
         return True, json.loads(raw)
 
     def _store(self, key, data: Any) -> None:
@@ -172,13 +195,18 @@ class CachedAdapter:
         instead of writing spec-invalid JSON; ``ensure_ascii=False`` and
         compact separators keep the cached bytes smaller.
         """
-        self._redis.set(
-            self._cache_key(key),
-            json.dumps(
-                data, allow_nan=False, ensure_ascii=False, separators=(",", ":")
-            ),
-            ex=self._ttl(key),
+        cache_key = self._cache_key(key)
+        payload = json.dumps(
+            data, allow_nan=False, ensure_ascii=False, separators=(",", ":")
         )
+        ttl = self._ttl(key)
+        self._redis.set(cache_key, payload, ex=ttl)
+        if logger.isEnabledFor(logging.DEBUG):
+            # Encoded only when debug logging is on, since the size is
+            # in bytes and the payload may be non-ASCII.
+            logger.debug(
+                f"Cache store for {cache_key}: {len(payload.encode())} bytes, TTL {ttl}s"
+            )
 
     def _acquire_lock(self, key) -> bool:
         return bool(
@@ -209,6 +237,11 @@ class CachedAdapter:
                 results[key] = value
             else:
                 missing.append(key)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"{len(results)} of {len(keys)} {self.name} key(s) served from cache, "
+                f"{len(missing)} to fetch"
+            )
         if not missing:
             return results
 
@@ -230,6 +263,11 @@ class CachedAdapter:
             if to_fetch:
                 try:
                     fetched = self._fetch_from_source(to_fetch)
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Upstream fetch of {len(to_fetch)} {self.name} key(s) "
+                            f"returned {_payload_summary(fetched)}"
+                        )
                     for key in to_fetch:
                         if key not in fetched:
                             raise KeyError(
@@ -262,12 +300,25 @@ class CachedAdapter:
         ``(False, None)`` if the fetch lock disappeared without an
         entry being stored.
         """
+        waited_from = time.monotonic()
+        polls = 0
         while True:
             hit, value = self._check_cache(key)
             if hit:
+                if polls and logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Waited {time.monotonic() - waited_from:.1f}s for another "
+                        f"request to fetch {self._cache_key(key)}"
+                    )
                 return True, value
             if not self._redis.exists(self._lock_key(key)):
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Lock on {self._cache_key(key)} released with no entry after "
+                        f"{time.monotonic() - waited_from:.1f}s; fetching it here instead"
+                    )
                 return False, None
+            polls += 1
             time.sleep(self.POLL_INTERVAL)
 
 
