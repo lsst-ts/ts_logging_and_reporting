@@ -45,3 +45,29 @@ def flatten_sorted(data: dict[int, list[dict]], sort_field: str, descending: boo
     records = [record for dayobs in sorted(data) for record in data[dayobs]]
     records.sort(key=lambda record: record.get(sort_field) or "", reverse=descending)
     return records
+
+
+def flatten_within_dayobs(data: dict[int, list[dict]], sort_field: str) -> list[dict]:
+    """Flatten per-dayobs records, ordering within each night by a field.
+
+    For fields that only count within a night, such as ``seq_num``: the
+    dayobs ordering is the outer key, so `flatten_sorted`'s single global
+    sort would interleave nights.
+
+    Parameters
+    ----------
+    data : `dict` [`int`, `list` [`dict`]]
+        Records partitioned by dayobs.
+    sort_field : `str`
+        Numeric record field to order each night's records by. Records
+        missing the field sort as zero.
+
+    Returns
+    -------
+    `list` [`dict`]
+        All records in one list, ascending by dayobs then ``sort_field``.
+    """
+    records = []
+    for dayobs in sorted(data):
+        records.extend(sorted(data[dayobs], key=lambda record: record.get(sort_field) or 0))
+    return records
