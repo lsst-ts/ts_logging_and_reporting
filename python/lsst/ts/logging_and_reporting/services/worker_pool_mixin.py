@@ -25,11 +25,18 @@
 import logging
 import multiprocessing
 import threading
+import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
 import setproctitle
 from fastapi import HTTPException
+
+from lsst.ts.logging_and_reporting.utils.logging_config import (
+    configure_logging,
+    current_request_id,
+    set_request_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,14 +69,28 @@ def preload_worker_modules(services: Iterable["WorkerPoolMixin"]) -> None:
     logger.info(f"Preloading into the forkserver: {', '.join(modules)}")
 
 
-def name_worker(name: str) -> None:
-    """Retitle a worker so `ps` identifies which pool it belongs to.
+def start_worker(name: str) -> None:
+    """Prepare one worker process to have consistent logging and proces title.
 
-    Runs once per worker. Without it every worker shows the forkserver's
-    bootstrap command line, which carries the whole of `sys.path` and makes
-    logs unreadable.
+    The title matters because otherwise every worker shows the
+    forkserver's bootstrap command line, which carries the whole of
+    `sys.path` and makes ``ps`` output unreadable.
     """
+    configure_logging()
     setproctitle.setproctitle(WORKER_TITLE.format(name=name))
+
+
+def _call_with_request_id(
+    request_id: str, func: Callable[..., Any], args: tuple
+) -> Any:
+    """Run ``func(*args)`` under the calling request's ID.
+
+    Context does not cross a process boundary, so the ID is pickled over
+    as an argument and re-established here; without it everything a
+    worker logs is attributed to no request.
+    """
+    set_request_id(request_id)
+    return func(*args)
 
 
 class WorkerPoolMixin:
@@ -104,6 +125,9 @@ class WorkerPoolMixin:
     pool_queue: int = 4
     pool_timeout: float = 180.0
     pool_preload: tuple[str, ...] = ()
+
+    SLOW_CALL_SECONDS = 30.0
+    """Worker call duration that is logged as a warning."""
 
     # Guards pool creation only. Class-level so the mixin needs no
     # __init__: `self._pool` reads this None until an instance assigns
@@ -146,13 +170,23 @@ class WorkerPoolMixin:
         if not slots.acquire(blocking=False):
             logger.warning(f"{name} worker pool saturated, shedding request")
             raise HTTPException(status_code=503, detail=BUSY_DETAIL)
+        started = time.monotonic()
         try:
-            return pool.apply_async(func, args).get(timeout=self.pool_timeout)
+            logger.debug(f"{name} submitting {func.__name__} to a worker")
+            result = pool.apply_async(
+                _call_with_request_id, (current_request_id(), func, args)
+            ).get(timeout=self.pool_timeout)
         except multiprocessing.TimeoutError as e:
             logger.error(f"{name} worker call exceeded {self.pool_timeout}s")
             raise HTTPException(status_code=504, detail=TIMEOUT_DETAIL) from e
         finally:
             slots.release()
+        elapsed = time.monotonic() - started
+        if elapsed >= self.SLOW_CALL_SECONDS:
+            logger.warning(f"{name} worker call {func.__name__} took {elapsed:.1f}s")
+        else:
+            logger.debug(f"{name} worker call {func.__name__} took {elapsed:.1f}s")
+        return result
 
     def start_worker_pool(self) -> tuple[Any, threading.Semaphore]:
         """Return this service's pool, starting it if it is not running. Called
@@ -165,7 +199,7 @@ class WorkerPoolMixin:
                 context = multiprocessing.get_context("forkserver")
                 logger.info(f"{name} starting {self.pool_workers} workers")
                 self._pool = context.Pool(
-                    self.pool_workers, initializer=name_worker, initargs=(name,)
+                    self.pool_workers, initializer=start_worker, initargs=(name,)
                 )
                 self._pool_slots = threading.Semaphore(
                     self.pool_workers + self.pool_queue
