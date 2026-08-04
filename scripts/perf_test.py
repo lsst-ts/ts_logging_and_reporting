@@ -165,7 +165,7 @@ import requests
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 DEFAULT_DAY_START = 20260611
 DEFAULT_RUNS = 50
-DEFAULT_PAUSE = 0.5  # seconds between timed runs
+DEFAULT_PAUSE = 1.0  # seconds between timed runs
 DEFAULT_TIMEOUT = 300  # seconds; visit-map endpoints can be slow
 DEFAULT_BURST_SIZE = 10  # simultaneous requests per burst
 DEFAULT_BURSTS = 10  # bursts per burst scenario
