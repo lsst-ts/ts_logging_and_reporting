@@ -508,7 +508,8 @@ The 696-line grab-bag split by concern:
 | `utils/dayobs.py` | dayobs and date conversions, ranges, contiguous runs |
 | `utils/auth.py` | tokens, headers, `AUTH_SOURCES`, `Server` |
 | `utils/serialization.py` | `make_json_safe`, `stringify_special_floats` |
-| `utils/collation.py` | `flatten_sorted` |
+| `utils/collation.py` | `flatten_sorted`, `flatten_within_dayobs` |
+| `utils/logging_config.py` | `configure_logging`, `log_level`, trace-ID context and filter |
 
 `utils/__init__.py` was a transitional re-export shim during the migration so that
 remaining `import utils as ut` callers kept resolving. It is now a package marker
@@ -544,17 +545,52 @@ Everything in this section moved between files that are not rename-related, so t
 diff shows a deletion and an unrelated addition. Where the code changed in transit,
 the change is described.
 
-### `rubin_nights_service.py` (1210 lines) fanned out to five destinations
+### Every endpoint orchestrator became a service
+
+Each endpoint used to call one top-level function that fetched and assembled its
+whole response. That function is now a `Service` subclass: the fetching went to
+adapters, and whatever it did with the result went to `handle` and
+`collate_response`.
+
+| Old entry point | New home |
+|---|---|
+| `consdb_service.py::get_exposures`, `rubin_nights_service.py::get_time_accounting`, `get_open_close_dome` | `services/exposures.py::ExposuresService` |
+| `consdb_service.py::get_data_log` | `services/data_log.py::DataLogService` |
+| `scheduler_service.py::get_expected_exposures` | `services/expected_exposures.py::ExpectedExposuresService` |
+| `jira_service.py::get_jira_tickets` | `services/jira.py::JiraTicketsService` |
+| `jira_service.py::get_block_ticket_summaries`, `zephyr_service.py::get_test_cases`, `utils.py::build_block_response` | `services/block_details.py::BlockDetailsService` |
+| `almanac_service.py::get_almanac` | `services/almanac.py::AlmanacService` |
+| `narrativelog_service.py::get_messages` | `services/narrativelog.py::NarrativeLogService` |
+| `exposurelog_service.py::get_exposure_flags` | `services/exposure_flags.py::ExposureFlagsService` |
+| `exposurelog_service.py::get_exposurelog_entries` | `services/exposure_entries.py::ExposureEntriesService` |
+| `nightreport_service.py::get_night_reports` | `services/nightreport.py::NightReportService` |
+| `rubin_nights_service.py::get_context_feed` | `services/context_feed.py::ContextFeedService` |
+| `rubin_nights_service.py::get_obs_status`, `get_obs_status_events` | `services/obs_status.py::ObsStatusService` |
+| `main.py::_build_multi_night_visit_map`, `rubin_nights_service.py::get_visits` | `services/visit_maps.py::VisitMapsService` |
+| `main.py::static_visit_map` body, `scheduler_service.py::build_static_visit_map`, `get_visits` | `services/static_visit_map.py::StaticVisitMapService` |
+| `consdb_service.py::get_mock_exposures` | Deleted with `/mock-exposures` ([§7](#7-error-handling-and-the-frontend-contract)) |
+
+`get_visits` appears twice because the old code called it once per map endpoint,
+with `augment=True` for one and `augment=False` for the other; both now read the
+same `ConsdbVisitsAdapter` entry ([§3](#3-logic-that-changed-because-of-caching)).
+
+### `rubin_nights_service.py` (1210 lines) fanned out across services, adapters and utils
 
 | Function(s) | New home | Changed? |
 |---|---|---|
 | `decode_states`, `is_unknown`, `contains_daytime`, `contains_operational`, `contains_fault`, `contains_weather`, `contains_downtime`, `contains_idle`, `counts_as_fault_loss` | `services/obs_status.py` | Logic identical. Every docstring condensed from a full numpydoc block to one or two lines. |
-| `get_obs_status_intervals`, `build_ms_dayobs_intervals`, `build_ms_night_intervals`, `sum_interval_overlap`, `get_availability` | `services/obs_status.py` | Logic identical. Docstrings condensed; step-by-step inline comments removed. `build_ms_night_intervals` became a comprehension. |
+| `get_obs_status_intervals`, `build_ms_dayobs_intervals`, `build_ms_night_intervals`, `sum_interval_overlap`, `get_availability` | `services/obs_status.py` | Logic identical. Docstrings condensed; step-by-step inline comments removed. `build_ms_night_intervals` became a comprehension, and several intermediate locals were inlined into their `return` statements. |
+| `OBSERVATORY_STATES`, `COUNT_STATE_METRIC_MAP`, `OBS_STATUS_AVAILABLE_DAYOBS`, `MILLISECONDS_IN_AN_HOUR` | `services/obs_status.py` | Byte-identical. |
+| `get_obs_status` | `services/obs_status.py::ObsStatusService.handle` | Same sequence of decisions; the almanac fetch is now scheduled alongside the events rather than after them, and the error swallowing is gone ([§7](#7-error-handling-and-the-frontend-contract)). |
 | `_twilight_windows_by_dayobs`, `_obs_start_tai_to_utc_ms`, `_compute_filter_changed`, `_sum_on_sky_within_twilight` | `services/exposures.py` | Logic identical, docstrings condensed. |
 | `_compute_closed_hours` | `services/exposures.py` | **Signature changed** — see below. |
 | `dayobs_to_unix_ms`, `almanac_to_unix_ms` | `utils/dayobs.py` | Unchanged. |
 | `dayobs_to_noon_utc` | — | Deleted; callers use `get_utc_datetime_from_dayobs_str` with `astropy.Time`. |
-| `get_visits`, `get_open_close_dome`, `get_context_feed`, `get_obs_status_events`, `get_time_accounting` | adapters | Dissolved — see [§3](#3-logic-that-changed-because-of-caching) and [§6](#6-data-source-changes). |
+| `get_visits` | `adapters/consdb_visits.py::ConsdbVisitsAdapter` | Dissolved into a cached fetch — see [§3](#3-logic-that-changed-because-of-caching) and [§6](#6-data-source-changes). |
+| `get_open_close_dome` | `adapters/rubin_nights_dome.py::RubinNightsDomeAdapter` | Dissolved; the per-night reduction is `ExposuresService._aggregate_dome_hours`. |
+| `get_context_feed` | `adapters/rubin_nights_context.py::RubinNightsContextAdapter` | Dissolved; `timestampProcessEnd` is recomputed on read ([§3](#3-logic-that-changed-because-of-caching)). |
+| `get_obs_status_events` | `adapters/rubin_nights_obs_status.py::RubinNightsObsStatusAdapter` | Dissolved; the 12-hour lookback became a leading dayobs ([§3](#3-logic-that-changed-because-of-caching)). |
+| `get_time_accounting` | `adapters/visit_overhead.py::VisitOverheadAdapter` + `ExposuresService._time_accounting` | Split across the cache boundary ([§3](#3-logic-that-changed-because-of-caching)). |
 
 **`_compute_closed_hours` changed shape.** It took a `pandas.Series` and resolved
 the day under test with `row.get("day_obs", row.name)` — tolerating the value
