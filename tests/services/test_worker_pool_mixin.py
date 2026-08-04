@@ -7,9 +7,9 @@ from fastapi import HTTPException
 
 from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
 from lsst.ts.logging_and_reporting.utils.logging_config import (
-    NO_REQUEST_ID,
-    current_request_id,
-    set_request_id,
+    NO_TRACE_ID,
+    current_trace_id,
+    set_trace_id,
 )
 
 # Every function submitted below comes from the stdlib or this app's
@@ -56,31 +56,31 @@ class TestIsolation:
             other.shutdown_worker_pool()
 
 
-class TestRequestId:
+class TestTraceId:
     """The calling request's ID reaches the worker process."""
 
     @pytest.fixture(autouse=True)
-    def clear_request_id(self):
+    def clear_trace_id(self):
         yield
-        set_request_id(NO_REQUEST_ID)
+        set_trace_id(NO_TRACE_ID)
 
     def test_the_worker_runs_under_the_callers_id(self, worker):
-        set_request_id("abc12345")
-        assert worker.run_in_worker(current_request_id) == "abc12345"
+        set_trace_id("abc12345")
+        assert worker.run_in_worker(current_trace_id) == "abc12345"
 
     def test_a_call_outside_a_request_gets_the_marker(self, worker):
-        assert worker.run_in_worker(current_request_id) == NO_REQUEST_ID
+        assert worker.run_in_worker(current_trace_id) == NO_TRACE_ID
 
     def test_the_id_does_not_persist_into_the_next_call(self, worker):
         # Workers are reused, so each call has to re-establish the ID
         # rather than inherit whatever the last one left behind.
-        set_request_id("abc12345")
-        assert worker.run_in_worker(current_request_id) == "abc12345"
-        set_request_id("def67890")
-        assert worker.run_in_worker(current_request_id) == "def67890"
+        set_trace_id("abc12345")
+        assert worker.run_in_worker(current_trace_id) == "abc12345"
+        set_trace_id("def67890")
+        assert worker.run_in_worker(current_trace_id) == "def67890"
 
     def test_the_result_still_comes_back_unchanged(self, worker):
-        set_request_id("abc12345")
+        set_trace_id("abc12345")
         assert worker.run_in_worker(abs, -3) == 3
 
 
