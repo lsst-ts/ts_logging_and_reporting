@@ -968,7 +968,7 @@ data kinds:
 |---|---|---|
 | Historic | 1 day | 30 days |
 | Today | 5 min | 15 min |
-| Mutable (past dayobs) | 5 min | 1 hour |
+| Mutable (past dayobs) | 5 min | 30 min |
 
 The two stack: a response built from a nearly-expired Redis entry can then sit in a
 browser cache for its full `max-age`. Only the Redis copy can be flushed by hand,
@@ -1411,8 +1411,8 @@ These were specified up front and shipped as described:
    dayobs the upstream returned nothing for.
 8. **Mutable data got its own TTL rather than reusing the short one.** The plan said
    mutable adapters "should return the short TTL for all dayobs". They now mix in
-   `MutableDataMixin` and get a distinct `MUTABLE_TTL_REDIS` of one hour, rather
-   than reusing today's fifteen minutes.
+   `MutableDataMixin` and get a distinct `MUTABLE_TTL_REDIS` of thirty minutes,
+   rather than reusing today's fifteen.
 9. **`fetch_concurrently` is not in the plan.** Multi-adapter services fetched
    serially in the plan's design; `/exposures`, `/obs-status` and `/block-details`
    now fan their independent fetches out across a thread pool.
@@ -1440,31 +1440,35 @@ These were specified up front and shipped as described:
     should serialise has been deleted.
 14. **`PublicAccessMiddleware` was never built.** Deferred with the public-facing
     release.
+15. **`RequestLoggingMiddleware` is not in the plan.** The plan specified four
+    middleware classes and this was none of them; it was added with the logging
+    work ([§10](#request-logging-moved-into-middleware)). It is the outermost
+    layer, so its timing covers the rest of the stack.
 
 ### File layout
 
-15. **Everything sits at the package root.** Every path in the plan is
+16. **Everything sits at the package root.** Every path in the plan is
     `web_app/`-prefixed.
-16. **`adapters/consdb.py` became two files** (`consdb_exposures.py`,
+17. **`adapters/consdb.py` became two files** (`consdb_exposures.py`,
     `consdb_visits.py`) and **`adapters/jira.py` became two**
     (`jira_obs.py`, `jira_block.py`).
-17. **`rubin_nights_efd.py` and `rubin_nights_visits.py` were never created.**
+18. **`rubin_nights_efd.py` and `rubin_nights_visits.py` were never created.**
     Visits come from ConsDB directly; the EFD is reached through
     `RubinNightsClientsMixin` from the dome, obs-status and context adapters.
-18. **`VisitOverheadAdapter` appears nowhere in the plan.** It emerged from
+19. **`VisitOverheadAdapter` appears nowhere in the plan.** It emerged from
     splitting `get_time_accounting` along its cacheable seam.
-19. **`cache_ttl.py` and `redis_client.py` are new modules.** The plan had TTLs
+20. **`cache_ttl.py` and `redis_client.py` are new modules.** The plan had TTLs
     inline in `_ttl` and the Redis client "instantiated once at application
     startup"; both were centralised. The plan also had two TTL tiers where there
     are now three, each with a separate client and Redis value.
-20. **The `utils.py` split and the `web_app` flatten are not in the plan at all.**
+21. **The `utils.py` split and the `web_app` flatten are not in the plan at all.**
     Neither was anticipated; both fell out of the legacy layer shrinking to nothing.
-21. **Service modules dropped their `_service` suffix** — `services/almanac.py`,
+22. **Service modules dropped their `_service` suffix** — `services/almanac.py`,
     not `web_app/services/almanac_service.py`.
 
 ### Scope
 
-22. **The authentication open question resolved as Option A** (service-level
+23. **The authentication open question resolved as Option A** (service-level
     credentials). The plan marked it "unresolved and needs input before
     implementation begins", and asked for confirmation from the RSP/services team
     on whether upstream APIs support service accounts.
@@ -1479,18 +1483,33 @@ These were specified up front and shipped as described:
     notebook branches and the header fallback dead weight, so
     `retrieve_access_token` collapsed to a single environment lookup and a missing
     token became a 500 rather than a 401.
-23. **Sync/async landed differently than specified.** The plan kept
+24. **Sync/async landed differently than specified.** The plan kept
     `run_in_threadpool` at the call sites. The handlers themselves are now sync
     `def` and FastAPI's threadpool does the work; `run_in_threadpool` no longer
     appears in the codebase.
-24. **`/mock-exposures` was listed as an endpoint to keep** — one of three
+25. **The map renders got a process pool the plan did not anticipate.** The plan
+    put the blocking map work in "FastAPI's worker pool" — that is, its threadpool,
+    which does not escape the GIL. The renders now run in a forkserver-backed
+    `multiprocessing.Pool` per service, preloaded during `lifespan`
+    ([§9](#the-map-endpoints-render-in-worker-processes)). Nothing in the plan
+    covers `services/worker_pool_mixin.py`, the preload, or the pool's saturation
+    behaviour.
+26. **`/mock-exposures` was listed as an endpoint to keep** — one of three
     deliberately outside the pattern. It was deleted instead.
-25. **Three adapters the plan described as "moved" were rewrites.**
+27. **Three adapters the plan described as "moved" were rewrites.**
     `ZephyrAdapter` (which the plan had wrapping `ZephyrInterface`),
     `ConsdbCachedAdapter`, and `AlmanacCachedAdapter` all needed reimplementation
     rather than relocation.
-26. **Metrics and instrumentation were not implemented.** The plan's §3 anticipated
+28. **Metrics and instrumentation were not implemented.** The plan's §3 anticipated
     cache hit rates, fetch durations and per-adapter error rates instrumented from
-    the base class, extending to Prometheus and Grafana. Only the refresh worker's
-    per-cycle logging exists. The single-point-of-instrumentation argument still
-    holds, and the hook is still `CachedAdapter._fetch_cached`.
+    the base class, extending to Prometheus and Grafana. None of that exists: there
+    are no counters, no aggregation and no Prometheus endpoint, and the
+    single-point-of-instrumentation argument still holds with
+    `CachedAdapter._fetch_cached` still the hook.
+
+    What was built instead is logging, which the plan barely specified beyond
+    "configure `logging.basicConfig` from `LOG_LEVEL`" ([§10](#10-logging),
+    `doc/logging.md`). Per-request timings, per-upstream-call durations with a slow
+    threshold, cache hit/miss lines and trace IDs across both concurrency
+    boundaries all now exist. They answer the same questions ad hoc, one grep at a
+    time, rather than as time series.
