@@ -104,8 +104,9 @@ time. The only edges that are not fan-out are the ones a shared adapter forces:
 | `consdb_exposures` | data-log, exposures, and the `visit_overhead` adapter |
 | `almanac` | almanac, obs-status, exposures |
 
-So `almanac` fans out to two children, and `exposures` is the only three-way
-join. Branches follow the existing `tickets/OSW-####/<topic>` convention — the
+So `almanac` fans out to two children, and `exposures` is the only slice with two
+parents; `cleanup` merges the ten remaining heads. Branches follow the existing
+`tickets/OSW-####/<topic>` convention — the
 short names above are the topic halves. Slices are PR'd against the **epic
 branch**, not `develop`, with one final PR from the epic to `develop`; the
 merges are `--no-ff` so this shape stays visible in the history afterwards.
@@ -512,8 +513,8 @@ The 696-line grab-bag split by concern:
 | `utils/logging_config.py` | `configure_logging`, `log_level`, trace-ID context and filter |
 
 `utils/__init__.py` was a transitional re-export shim during the migration so that
-remaining `import utils as ut` callers kept resolving. It is now a package marker
-with a docstring and nothing else — import from the concern module directly.
+remaining `import utils as ut` callers kept resolving. It is now empty — a bare
+package marker — so import from the concern module directly.
 
 `current_dayobs_utc` was renamed `dayobs_at` (it takes a timestamp), and a
 zero-argument `current_dayobs()` was added for the common case.
@@ -1351,6 +1352,55 @@ Resolving this means deciding, per endpoint, whether a given field is *used* (an
 so needs a number) or *displayed* (and so belongs to the frontend). Not attempted
 here; no ticket yet.
 
+### `/exposures` is three responses in one, and could be three endpoints
+
+`ExposuresService.handle` fans out to three adapters and welds their results into
+one payload: the ConsDB exposure records, the dome open/close summary, and the
+twilight-windowed time accounting. It is the only three-way join in the refactor,
+and splitting it into `/exposures`, `/dome-hours` and `/time-accounting` was
+considered and deferred, because it changes the frontend contract and belongs with
+the range-convention change rather than under cover of this one.
+
+Four things argue for the split:
+
+- **They do not share parameters.** `RubinNightsDomeAdapter.fetch` takes only a
+  dayobs range — dome state is observatory-wide — but `/exposures` makes
+  `instrument` a required query parameter, so switching instrument in the UI
+  refetches dome hours that cannot have changed.
+- **The degrade-to-an-error-field handling exists only because they are joined.**
+  `_dome_hours` and `_time_accounting` each swallow their exception into
+  `open_dome_error` / `time_accounting_error`, because a dome or EFD failure must
+  not fail a request whose core payload is the exposures. These are the only two
+  places in the refactor that do this; everything else translates uniformly in
+  `Service.handle_request` ([§7](#7-error-handling-and-the-frontend-contract)). As
+  separate endpoints each returns an ordinary 502 and the nested `try`/`except`
+  goes away.
+- **The payloads are wildly asymmetric.** `/exposures` is the largest and slowest
+  response in the API and the one outlier in `review/performance/COMPARE.md`. The
+  dome summary and the four time-accounting sums are a few hundred bytes each and
+  are what the night-summary panels render from, so they currently wait on the
+  exposure records — including on a fully hot cache, where the remaining cost is
+  almost entirely transferring a payload those panels do not use.
+- **The almanac fetch would leave the critical path.** `_time_accounting` fetches
+  the almanac serially *after* the overhead rows return, inside the slowest request
+  in the API. On its own endpoint that chain no longer delays the exposures.
+
+It costs three round trips instead of one, but they parallelise in the browser, and
+it costs no extra upstream work: caching is per-dayobs at the adapter layer, and
+`VisitOverheadAdapter` reads `ConsdbExposuresAdapter`'s entry rather than issuing
+its own ConsDB query ([§3](#time-accounting-was-split-across-the-cache-boundary)),
+so two endpoints on that path still share one entry. It also lets the three take
+different `Cache-Control` tiers, which one fused response cannot.
+
+Two things to settle first. Check how the frontend consumes the dome and
+time-accounting fields — if they render in their own panels the incremental-render
+argument holds, and if they are fused into a single night-summary component it
+weakens (the parameter-shape and error-handling arguments hold either way). Then
+land it additively: add the two new endpoints, migrate the frontend, and drop the
+extra keys from `/exposures` afterwards, so it is not a flag-day. The service
+methods are already cleanly separable, so the interim duplication is a few lines of
+delegation. No ticket yet.
+
 ### Required environment variables are not checked at startup
 
 Nothing verifies the deployment's configuration before serving. A missing
@@ -1389,12 +1439,43 @@ environment-variable appendix of the infrastructure doc. Confirm the exact
 variable names against the deployment before writing the check; they are set for
 `rubin_sim`'s benefit, not ours.
 
-One thing blocks the API half: `run_logging_and_reporting` passes `reload=True` to
-`uvicorn.run`. Under the reloader the app runs in a supervised child process, so a
-startup abort kills the child while the supervisor keeps watching files, and the
-container may never exit non-zero. That flag is worth removing from a production
-entrypoint regardless — it also ships a file watcher into every deployment — but
-it has to go for fail-fast to actually fail.
+One thing blocks the API half: the entrypoint's `reload=True` means a startup abort
+does not reliably exit the container non-zero. That flag wants removing on its own
+merits — see the next item — but it has to go before fail-fast can actually fail.
+
+### The uvicorn entrypoint runs with `reload=True`
+
+`run_logging_and_reporting` passes `reload=True` to `uvicorn.run`. This predates
+the refactor (it arrived in "Add automatic reload to uvicorn server") and was
+carried through unchanged, so it is not a decision taken here — but
+`docker/startup.sh` invokes that same console script, which makes it what every
+deployment runs, and the refactor made two of its costs worse.
+
+Three reasons to drop it:
+
+- **It defeats fail-fast startup.** The reloader supervises the application in a
+  child process. A `lifespan` that raises kills the child while the supervisor
+  keeps watching files, so the container does not exit non-zero and Kubernetes
+  sees nothing to roll back. This is what blocks the environment-variable check
+  above ([§13](#required-environment-variables-are-not-checked-at-startup)).
+- **It ships a file watcher into production.** The reloader walks the source tree
+  on an interval looking for changes to files that cannot change inside an
+  immutable image.
+- **A reload now costs more than it used to.** The application restarts on any
+  event the watcher fires, which re-runs `lifespan`: both map-render worker pools
+  are torn down and rebuilt, the forkserver and its preloaded modules go with them
+  ([§9](#the-map-endpoints-render-in-worker-processes)), and every once-per-process
+  cache is discarded — the `functools.cache` service singletons, the
+  `RubinNightsClientsMixin` client bundle, the almanac's `EarthLocation` observer.
+  Before the refactor a reload cost an import; now it costs eight worker processes
+  and every warm client in the API process. The refresh worker is a separate
+  container and is unaffected either way.
+
+The fix is to remove the flag. If the reloader is wanted for local development, it
+belongs behind an opt-in — an environment variable read in the entrypoint, or
+running `uvicorn ... --reload` directly from the CLI in the dev compose stack —
+rather than as the default that production inherits. Not changed here, because it
+touches the deployment rather than the refactor; no ticket yet.
 
 ### Visit-map rendering is not cached
 
