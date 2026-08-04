@@ -52,6 +52,10 @@ class ContextFeedService(Service):
         records = self.collate_response(
             self.context_adapter.fetch(day_obs_start, day_obs_end)
         )
+        logger.debug(
+            f"Collated {len(records)} context feed records for "
+            f"dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end}"
+        )
         return {"data": records, "cols": CONTEXT_FEED_COLS}
 
     def collate_response(self, data: dict[int, list[dict]]) -> list[dict]:
