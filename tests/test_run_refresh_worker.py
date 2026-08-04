@@ -8,14 +8,18 @@ import lsst.ts.logging_and_reporting.run_refresh_worker as entrypoint
 class StubAdapters:
     """Stands in for the adapters package.
 
-    Every ``get_*_adapter()`` lookup returns a factory producing a
-    uniquely named stub, and the order they were built in is recorded.
+    `REFRESH_ADAPTERS` holds factories producing a uniquely named stub
+    instead of an adapter, and the order they were built in is recorded.
+    What the real tuple contains is asserted in the adapters' own tests.
     """
+
+    NAMES = ("first", "second", "third")
 
     def __init__(self):
         self.created = []
+        self.REFRESH_ADAPTERS = tuple(self._factory(name) for name in self.NAMES)
 
-    def __getattr__(self, name):
+    def _factory(self, name):
         def factory():
             self.created.append(name)
             return f"<{name}>"
@@ -109,18 +113,13 @@ class TestWorkerSetup:
         entrypoint.run_refresh_worker()
         assert harness.worker.ran
 
-    def test_registers_every_adapter(self, harness):
+    def test_builds_every_registered_adapter(self, harness):
         entrypoint.run_refresh_worker()
-        created = harness.adapters.created
-        assert len(created) == len(harness.worker.adapters)
-        assert len(set(created)) == len(created)
+        assert harness.adapters.created == list(StubAdapters.NAMES)
 
-    def test_exposures_adapter_precedes_visit_overhead(self, harness):
-        # The overhead adapter reads the exposures cache, so a cycle
-        # must refresh exposures first.
+    def test_the_worker_gets_them_in_registration_order(self, harness):
         entrypoint.run_refresh_worker()
-        created = harness.adapters.created
-        assert created.index("get_consdb_exposures_adapter") < created.index("get_visit_overhead_adapter")
+        assert harness.worker.adapters == [f"<{name}>" for name in StubAdapters.NAMES]
 
 
 class TestCachingDisabled:
