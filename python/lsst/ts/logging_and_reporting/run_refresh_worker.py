@@ -29,7 +29,6 @@ duplicates upstream fetches.
 """
 
 import logging
-import os
 import signal
 from types import FrameType
 
@@ -40,11 +39,9 @@ from lsst.ts.logging_and_reporting.redis_client import (
 )
 
 from .refresh_worker import RefreshWorker
+from .utils.logging_config import configure_logging
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-    format="%(levelname)s [%(name)s] %(message)s",
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
