@@ -49,8 +49,9 @@ python/lsst/ts/logging_and_reporting/
 ├── cache_ttl.py             all TTL constants (Redis and client)
 ├── redis_client.py          the shared Redis client
 ├── refresh_worker.py        background cache-warming loop
-├── run_refresh_worker.py    worker process entrypoint + adapter registry
+├── run_refresh_worker.py    worker process entrypoint
 ├── adapters/
+│   ├── __init__.py          factory exports + the refresh-worker registry
 │   ├── base_adapters.py     cache bases: the cache loop lives here
 │   ├── base_clients.py      transport clients: RestClient, SqlClient
 │   ├── mixins.py            cross-adapter behaviour (TTL policy, auth, …)
@@ -58,11 +59,15 @@ python/lsst/ts/logging_and_reporting/
 ├── services/
 │   ├── base_service.py      Service ABC: error mapping, concurrent fetch
 │   └── <endpoint>.py        one service per endpoint
-├── middleware/              dayobs validation, Cache-Control headers
-└── utils/                   dayobs maths, collation, serialisation, auth
+├── middleware/              request logging, dayobs validation, Cache-Control
+└── utils/                   dayobs maths, collation, serialisation, auth,
+                             logging configuration
 ```
 
-Two middlewares sit in front of the routes: `DayobsValidationMiddleware`
+Three middlewares sit in front of the routes:
+`RequestLoggingMiddleware` logs each request, times it, and tags
+everything it logs with a trace ID (`doc/logging.md`),
+`DayobsValidationMiddleware`
 rejects malformed or inverted dayobs ranges before they reach a service,
 and `CacheControlMiddleware` sets the response's `Cache-Control` header
 on the way out (see [§6](#6-ttls-three-data-kinds-two-tiers)).
@@ -203,6 +208,12 @@ Two requirements follow from the work crossing a process boundary. The
 callable must be importable by name, so it has to be a module-level
 function rather than a method, a closure or a mock; and its arguments
 and return value must pickle.
+
+Two things the mixin carries across that boundary for you: each worker
+calls `configure_logging()` as it starts, since it never runs an
+entrypoint and would otherwise log nothing, and the calling request's
+trace ID is pickled over with the call. Both are covered in
+`doc/logging.md`.
 
 Pools are started and stopped by the application's lifespan hook, which
 reads the `WORKER_POOL_SERVICES` registry in `services/__init__.py`. A
@@ -584,7 +595,7 @@ outer adapter's miss costs no ConsDB query at all. Both adapters cache
 independently and can be refreshed independently.
 
 The one thing composition adds is an ordering consideration for the
-refresh worker: the registration list in `run_refresh_worker.py` places
+refresh worker: `REFRESH_ADAPTERS` in `adapters/__init__.py` places
 `visit_overhead` immediately after `consdb_exposures`, so each cycle
 builds overhead from exposures that were refreshed moments earlier in
 the same cycle, rather than exposures that are one cycle old.
@@ -622,6 +633,14 @@ drops as out-of-range.
 per-dayobs dict back into one list sorted by a record field, with
 records missing that field sorting as empty strings. Most log-style
 services end in a one-line `collate_response` built on it.
+
+**`flatten_within_dayobs(data, sort_field)`** (`utils/collation.py`) is
+the same flattening for a field that only counts *within* a night, such
+as `seq_num`: dayobs is the outer ordering and each night's records are
+sorted inside it, where `flatten_sorted`'s single global sort would
+interleave nights. `/exposures` and `/data-log` both use it, so the two
+endpoints reading the one `consdb_exposures` entry return its rows in
+the same order.
 
 **`CachedAdapter._collate_runs(dayobs_list, fetch_run)`** is what turns
 a set of cache-missing dayobs into as few range-based upstream calls as possible. It
@@ -767,7 +786,8 @@ Create `adapters/<source>.py`.
 4. **Add a `@functools.cache` factory** `get_<source>_adapter()` that
    passes `get_redis_client()` and any composed adapters.
 5. **Export the factory** from `adapters/__init__.py` (import and
-   `__all__`).
+   `__all__`), and add it to `REFRESH_ADAPTERS` in the same file if it
+   is dayobs-keyed ([§12](#12-the-refresh-worker)).
 
 **Optional, in rough order of how often it is needed:**
 
@@ -807,16 +827,13 @@ Create `services/<endpoint>.py`.
    take `service=Depends(services.get_<endpoint>_service)`, and call
    `service.handle_request(...)`. Do not call `handle` directly — that
    bypasses the error mapping.
-8. **Register the adapter with the refresh worker** in
-   `run_refresh_worker.py` if it is dayobs-keyed
-   ([§12](#12-the-refresh-worker)).
-9. **Add the path to `_MUTABLE_PATHS`** in
+8. **Add the path to `_MUTABLE_PATHS`** in
    `middleware/cache_control.py` if the endpoint serves mutable data,
    matching the adapter's `MutableDataMixin`.
-10. **Add the service to `WORKER_POOL_SERVICES`** in
-    `services/__init__.py` if it mixes in `WorkerPoolMixin`
-    ([§3](#3-anatomy-of-a-service)), so the application starts and stops
-    its pool.
+9. **Add the service to `WORKER_POOL_SERVICES`** in
+   `services/__init__.py` if it mixes in `WorkerPoolMixin`
+   ([§3](#3-anatomy-of-a-service)), so the application starts and stops
+   its pool.
 
 ### Tests
 
@@ -934,22 +951,33 @@ immediately if a cycle is not in-progress.
 
 ### Registering an adapter
 
-Add its factory call to the list in `run_refresh_worker.py`:
+Add its factory to `REFRESH_ADAPTERS` in `adapters/__init__.py`, beside
+`__all__`:
 
 ```python
-worker = RefreshWorker([
-    adapters.get_consdb_exposures_adapter(),
+REFRESH_ADAPTERS = (
+    get_consdb_exposures_adapter,
     # After consdb_exposures: the overhead adapter reads that cache,
     # so a cycle warms it from the freshly-refreshed exposures.
-    adapters.get_visit_overhead_adapter(),
+    get_visit_overhead_adapter,
     ...
-])
+)
 ```
 
+The list lives with the adapters rather than in the entrypoint because
+what is worth keeping warm is a property of the adapter, not of the
+process that starts the worker — and because adding an adapter then puts
+both lists in front of you. `run_refresh_worker.py` only calls each
+factory and hands the results to `RefreshWorker`.
+
 Order matters only for composed adapters — put a dependent adapter after
-the adapter it reads. `IdCachedAdapter` implementations (zephyr,
-jira_block) are **not** registered: they have no "today" entry and no
-`refresh` method, and their keys are only known from a request.
+the adapter it reads, which is why the tuple is not sorted to match
+`__all__`. Membership is not simply "every dayobs-cached adapter":
+`IdCachedAdapter` implementations (zephyr, jira_block) are **not**
+registered, since they have no "today" entry and no `refresh` method and
+their keys are only known from a request, and `almanac` is not either,
+being local computation cheap enough that warming it buys nothing.
+`tests/test_refresh_worker.py` asserts both exclusions.
 
 ### In infrastructure
 
@@ -994,9 +1022,14 @@ BLOCK key does not re-query upstream on every request.
 an unknown instrument, or `WorkerPoolMixin`'s 503 when its pool is
 saturated) passes through untouched;
 `requests.RequestException` becomes a 502 naming the service; anything
-else becomes a 500. All three are logged with a traceback, while 
+else becomes a 500. All are logged with a traceback, while
 a minimal error message is returned to the user. Endpoints
 **must** call `handle_request`, never `handle` to gain these benefits.
+
+`redis.RedisError` is caught separately, purely so it can be logged at
+`CRITICAL` (`doc/logging.md`) — an unreachable cache is a deployment
+fault, not a bad request. The response is the same 500 the generic
+branch produces.
 
 **Services decide what is essential.** With `fetch_concurrently`
 returning exceptions as values, a service can fail the request on a core
@@ -1135,7 +1168,7 @@ bearer token.
 | `REDIS_DB` | `0` | `redis_client.py` | Redis logical database number. |
 | ND_CACHING_DISABLE_NGINX | unset | `frontend: docker/nginx.conf.template` | Any value other than empty or 0 disables the nginx cache |
 | `ND_CACHING_DISABLE_REDIS` | unset | `redis_client.py` | Any value other than empty or `0` disables caching entirely ([§5](#5-cache-keys-and-the-redis-client)) and makes the refresh worker exit at startup. |
-| `LOG_LEVEL` | `INFO` | `main.py`, `run_refresh_worker.py` | Root log level for the API and worker processes. |
+| `LOG_LEVEL` | `INFO` | `utils/logging_config.py` | Log level for the entire app. |
 
 The API service needs all of these to be set correctly; the refresh worker 
 needs the same set, since it drives the same adapters.
