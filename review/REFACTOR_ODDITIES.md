@@ -53,6 +53,67 @@ reconstruction is verified by the end-state tree being byte-identical to the
 reviewed source branch. No commit in the reconstruction contains an intermediate
 version of a file that a later commit revises.
 
+### How the stack is structured
+
+Two foundation branches in series, eleven endpoint slices that mostly do not
+depend on each other, and a cleanup branch that takes the joins:
+
+```
+                    develop  (54d44af)
+                        │
+                        ▼
+                  ┌────────────┐
+                  │ foundation │  6 commits
+                  └─────┬──────┘
+                        ▼
+                  ┌──────────────┐
+                  │ base-classes │  11 commits
+                  └─────┬────────┘
+                        │
+   ┌────────────────────┼───────────────────────────────────┐
+   │                    │                                   │
+   ├─► exposurelog ─────────────────────────────────────────┤
+   ├─► narrativelog ────────────────────────────────────────┤
+   ├─► nightreport ─────────────────────────────────────────┤
+   ├─► jira-tickets ────────────────────────────────────────┤
+   ├─► block-details ───────────────────────────────────────┤
+   ├─► expected-exposures ──────────────────────────────────┤
+   ├─► context-feed ────────────────────────────────────────┤
+   ├─► visit-maps ──────────────────────────────────────────┤
+   │                                                        │
+   ├─► almanac ──┬──────────────► obs-status ───────────────┤
+   │             │                                          │
+   │             └──────────────┐                           │
+   │                            ▼                           │
+   └─► consdb-exposures ──────► exposures ──────────────────┤
+                                                            ▼
+                                                      ┌──────────┐
+                                                      │ cleanup  │
+                                                      └──────────┘
+```
+
+52 commits: 6 + 11 on the two foundation branches, 25 across the eleven slices,
+3 on `exposures`, 7 on `cleanup`. Eight slices are fully parallel — nothing in
+one is needed by another, so they can be reviewed in any order or at the same
+time. The only edges that are not fan-out are the ones a shared adapter forces:
+
+| Shared adapter | Consumers |
+|---|---|
+| `exposurelog` | exposure-entries, exposure-flags (same branch) |
+| `consdb_visits` | visit-map, static-visit-map (same branch) |
+| `consdb_exposures` | data-log, exposures, and the `visit_overhead` adapter |
+| `almanac` | almanac, obs-status, exposures |
+
+So `almanac` fans out to two children, and `exposures` is the only three-way
+join. Branches follow the existing `tickets/OSW-####/<topic>` convention — the
+short names above are the topic halves. Slices are PR'd against the **epic
+branch**, not `develop`, with one final PR from the epic to `develop`; the
+merges are `--no-ff` so this shape stays visible in the history afterwards.
+
+Read `foundation` and `base-classes` first regardless of which slice you have
+been given: everything downstream is written against the cache base classes and
+the `Service` contract those two establish.
+
 ### Do not run the tests on the branch you are reviewing
 
 **Interstitial commits are not working states, by design.** From the commit that
@@ -812,11 +873,12 @@ raised; there is no ticket number yet.**
   Route paths are unchanged, but the generated OpenAPI `operationId`s are not.
 - **`/mock-exposures` was deleted.** It read `data/exposures-lsstcam0413.ecsv` via a
   relative path that could not have resolved inside a deployed container.
-- **`Service.handle` and `Service.handle_request` swapped roles mid-stack.** In
-  early commits `handle_request` was the abstract method subclasses implemented and
-  `handle` was the error-translating wrapper. This is worth knowing when reading
-  the reconstructed history: the names mean the opposite of what they did in the
-  first two-thirds of the branch.
+- **`Service.handle` and `Service.handle_request` swapped roles partway through
+  development.** Early on, `handle_request` was the abstract method subclasses
+  implemented and `handle` was the error-translating wrapper. The reconstruction
+  lands them the right way round throughout, so this only matters when doing
+  archaeology on `experiemental/cache-refactor`, where the names mean the opposite
+  of what they now do for the first two-thirds of the branch.
 
 ---
 
