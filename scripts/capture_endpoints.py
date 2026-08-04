@@ -33,6 +33,10 @@ Usage
 
 ``compare`` exits non-zero if anything differs, so it can gate a script.
 
+Calls are paced by ``--delay`` (default 1 s) so a capture does not
+hammer the upstream services behind the endpoints. Pass ``--delay 0``
+to run them back to back.
+
 What gets called
 ----------------
 Every dayobs endpoint is called twice, for a 1-day and a 7-day range
@@ -95,6 +99,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -106,6 +111,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 DEFAULT_DAY_START = 20260712
 DEFAULT_INSTRUMENTS = ["LSSTCam", "LATISS"]
 DEFAULT_TIMEOUT = 300  # seconds; visit-map endpoints can be slow
+DEFAULT_DELAY = 1.0  # seconds between calls
 
 # Known-good keys, discovered from the science_program values of the
 # default test week's /data-log records during the pre-refactor baseline
@@ -307,6 +313,9 @@ def capture(args) -> int:
             if response.status_code >= 400:
                 print(f"[capture] {slug} -> HTTP {response.status_code}", flush=True)
 
+            if args.delay:
+                time.sleep(args.delay)
+
     (out / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
     print(f"\n[capture] wrote {len(manifest['files'])} files to {out}", flush=True)
     if failures:
@@ -487,6 +496,12 @@ def main() -> int:
     cap.add_argument("--block-keys", nargs="*", default=DEFAULT_BLOCK_KEYS)
     cap.add_argument("--endpoints", nargs="*", help="Subset of endpoint names (default: all)")
     cap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    cap.add_argument(
+        "--delay",
+        type=float,
+        default=DEFAULT_DELAY,
+        help="Seconds to pause after each call, to go easy on upstream services",
+    )
 
     cmp_ = sub.add_parser("compare", help="Diff two capture directories")
     cmp_.add_argument("before")
