@@ -388,10 +388,10 @@ of one continuous sequence.
 
 `RubinNightsContextAdapter` documents the field as unreliable, and
 `ContextFeedService.collate_response` recomputes it across the assembled range:
-each task-change row's `timestampProcessEnd` becomes the `time` of the next
-task-change row, or of the final record for the last one. The wire format is
-unchanged; the values are now correct for the requested range rather than for the
-cache granularity.
+each task-change row's `timestampProcessEnd` becomes the
+`timestampProcessStart` of the next task-change row, or the `time` of the final
+record for the last one. The wire format is unchanged; the values are now
+correct for the requested range rather than for the cache granularity.
 
 ### `/obs-status` — the carry-in event is fetched a whole day earlier
 
@@ -1552,10 +1552,15 @@ needs it: image rows can be published after their index but never before it, and
 script's start-side timestamps. The margin is a judgement call rather than a
 bound — nothing makes a fixed value sufficient for an arbitrarily long script.
 
-Two things left open. The other `rubin_nights`-backed adapters (`/obs-status`,
-dome hours) use the same dayobs-bounded pattern; both are byte-identical across
-the captures, so there is no evidence of a defect, but neither has been reviewed
-for this specific seam. And one cosmetic symptom is untouched by the margin:
+The other `rubin_nights`-backed adapters do not share it. `/obs-status` and dome
+hours both cache raw events keyed on the EFD index, where the context adapter
+caches rows derived over the query window, so a selected row cannot land outside
+the window that fetched it and no state is aggregated into the entry. The margin
+should not be extended to the dome adapter regardless — `get_dome_open_close`
+snaps its own bounds to dayobs boundaries, so it would round up and pull in a
+whole extra day.
+
+One symptom is left untouched by the margin:
 `make_config_col_for_image` interpolates raw DataFrame cells, so a whole-number
 exposure time renders as `2` or `2.0` depending on the dtype pandas inferred for
 whichever rows shared that query — which leaves adjacent nights disagreeing

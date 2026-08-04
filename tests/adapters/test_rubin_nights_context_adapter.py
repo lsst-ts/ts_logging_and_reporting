@@ -1,3 +1,4 @@
+import datetime as dt
 from unittest.mock import patch
 
 import pandas as pd
@@ -5,6 +6,7 @@ import pytest
 
 from lsst.ts.logging_and_reporting.adapters.rubin_nights_context import (
     CONTEXT_FEED_COLS,
+    RUN_END_MARGIN,
     RubinNightsContextAdapter,
 )
 from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS, TODAY_TTL_REDIS
@@ -55,6 +57,26 @@ class TestFetch:
         with patch(f"{ADAPTER}.get_consolidated_messages", return_value=(pd.DataFrame([]), [])) as mock:
             adapter._fetch_from_source([20250101, 20250102, 20250105])
         assert mock.call_count == 2
+
+    def test_query_runs_past_the_final_dayobs_boundary(self, adapter):
+        with patch(f"{ADAPTER}.get_consolidated_messages", return_value=(pd.DataFrame([]), [])) as mock:
+            adapter.fetch(20250101, 20250102)
+        t_start, t_end = mock.call_args.args[:2]
+        assert t_start.datetime == dt.datetime(2025, 1, 1, 12)
+        assert t_end.datetime == dt.datetime(2025, 1, 3, 12) + RUN_END_MARGIN
+
+    def test_margin_messages_land_in_their_own_dayobs(self, adapter):
+        # Both are published after the boundary; only the first belongs
+        # to the requested dayobs.
+        frame = consolidated(
+            [
+                {"time": "2025-01-02T11:59:00", "name": "before_noon"},
+                {"time": "2025-01-02T13:00:00", "name": "after_noon"},
+            ]
+        )
+        with patch(f"{ADAPTER}.get_consolidated_messages", return_value=frame):
+            result = adapter.fetch(20250101, 20250101)
+        assert [record["name"] for record in result[20250101]] == ["before_noon"]
 
     def test_messages_outside_requested_days_dropped(self, adapter):
         frame = consolidated([{"time": "2025-01-09T23:00:00", "name": "a"}])

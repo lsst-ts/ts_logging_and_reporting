@@ -22,6 +22,7 @@
 
 """Cached adapter for the consolidated context-feed messages."""
 
+import datetime as dt
 import functools
 import logging
 
@@ -59,6 +60,14 @@ CONTEXT_FEED_COLS = [
     "timestampProcessEnd",
 ]
 
+RUN_END_MARGIN = dt.timedelta(hours=6)
+"""How far past a run's last dayobs to keep querying.
+
+Mitigates rubin_nights not correctly fetching records close to the
+dayobs boundary. Records are still bucketed by their own dayobs, so the
+extra ones are dropped by the caller.
+"""
+
 
 class RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
     """Fetches and caches consolidated context-feed messages per dayobs.
@@ -74,11 +83,9 @@ class RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
         t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
         t_end = Time(
-            get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1))
+            get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)) + RUN_END_MARGIN
         )
-        frame, _ = get_consolidated_messages(
-            t_start, t_end, self._clients, all_tracebacks=True
-        )
+        frame, _ = get_consolidated_messages(t_start, t_end, self._clients, all_tracebacks=True)
         if frame is None or frame.empty:
             return {}
         frame = frame[frame.columns.intersection(CONTEXT_FEED_COLS)]
@@ -86,15 +93,9 @@ class RubinNightsContextAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
         event_dayobs = [dayobs_at(time) for time in frame["time"]]
         # stringify keeps NaN/inf as the tokens the frontend expects;
         # make_json_safe then renders timestamps and numpy scalars.
-        records = make_json_safe(
-            frame.map(stringify_special_floats).to_dict(orient="records")
-        )
-        partition = self._partition_by_field(
-            list(zip(event_dayobs, records)), key=lambda pair: pair[0]
-        )
-        return {
-            dayobs: [pair[1] for pair in pairs] for dayobs, pairs in partition.items()
-        }
+        records = make_json_safe(frame.map(stringify_special_floats).to_dict(orient="records"))
+        partition = self._partition_by_field(list(zip(event_dayobs, records)), key=lambda pair: pair[0])
+        return {dayobs: [pair[1] for pair in pairs] for dayobs, pairs in partition.items()}
 
 
 @functools.cache
