@@ -51,34 +51,14 @@ def run_refresh_worker() -> None:
     if redis_caching_disabled():
         # Nothing to warm: every entry the worker wrote would be
         # dropped, leaving only the upstream load.
-        logger.warning(
-            f"{DISABLE_ENV_VAR} is set; refresh worker has no cache to warm, exiting"
-        )
+        logger.warning(f"{DISABLE_ENV_VAR} is set; refresh worker has no cache to warm, exiting")
         return
 
-    worker = RefreshWorker(
-        [
-            adapters.get_consdb_exposures_adapter(),
-            # The visit_overhead adapter reads data from the consdb_exposures
-            # so deliberate cycle ordering ensures it reads fresh data.
-            adapters.get_visit_overhead_adapter(),
-            adapters.get_consdb_visits_adapter(),
-            adapters.get_expected_exposures_adapter(),
-            adapters.get_exposurelog_adapter(),
-            adapters.get_jira_obs_adapter(),
-            adapters.get_narrativelog_adapter(),
-            adapters.get_nightreport_adapter(),
-            adapters.get_rubin_nights_context_adapter(),
-            adapters.get_rubin_nights_dome_adapter(),
-            adapters.get_rubin_nights_obs_status_adapter(),
-        ]
-    )
+    worker = RefreshWorker([get_adapter() for get_adapter in adapters.REFRESH_ADAPTERS])
 
     def handle_signal(signum: int, frame: FrameType | None) -> None:
         # Handle graceful shutdown
-        logger.info(
-            f"Received signal {signal.Signals(signum).name}, stopping refresh worker"
-        )
+        logger.info(f"Received signal {signal.Signals(signum).name}, stopping refresh worker")
         worker.stop()
 
     signal.signal(signal.SIGTERM, handle_signal)

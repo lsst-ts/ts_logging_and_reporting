@@ -7,6 +7,7 @@ import pytest
 
 import lsst.ts.logging_and_reporting.adapters.base_adapters as base_adapters_module
 import lsst.ts.logging_and_reporting.refresh_worker as refresh_worker_module
+from lsst.ts.logging_and_reporting import adapters
 from lsst.ts.logging_and_reporting.adapters.base_adapters import (
     DayobsCachedAdapter,
     InstrumentDayobsCachedAdapter,
@@ -499,3 +500,30 @@ class TestRunLoop:
         worker.stop()
         thread.join(timeout=2.0)
         assert not thread.is_alive()
+
+
+class TestRegisteredAdapters:
+    """What `adapters.REFRESH_ADAPTERS` declares the worker will refresh."""
+
+    def names(self):
+        return [get_adapter.__name__ for get_adapter in adapters.REFRESH_ADAPTERS]
+
+    def test_exposures_precedes_visit_overhead(self):
+        # The overhead adapter reads what the exposures adapter cached,
+        # so a cycle has to refresh exposures first. This ordering is
+        # why the tuple is not sorted to match __all__.
+        names = self.names()
+        assert names.index("get_consdb_exposures_adapter") < names.index("get_visit_overhead_adapter")
+
+    def test_no_adapter_is_registered_twice(self):
+        names = self.names()
+        assert len(set(names)) == len(names)
+
+    def test_every_entry_is_exported(self):
+        assert set(self.names()) <= set(adapters.__all__)
+
+    def test_every_registered_adapter_understands_today(self):
+        # The worker refreshes "today", so an Id-cached adapter has no
+        # meaning here and must not be registered.
+        for get_adapter in adapters.REFRESH_ADAPTERS:
+            assert isinstance(get_adapter(), DayobsCachedAdapter | InstrumentDayobsCachedAdapter)
