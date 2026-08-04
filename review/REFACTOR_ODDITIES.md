@@ -1345,8 +1345,7 @@ underlying value is a string on one endpoint and `null` on another. Separately,
 values that are not JSON-representable cannot survive the cache round-trip at all.
 
 Resolving this means deciding, per endpoint, whether a given field is *used* (and
-so needs a number) or *displayed* (and so belongs to the frontend). Not attempted
-here; no ticket yet.
+so needs a number) or *displayed* (and so belongs to the frontend). Ticket.
 
 ### `/exposures` is three responses in one, and could be three endpoints
 
@@ -1513,6 +1512,62 @@ The third lever — taking the render off the GIL — is done
 ([§9](#the-map-endpoints-render-in-worker-processes)). It bounds the damage a map
 burst does to the rest of the API, but it does not reduce the work, so caching is
 still what would make these endpoints fast.
+
+### The context-feed cache inherits a `rubin_nights` boundary condition
+
+Cache entries are per dayobs, and each is built from a query bounded by that
+dayobs. The EFD holds records that belong to a night but only become visible
+after its boundary has passed, and a bounded query cannot see them:
+
+- **Image acquisition rows** are selected on the EFD publish timestamp and then
+  re-indexed onto `timestampAcquisitionStart`. An image acquired shortly before
+  noon is published shortly after it, so the night it belongs to does not
+  contain it yet.
+- **A script's terminal state** is aggregated over the messages inside the
+  window, with `groupby(...).agg({"finalScriptState": "max"})`. A script that
+  starts before noon and finishes after it is left reporting `RUNNING`, its
+  `timestampProcessEnd` still holding the unix-TAI zero that surfaces as a 1969
+  date.
+
+This is the same class of problem as the Task Change recompute in
+[§3](#3-logic-that-changed-because-of-caching), but where that one could be
+repaired on read from the assembled range, these cannot: the information is
+simply not in the cached entry.
+
+It is not introduced by the refactor. Endpoint captures show the old code
+producing the same truncated values whenever a request's range ended on a
+boundary, and the correct ones whenever it did not — a wide request happened to
+issue one wide query and see past it. What changed is that every night is now
+fetched as though it were a single-night request, so the truncation is uniform;
+and `RefreshWorker` finalises each dayobs after rollover, so the truncated value
+is the one written at `HISTORIC_TTL_REDIS`. A shorter TTL would not help — the
+window is defined by the dayobs rather than by wall-clock, so re-fetching
+re-issues the identical query.
+
+Mitigated, not fixed. `RubinNightsContextAdapter._fetch_run` queries
+`RUN_END_MARGIN` past the end of each run and lets the existing bucketing
+discard anything belonging to a day the run does not own. Only the trailing edge
+needs it: image rows can be published after their index but never before it, and
+`logevent_script` is a snapshot topic, so any later message still carries the
+script's start-side timestamps. The margin is a judgement call rather than a
+bound — nothing makes a fixed value sufficient for an arbitrarily long script.
+
+Two things left open. The other `rubin_nights`-backed adapters (`/obs-status`,
+dome hours) use the same dayobs-bounded pattern; both are byte-identical across
+the captures, so there is no evidence of a defect, but neither has been reviewed
+for this specific seam. And one cosmetic symptom is untouched by the margin:
+`make_config_col_for_image` interpolates raw DataFrame cells, so a whole-number
+exposure time renders as `2` or `2.0` depending on the dtype pandas inferred for
+whichever rows shared that query — which leaves adjacent nights disagreeing
+inside a single response.
+
+The durable fix is upstream: a publish-lag margin applied where the lag is
+known, and a script's final state resolved by a query keyed on its salIndex
+instead of by whatever the window happened to contain. Those are written up
+separately for an upstream discussion, along with the sentinel timestamp and the
+`config` rendering. Tickets on both sides — ours to keep or tune the margin,
+theirs to settle whether `get_consolidated_messages` promises the records
+*belonging to* a range or the records *visible in* it.
 
 
 ---
