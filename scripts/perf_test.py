@@ -113,6 +113,13 @@ After mode, per dayobs endpoint:
     FLUSHDB, prime day 1, measure days 1-7 (six missing days). Models
     a user expanding a single-night view to a week. Expect roughly the
     cold cost of the six missing days.
+``partial-fragmented-7day``
+    FLUSHDB, prime days 2-6, measure days 1-7. Models widening a range
+    at both ends at once, and is the only scenario whose missing days
+    form *two* contiguous runs rather than one — so it is the only one
+    that prices the run split. Two missing days against the six of
+    ``partial-extension-7day``: an adapter not landing well under that
+    row is paying a per-run fixed cost.
 
 Burst scenarios fire ``--burst-size`` (default 10) simultaneous
 requests per round, ``--bursts`` (default 30) rounds, with a longer
@@ -720,6 +727,7 @@ def run_after(args, store: ScenarioStore) -> None:
     runner = Runner(args)
     day1 = args.day_start
     day2 = add_days(day1, 1)
+    day7 = add_days(day1, 6)
     day8 = add_days(day1, 7)
     day9 = add_days(day1, 8)
     for endpoint in selected_endpoints(args):
@@ -728,6 +736,9 @@ def run_after(args, store: ScenarioStore) -> None:
         p_1day = range_params(endpoint, day1, day2, args.instrument)
         p_7day = range_params(endpoint, day1, day8, args.instrument)
         p_shift = range_params(endpoint, day2, day9, args.instrument)
+        # Days 2-6: priming this and measuring the full week leaves the
+        # first and last day missing, split by the cached middle.
+        p_mid5 = range_params(endpoint, day2, day7, args.instrument)
 
         scenarios = [
             # (label, params, flush_each, prime, burst)
@@ -737,6 +748,7 @@ def run_after(args, store: ScenarioStore) -> None:
             ("hot-7day", p_7day, False, [(path, p_7day)], False),
             ("partial-rolling-7day", p_shift, True, [(path, p_7day)], False),
             ("partial-extension-7day", p_7day, True, [(path, p_1day)], False),
+            ("partial-fragmented-7day", p_7day, True, [(path, p_mid5)], False),
             ("cold-7day-burst", p_7day, True, None, True),
             ("hot-1day-burst", p_1day, False, [(path, p_1day)], True),
             ("hot-7day-burst", p_7day, False, [(path, p_7day)], True),
