@@ -1513,6 +1513,24 @@ The third lever — taking the render off the GIL — is done
 burst does to the rest of the API, but it does not reduce the work, so caching is
 still what would make these endpoints fast.
 
+**The document is also larger than it needs to be, which is a separate axis from
+caching.** Measured on a captured 7-day LSSTCam document, 2.72 MB of compact
+JSON: 38% of it is 108 copies of just two JavaScript functions, because
+`uranography` attaches a `CustomJSTransform` per glyph rather than sharing one
+instance — a single-visit map would carry nearly the same megabyte. Most of the
+remainder is sphere coordinates written as decimal text at 18.2 bytes per value
+against 8 packed, because the patch geometry is ragged and reaches Bokeh as
+Python lists, so its binary array encoding never engages.
+
+Both are fixable, and both upstream in `uranography` and `schedview` rather than
+here: sharing one transform per distinct function would remove close to a
+megabyte, and handing the coordinates over as numpy arrays would roughly halve
+what is left. Neither is available to this repository without patching those
+packages. Gzip is the cheap alternative that needs no upstream change and
+compounds with them — 4.4× on this content
+([§13](#nothing-compresses-the-responses)). None of the three touch render time;
+they reduce transfer and cache footprint only.
+
 ### The context-feed cache inherits a `rubin_nights` boundary condition
 
 Cache entries are per dayobs, and each is built from a query bounded by that
@@ -1573,6 +1591,48 @@ separately for an upstream discussion, along with the sentinel timestamp and the
 `config` rendering. Tickets on both sides — ours to keep or tune the margin,
 theirs to settle whether `get_consolidated_messages` promises the records
 *belonging to* a range or the records *visible in* it.
+
+### Nothing compresses the responses
+
+There is no `GZipMiddleware` in `main.py`, and no `gzip` directive in the
+frontend's `docker/nginx.conf.template` — nginx defaults to `gzip off` — so every
+response goes out uncompressed, including the largest ones.
+
+The visit maps are the extreme case. A captured 7-day LSSTCam
+`/multi-night-visit-maps` document is 2.72 MB of compact JSON and **0.61 MB
+gzipped, 4.4×** — it is largely repeated JavaScript source and coordinates
+written as decimal text, which is close to ideal compressor input. See
+[§13](#visit-map-rendering-is-not-cached) for the breakdown and for the
+structural reductions that are available alongside this one.
+
+**The middleware is the better of the two places to do it.** nginx caches the
+upstream body as received, so compressing at the backend means compressing once
+per cache fill, and the entry is then stored compressed — which also multiplies
+the effective capacity of the `max_size=1g` on `proxy_cache_path` by the same
+ratio. `gzip on` in nginx would store the body uncompressed and re-compress it on
+every cache hit. It also covers the direct-to-uvicorn path, which is what the
+performance harness measures.
+
+Three things to get right:
+
+- The middleware has to sit inside `CacheControlMiddleware` so the headers that
+  one sets still reach the client.
+- A compressed response carries `Vary: Accept-Encoding`, while
+  `proxy_cache_key` is scheme, method, host and URI only. nginx honours `Vary`
+  when caching, but it is worth confirming in the dev stack rather than assuming.
+- If nginx is used instead, `gzip_types application/json` is not enough on its
+  own: **`gzip_proxied any`** is required or nginx will not compress a proxied
+  response at all, which is the usual reason enabling it appears to do nothing.
+
+**The frontend needs no change.** Browsers set `Accept-Encoding` themselves —
+`fetch` forbids setting it by hand — and decode the body before it reaches
+JavaScript. `src/utils/fetchUtils.js` is a plain `fetch` plus `res.json()` and
+reads no `content-length`, so nothing there can observe the difference.
+
+Not done here: it spans both repositories and, for the nginx half, the
+deployment. Note that `nginx.conf.template` is the dev compose stack; the
+production proxy is configured outside both repos, so the values that matter
+there have to be checked separately. No ticket yet.
 
 
 ---
