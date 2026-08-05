@@ -1637,6 +1637,36 @@ deployment. Note that `nginx.conf.template` is the dev compose stack; the
 production proxy is configured outside both repos, so the values that matter
 there have to be checked separately. No ticket yet.
 
+### Contiguous runs are fetched one at a time
+
+`CachedAdapter._collate_runs` fetches each contiguous run in turn. Two alternatives
+were considered and both deferred.
+
+**Parallelising the runs** is deferred until everything the adapters call is proven
+thread-safe. Pool overhead is negligible (~0.5 ms against runs of 0.2-5.5 s), so
+cost is not the objection. The gate is that nothing has shown a shared client
+tolerates concurrent use: the four `RubinNightsClientsMixin` adapters each hold
+their own `_clients`, so today's adapter-level concurrency drives *different*
+objects and proves nothing — unless `rubin_nights.get_clients()` memoises, which is
+unchecked. One line answers it:
+`get_rubin_nights_dome_adapter()._efd_client is get_visit_overhead_adapter()._efd_client`.
+Until then, note that [§13](#visit-map-rendering-is-not-cached) is a confirmed case
+of concurrency here returning *wrong data under HTTP 200* rather than failing.
+
+**Widening to one request** spanning the missing days is nearly free to implement —
+`_collate_runs` already discards days outside the request — but pays per wasted day
+to save one request, and the trade differs per adapter by three orders of magnitude:
+break-even (fixed/marginal, from `review/performance/COMPARE.md`) is a 0.07-day gap
+for `almanac`, 1.5 for ConsDB `exposures`, 54 for EFD `obs-status`. A per-adapter
+`MAX_RUN_GAP` threshold on `contiguous_runs` is the shape worth building, defaulting
+to `0` (today's behaviour); the blanket version is wrong for `almanac` and
+`expected_exposures`, whose `_fetch_run` is a per-day loop with no per-run cost at
+all, and it makes [§13](#the-exposure-log-does-not-paginate) easier to hit.
+
+`partial-fragmented-7day` was added to `scripts/perf_test.py` to measure any of
+this: every other scenario misses a single run, so none of the numbers in
+`COMPARE.md` price a run split. No ticket yet.
+
 
 ---
 
