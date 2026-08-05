@@ -1,0 +1,44 @@
+ARG cycle=develop
+ARG py_version=3.13
+
+FROM ts-dockerhub.lsst.org/conda_package_builder:latest AS builder
+
+WORKDIR /tmp/build
+COPY . .
+
+RUN source /home/saluser/.setup.sh && \
+    CONDA_BLD_PATH=/tmp/conda-bld conda build --python ${py_version} -c lsstts/label/main --prefix-length 100 --no-test conda/
+
+FROM ts-dockerhub.lsst.org/deploy-env:${cycle}
+
+LABEL maintainer Sebastian Aranda <sebastian.aranda@noirlab.edu>
+
+WORKDIR /home/saluser/develop
+
+COPY --from=builder /tmp/conda-bld /tmp/conda-bld
+COPY . .
+
+USER root
+RUN chown -R saluser:saluser /home/saluser/develop /tmp/conda-bld
+USER saluser
+
+RUN source /home/saluser/.setup_sal_env.sh && \
+	conda index /tmp/conda-bld && \
+    conda install -c file:///tmp/conda-bld ts-logging-and-reporting -y && \
+    conda clean -afy && \
+    rm -rf /tmp/conda-bld
+
+# Workaround required to update astropy and astropy-iers-data
+RUN source /home/saluser/.setup_sal_env.sh && \
+    conda update -y -c conda-forge astropy astropy-iers-data
+
+# Workaround until lsst-resources get conda packaged
+# See: OSW-1382.
+RUN source /home/saluser/.setup_sal_env.sh && \
+    pip install lsst-resources
+
+COPY docker/startup-deploy.sh /home/saluser/.startup.sh
+USER root
+RUN chown saluser:saluser /home/saluser/.startup.sh && \
+    chmod a+x /home/saluser/.startup.sh
+USER saluser
