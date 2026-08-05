@@ -62,9 +62,9 @@ reference numbers the after-scenarios are compared against):
     Burst rounds (see below) against the 7-day range — the
     pre-refactor concurrency reference.
 ``cold-all-keys`` (/block-details)
-    N timed requests for all discovered BLOCK keys.
+    N timed requests for all BLOCK keys.
 ``cold-all-keys-burst`` (/block-details)
-    Burst rounds for all discovered BLOCK keys — the pre-refactor
+    Burst rounds for all BLOCK keys — the pre-refactor
     concurrency reference for the key-driven endpoint.
 
 After mode, per dayobs endpoint:
@@ -91,7 +91,7 @@ After mode, per dayobs endpoint:
     cold cost of the six missing days.
 
 Burst scenarios fire ``--burst-size`` (default 10) simultaneous
-requests per round, ``--bursts`` (default 10) rounds, with a longer
+requests per round, ``--bursts`` (default 30) rounds, with a longer
 ``--burst-pause`` (default 5 s) between rounds. Flushing/priming
 happens once per round, mirroring the equivalent single-request
 scenario. Per-request p50/p95 describe the typical user in the crowd;
@@ -113,9 +113,8 @@ single latency means requests are being serialised somewhere.
     partial-extension burst: extending a range is an individual
     action, never simultaneous across users.)
 
-/block-details (key-driven, not dayobs-driven; keys auto-discovered
-from the test week's /data-log ``science_program`` values, matching how
-the frontend builds its requests, or supplied via ``--block-keys``):
+/block-details (key-driven, not dayobs-driven; keys come from
+``DEFAULT_BLOCK_KEYS``, overridable with ``--block-keys``):
 
 ``cold-all-keys``
     FLUSHDB, request all keys — every key fetched from Jira/Zephyr.
@@ -153,8 +152,8 @@ import argparse
 import concurrent.futures
 import datetime as dt
 import json
+import math
 import os
-import re
 import statistics
 import subprocess
 import sys
@@ -166,10 +165,20 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 DEFAULT_DAY_START = 20260611
 DEFAULT_RUNS = 50
 DEFAULT_PAUSE = 1.0  # seconds between timed runs
-DEFAULT_TIMEOUT = 300  # seconds; visit-map endpoints can be slow
+DEFAULT_TIMEOUT = 120  # seconds
 DEFAULT_BURST_SIZE = 10  # simultaneous requests per burst
-DEFAULT_BURSTS = 10  # bursts per burst scenario
+DEFAULT_BURSTS = 30  # bursts per burst scenario
 DEFAULT_BURST_PAUSE = 5.0  # seconds between bursts
+DEFAULT_BLOCK_KEYS = [
+    "BLOCK-407",
+    "BLOCK-T523",
+    "BLOCK-T523_6",
+    "BLOCK-T539",
+    "BLOCK-T594",
+    "BLOCK-T664_a",
+    "BLOCK-T664_b",
+    "BLOCK-T682",
+]
 
 # Endpoint inventory. "instrument": whether the endpoint takes an
 # instrument query param. /block-details is key-driven and handled
@@ -202,6 +211,18 @@ def git_commit() -> str:
         ).stdout.strip()
     except Exception:
         return "unknown"
+
+
+def sample_record(result: dict) -> dict:
+    """The per-request fields kept in the saved results."""
+    record = {
+        "status": result["status"],
+        "seconds": round(result["seconds"], 3),
+        "bytes": result["bytes"],
+    }
+    if result.get("error"):
+        record["error"] = result["error"]
+    return record
 
 
 class Runner:
@@ -254,8 +275,26 @@ class Runner:
                 "error": str(exc),
             }
 
+    def _progress(self, label: str, done: int, total: int) -> None:
+        """One line per run, left unterminated so `_progress_done` can
+        append to the last of them."""
+        if not label:
+            return
+        newline = "" if done == 1 else "\n"
+        print(f"{newline}{label} [{done}/{total}]", end="", flush=True)
+
+    def _progress_done(self, label: str) -> None:
+        if not label:
+            return
+        print(" DONE", flush=True)
+
     def timed_runs(
-        self, path: str, params: dict, flush_before_each: bool = False, prime: list | None = None
+        self,
+        path: str,
+        params: dict,
+        flush_before_each: bool = False,
+        prime: list | None = None,
+        label: str = "",
     ) -> dict:
         """Run self.runs timed requests and summarise.
 
@@ -265,6 +304,7 @@ class Runner:
         """
         samples = []
         errors = []
+        recorded = []
         for i in range(self.runs):
             if i > 0 and self.pause:
                 time.sleep(self.pause)
@@ -277,10 +317,18 @@ class Runner:
                 samples.append(result)
             else:
                 errors.append(result)
-        return self._summarise(samples, errors, path, params, prime)
+            recorded.append(sample_record(result))
+            self._progress(label, i + 1, self.runs)
+        self._progress_done(label)
+        return self._summarise(samples, errors, path, params, prime, recorded)
 
     def burst_runs(
-        self, path: str, params: dict, flush_before_each: bool = False, prime: list | None = None
+        self,
+        path: str,
+        params: dict,
+        flush_before_each: bool = False,
+        prime: list | None = None,
+        label: str = "",
     ) -> dict:
         """Run self.bursts rounds of self.burst_size simultaneous requests.
 
@@ -292,6 +340,7 @@ class Runner:
         samples = []
         errors = []
         burst_walls = []
+        rounds = []
         for i in range(self.bursts):
             if i > 0 and self.burst_pause:
                 time.sleep(self.burst_pause)
@@ -311,11 +360,17 @@ class Runner:
                     samples.append(result)
                 else:
                     errors.append(result)
-        summary = self._summarise(samples, errors, path, params, prime)
+            rounds.append([sample_record(result) for result in results])
+            self._progress(label, i + 1, self.bursts)
+        self._progress_done(label)
+        summary = self._summarise(samples, errors, path, params, prime, rounds)
+        recorded = summary.pop("samples")
         summary.update(
             burst_size=self.burst_size,
             bursts=self.bursts,
             burst_wall_p50=round(statistics.median(burst_walls), 3),
+            burst_walls=[round(wall, 3) for wall in burst_walls],
+            samples=recorded,
         )
         return summary
 
@@ -343,7 +398,9 @@ class Runner:
                 "error": str(exc),
             }
 
-    def _summarise(self, samples: list, errors: list, path: str, params, prime: list | None) -> dict:
+    def _summarise(
+        self, samples: list, errors: list, path: str, params, prime: list | None, recorded: list
+    ) -> dict:
         summary = {"runs": len(samples), "errors": len(errors), "url": self.full_url(path, params)}
         if prime:
             summary["prime_urls"] = [self.full_url(p, pp) for p, pp in prime]
@@ -353,11 +410,12 @@ class Runner:
             times = sorted(s["seconds"] for s in samples)
             summary.update(
                 p50=round(statistics.median(times), 3),
-                p95=round(times[max(0, int(len(times) * 0.95) - 1)], 3),
+                p95=round(times[math.ceil(0.95 * len(times)) - 1], 3),
                 min=round(times[0], 3),
                 max=round(times[-1], 3),
                 bytes=samples[0]["bytes"],
             )
+        summary["samples"] = recorded
         return summary
 
 
@@ -387,32 +445,35 @@ def run_baseline(args) -> list:
     for endpoint in selected_endpoints(args):
         for label, (lo, hi) in {"cold-1day": (day1, day2), "cold-7day": (day1, day8)}.items():
             params = range_params(endpoint, lo, hi, args.instrument)
-            print(f"[baseline] {endpoint['name']} {label} ...", flush=True)
             runner.request(endpoint["path"], params)  # warm-up (connections, lazy imports)
-            summary = runner.timed_runs(endpoint["path"], params)
+            summary = runner.timed_runs(
+                endpoint["path"], params, label=f"[baseline] {endpoint['name']} {label}"
+            )
             results.append({"endpoint": endpoint["name"], "scenario": label, **summary})
 
         # No cache in the baseline, so one burst scenario covers concurrency.
         params = range_params(endpoint, day1, day8, args.instrument)
-        print(f"[baseline] {endpoint['name']} cold-7day-burst ...", flush=True)
-        summary = runner.burst_runs(endpoint["path"], params)
+        summary = runner.burst_runs(
+            endpoint["path"], params, label=f"[baseline] {endpoint['name']} cold-7day-burst"
+        )
         results.append({"endpoint": endpoint["name"], "scenario": "cold-7day-burst", **summary})
 
     # No server-side cache exists in the baseline, so one sequential and
     # one burst all-keys scenario capture /block-details (always cold).
-    block_keys = args.block_keys or discover_block_keys(runner, day1, day8, args.instrument)
-    if block_keys:
-        all_keys = [("key", k) for k in block_keys]
-        print("[baseline] block-details cold-all-keys ...", flush=True)
+    if args.block_keys:
+        all_keys = [("key", k) for k in args.block_keys]
         runner.request("/block-details", all_keys)  # warm-up
-        summary = runner.timed_runs("/block-details", all_keys)
+        summary = runner.timed_runs(
+            "/block-details", all_keys, label="[baseline] block-details cold-all-keys"
+        )
         results.append({"endpoint": "block-details", "scenario": "cold-all-keys", **summary})
 
-        print("[baseline] block-details cold-all-keys-burst ...", flush=True)
-        summary = runner.burst_runs("/block-details", all_keys)
+        summary = runner.burst_runs(
+            "/block-details", all_keys, label="[baseline] block-details cold-all-keys-burst"
+        )
         results.append({"endpoint": "block-details", "scenario": "cold-all-keys-burst", **summary})
     else:
-        print("[baseline] block-details skipped — no BLOCK keys found or given", flush=True)
+        print("[baseline] block-details skipped — no BLOCK keys given", flush=True)
     return results
 
 
@@ -446,52 +507,21 @@ def run_after(args) -> list:
             ("partial-rolling-7day-burst", p_shift, True, [(path, p_7day)], True),
         ]
         for label, params, flush_each, prime, burst in scenarios:
-            print(f"[after] {endpoint['name']} {label} ...", flush=True)
             run = runner.burst_runs if burst else runner.timed_runs
-            summary = run(path, params, flush_before_each=flush_each, prime=prime)
+            summary = run(
+                path,
+                params,
+                flush_before_each=flush_each,
+                prime=prime,
+                label=f"[after] {endpoint['name']} {label}",
+            )
             results.append({"endpoint": endpoint["name"], "scenario": label, **summary})
 
-    block_keys = args.block_keys or discover_block_keys(runner, day1, day8, args.instrument)
-    if block_keys:
-        results.extend(run_block_details_scenarios(runner, block_keys))
+    if args.block_keys:
+        results.extend(run_block_details_scenarios(runner, args.block_keys))
     else:
-        print("[after] block-details skipped — no BLOCK keys found or given", flush=True)
+        print("[after] block-details skipped — no BLOCK keys given", flush=True)
     return results
-
-
-# Matches both Jira (BLOCK-42) and Zephyr (BLOCK-T123, BLOCK-T123_a) keys.
-BLOCK_KEY_RE = re.compile(r"^BLOCK-T?\d+(?:_[A-Za-z0-9]+)?$")
-
-
-def discover_block_keys(
-    runner: Runner, day_start: int, day_end: int, instrument: str, limit: int = 8
-) -> list[str]:
-    """Harvest BLOCK keys from the test week's /data-log records.
-
-    Mirrors the frontend, which extracts unique ``science_program``
-    values from ConsDB data before calling /block-details.
-    """
-    print("[discover] finding BLOCK keys from /data-log ...", flush=True)
-    try:
-        response = runner.session.get(
-            f"{runner.base_url}/data-log",
-            params={"dayObsStart": day_start, "dayObsEnd": day_end, "instrument": instrument},
-            timeout=runner.timeout,
-        )
-        response.raise_for_status()
-        records = response.json().get("data_log", [])
-    except (requests.RequestException, ValueError) as exc:
-        print(f"[discover] BLOCK key discovery failed: {exc}", flush=True)
-        return []
-    keys = []
-    for record in records:
-        program = record.get("science_program")
-        if program and BLOCK_KEY_RE.match(program) and program not in keys:
-            keys.append(program)
-            if len(keys) >= limit:
-                break
-    print(f"[discover] BLOCK keys: {keys}", flush=True)
-    return keys
 
 
 def run_block_details_scenarios(runner: Runner, keys: list[str]) -> list:
@@ -516,25 +546,43 @@ def run_block_details_scenarios(runner: Runner, keys: list[str]) -> list:
         ("partial-keys-burst", all_keys, True, [(path, subset)], True),
     ]
     for label, params, flush_each, prime, burst in scenarios:
-        print(f"[after] block-details {label} ...", flush=True)
         run = runner.burst_runs if burst else runner.timed_runs
-        summary = run(path, params, flush_before_each=flush_each, prime=prime)
+        summary = run(
+            path,
+            params,
+            flush_before_each=flush_each,
+            prime=prime,
+            label=f"[after] block-details {label}",
+        )
         results.append({"endpoint": "block-details", "scenario": label, **summary})
     return results
 
 
+def completion(row: dict) -> str:
+    """Share of a scenario's requests that returned 200.
+
+    Percentiles are computed over successful requests only, so anything
+    below 100% means they describe a subset — and a low rate means that
+    subset is the requests that happened to be served first.
+    """
+    total = row.get("runs", 0) + row.get("errors", 0)
+    if not total:
+        return "—"
+    return f"{100 * row.get('runs', 0) / total:.0f}%"
+
+
 def print_markdown(results: list):
-    print("\n| Endpoint | Scenario | p50 (s) | p95 (s) | min | max | bytes | errors |")
-    print("|---|---|---|---|---|---|---|---|")
+    print("\n| Endpoint | Scenario | completed | p50 (s) | p95 (s) | min | max | bytes | errors |")
+    print("|---|---|---|---|---|---|---|---|---|")
     for r in results:
         if r.get("runs"):
             print(
-                f"| {r['endpoint']} | {r['scenario']} | {r['p50']} | {r['p95']} "
+                f"| {r['endpoint']} | {r['scenario']} | {completion(r)} | {r['p50']} | {r['p95']} "
                 f"| {r['min']} | {r['max']} | {r['bytes']} | {r['errors']} |"
             )
         else:
             print(
-                f"| {r['endpoint']} | {r['scenario']} | — | — | — | — | — "
+                f"| {r['endpoint']} | {r['scenario']} | {completion(r)} | — | — | — | — | — "
                 f"| {r['errors']} ({r.get('first_error', '?')}) |"
             )
 
@@ -602,10 +650,10 @@ def run_compare(args):
     print(f"\nBefore: {before['git_commit']} ({before['timestamp']})")
     print(f"After:  {after['git_commit']} ({after['timestamp']})")
     print(
-        "\n| Endpoint | Scenario | before p50 (s) | after p50 (s) | change "
-        "| before wall p50 (s) | after wall p50 (s) | wall change |"
+        "\n| Endpoint | Scenario | completed (before/after) | before p50 (s) | after p50 (s) "
+        "| change | before wall p50 (s) | after wall p50 (s) | wall change |"
     )
-    print("|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|")
     for endpoint, rows in after_by_endpoint.items():
         # Baseline requests are always cold, so every after-scenario joins to
         # the cold baseline of the same shape: matching range length (or key
@@ -628,7 +676,8 @@ def run_compare(args):
             delta = (r["p50"] - base["p50"]) / base["p50"] * 100
             wall_before, wall_after, wall_delta = wall_cells(base, r)
             print(
-                f"| {endpoint} | {r['scenario']} | {base['p50']} | {r['p50']} | {delta:+.0f}% "
+                f"| {endpoint} | {r['scenario']} | {completion(base)} / {completion(r)} "
+                f"| {base['p50']} | {r['p50']} | {delta:+.0f}% "
                 f"| {wall_before} | {wall_after} | {wall_delta} |"
             )
 
@@ -670,9 +719,8 @@ def main():
         p.add_argument(
             "--block-keys",
             nargs="*",
-            default=[],
-            help="BLOCK keys for /block-details scenarios (default: "
-            "auto-discovered from the test week's /data-log records)",
+            default=DEFAULT_BLOCK_KEYS,
+            help="BLOCK keys for /block-details scenarios",
         )
         p.add_argument("--out", help="Write JSON results to this path")
 
