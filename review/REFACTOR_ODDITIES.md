@@ -44,8 +44,10 @@ for a comparison of the performance before and after the refactor.
 The commit history presented for review was not the history in which this work was
 developed. The work was built incrementally on `experiemental/cache-refactor` over
 several weeks, in an order driven by what was learnable next rather than by what is
-readable. That branch is retained, unmodified, as the real record — use it for
-`git blame` and for any archaeology about why something is the way it is.
+readable. That branch is retained as the real record — use it for `git blame` and
+for any archaeology about why something is the way it is. It stays current for the
+whole of this review: anything changed in response to a review comment lands there
+too, so it continues to match the code in front of you.
 
 What you are reviewing is the finished tree replayed forward from `develop` as a
 stack of branches, each slice landing whole files in their final state. The
@@ -113,7 +115,8 @@ merges are `--no-ff` so this shape stays visible in the history afterwards.
 
 Read `foundation` and `base-classes` first regardless of which slice you have
 been given: everything downstream is written against the cache base classes and
-the `Service` contract those two establish.
+the `Service` contract those two establish. They are also reviewed first, on their
+own — the per-endpoint slices become available once those two are approved.
 
 ### Do not run the tests on the branch you are reviewing
 
