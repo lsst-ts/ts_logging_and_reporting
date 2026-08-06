@@ -1,12 +1,9 @@
 # Logging
 
-This document describes how the backend logs: where the configuration
-lives and why it is shared, what `LOG_LEVEL` does, how a trace ID gets
-onto every record, what each layer logs at which level, and what
-`CRITICAL` is reserved for.
+This document describes how the backend logs: how the logger is
+configured, how trace_id correlates responses and what each layer
+logs at what level.
 
-For the layering it describes — services, adapters, the cache and the
-refresh worker — see `doc/service-adapter-infrastructure.md`.
 
 ---
 
@@ -20,63 +17,51 @@ different kinds of process need identical configuration:
 |---|---|
 | The API | `main.py`, at import |
 | The refresh worker | `run_refresh_worker.py`, at import |
-| Each map-render worker | `WorkerPoolMixin`'s pool initialiser |
+| Each WorkerPoolMixin worker | `WorkerPoolMixin`'s pool initialiser |
 
-The third is what forces the issue. Pool workers are forked from the
-forkserver, which imports only the preload modules and never runs an
-entrypoint, so a worker that does not configure logging itself sends its
-debug and info records nowhere at all, and its warnings fall through to
-`logging.lastResort` without the application's format.
-
-Every module takes `logging.getLogger(__name__)`. Nothing sets a level
-on its own logger, and nothing logs through `uvicorn.error`.
+This exposes a `logging_config.configure_logging` that should be run
+at process startup. Every module then uses `logging.getLogger(__name__)`
+to get its own `logger` which records the name of the module logging
+each record.
 
 ---
 
 ## 2. Level
 
-`LOG_LEVEL` sets the level for the application *and* for uvicorn, so the
-access and error logs move with everything else rather than sitting at a
-fixed level of their own. `log_level()` is the single reader for both.
+The `LOG_LEVEL` environmental variable sets the level for the application
+and uvicorn. `logging_configlog_level()` is a helper to ensure this is
+a useful value.
 
-It validates rather than passing the value through: unset, blank, or a
-name outside `LOG_LEVELS` falls back to `INFO`. Both consumers fail hard
-on a bad value — docker compose expands an unset variable to an empty
-string, which `basicConfig` rejects outright, and a level name uvicorn
-does not recognise raises `KeyError` and takes the server down at
-startup — so the fallback is worth more than the strictness. A value that
-*was* set but is not understood is warned about once logging is up, so
-the fallback is not silent.
+`LOG_LEVEL` must match uvicorn's accepted set: `CRITICAL`, `ERROR`,
+`WARNING`, `INFO`, `DEBUG` - values outside this range will warn on
+server startup, and default to `INFO`
 
-`LOG_LEVELS` matches uvicorn's accepted set: `CRITICAL`, `ERROR`,
-`WARNING`, `INFO`, `DEBUG`.
 
 ---
 
 ## 3. Trace IDs
 
-Records are formatted as:
+Records include a trace_id are formatted as:
 
 ```
-LEVEL [logger name] [trace id] message
+LEVEL [logger name] [trace_id] message
 ```
 
 `TraceIdFilter` is attached to the root *handler* rather than to any
 logger, so it stamps every record that reaches it whatever emitted it,
 including records from libraries, and an ordinary `logger.debug(...)`
 call anywhere in the tree carries one without doing anything. A record
-logged outside a traced unit of work shows `-` (`NO_TRACE_ID`).
+logged outside a traced unit of work shows `-` (`NO_TRACE_ID`) instead.
 
-### What a "traced unit of work" is
+### What is a "traced unit of work"?
 
-A request or a refresh cycle — which is why it is a trace ID and not a
-request ID:
+A traced unit of work is either a request or a run of the RefreshWorker
 
-- `RequestLoggingMiddleware` sets one per request, before `call_next`,
-  so the downstream task copies a context that already has it.
+- `RequestLoggingMiddleware` sets one per request, so all Services,
+  Adapters, and any other logging associated with that request shares
+  a tag
 - `RefreshWorker._refresh_cycle` sets one per cycle, so the cycle's own
-  lines and everything its adapters log underneath it share a tag. The
-  worker clears it before the stopped line, which belongs to no cycle.
+  lines and everything its adapters log underneath it share a tag.
 
 ### Crossing concurrency boundaries
 
@@ -89,7 +74,7 @@ application uses, so both are bridged explicitly:
 | `WorkerPoolMixin.run_in_worker` → process | Context does not survive pickling, so the ID is passed as a call argument and re-established inside the worker. |
 
 Anything else that hands work to a thread or a process has to do the
-same, or its records will be attributed to no request.
+same, or its records will be attributed to no trace_id.
 
 ---
 
@@ -97,8 +82,8 @@ same, or its records will be attributed to no request.
 
 | Layer | Info | Debug |
 |---|---|---|
-| `RequestLoggingMiddleware` | arrival, with the query string | completion, with status and duration |
-| `CachedAdapter` | — | per-key hit/miss with entry size, store with size and TTL, per-fetch cache-hit summary, time spent waiting on another request's single-flight lock |
+| `RequestLoggingMiddleware` | arrival, with query string | completion, with status and duration |
+| `CachedAdapter` | — | verbose cache internals |
 | `RestClient` | — | every GET and POST, with status and duration |
 | Services | one completion line per request, with counts | — |
 | `RefreshWorker` | cycle start, cycle duration with success/failure counts, dayobs rollover | — |
@@ -107,34 +92,27 @@ same, or its records will be attributed to no request.
 The cache and transport layers are the noisy ones, and both are entirely
 debug: in normal operation they are silent, and turning `LOG_LEVEL` down
 to `DEBUG` is what answers "was this served from Redis or fetched?" and
-"which upstream is slow?". Their debug calls are guarded with
-`logger.isEnabledFor(logging.DEBUG)`, so neither the f-strings nor the
-payload summaries are built when debug is off.
+"which upstream is slow?". 
 
-`/health` is logged by neither request line: the Kubernetes readiness and
-liveness probes hit it often enough to drown everything else.
 
 ### Durations that warn on their own
 
 Four thresholds escalate to a warning regardless of level, so a
 degradation is visible without anyone having enabled debug first:
 
-| Threshold | Where | Default |
-|---|---|---|
-| `SLOW_REQUEST_SECONDS` | `middleware/request_logging.py` | 10 s |
-| `RestClient.SLOW_REQUEST_SECONDS` | `adapters/base_clients.py` | 10 s |
-| `WorkerPoolMixin.SLOW_CALL_SECONDS` | `services/worker_pool_mixin.py` | 30 s |
-| `SLOW_CYCLE_FRACTION` of the interval | `refresh_worker.py` | 50% |
+| Threshold | Where | What | Default |
+|---|---|---|---|
+| `SLOW_REQUEST_SECONDS` | `middleware/request_logging.py` | Time in a request | 10 s |
+| `RestClient.SLOW_REQUEST_SECONDS` | `adapters/base_clients.py` | Time to complete an upstream request | 10 s |
+| `WorkerPoolMixin.SLOW_CALL_SECONDS` | `services/worker_pool_mixin.py` | Time for a worker to complete | 30 s |
+| `SLOW_CYCLE_FRACTION` of the interval | `refresh_worker.py` | Portion of the RefreshWorker interval taken for one cycle | 50% |
 
-The slow-request line repeats the query string, so a slow request is
-actionable from that one line without going back for the arrival line.
 
 ### Request logging is middleware, and outermost
 
 Logging requests in one middleware rather than in each endpoint covers
 the requests that never reach a service — FastAPI's 422 for a bad
-parameter, or a rejection from `DayobsValidationMiddleware` — which a
-handler is by definition not running to log.
+parameter, or a rejection from `DayobsValidationMiddleware`.
 
 `RequestLoggingMiddleware` is also what establishes the trace ID for a
 request ([§3](#3-trace-ids)): it calls `set_trace_id` before `call_next`,
@@ -146,8 +124,10 @@ logs two lines; it is the one that makes every other line attributable.
 Both jobs want it outermost, and it is added last in `main.py` to get
 there: its timing covers dayobs validation, CORS and cache-control rather
 than just the handler, and any record those middlewares emit is inside
-the traced region. The corollary is that a request it skips is a request
-with no trace ID, which is why the skip list is only `/health`.
+the traced region.
+
+`/health` is explicitly not logged by neither request line: the Kubernetes
+readiness and liveness probes hit it often enough to drown everything else.
 
 ---
 
@@ -167,11 +147,6 @@ Keeping a level for these means they stay visible at whatever level a
 deployment runs at, and are not mixed in with the ordinary upstream
 failures that `logger.exception` reports at error.
 
-None of the four changes what the client sees. In particular
-`Service.handle_request` catches `redis.RedisError` ahead of its generic
-handler purely so it can be logged this way; the status is the same 500
-the generic branch produces, and the detail is unchanged.
-
 ---
 
 ## 6. Reading the logs
@@ -183,14 +158,6 @@ trace ID. The arrival line gives you both the ID and the query:
 INFO [.....middleware.request_logging] [4f2a91c3] Fetching /exposures with dayObsStart=20250101&dayObsEnd=20250108&instrument=lsstcam
 ```
 
-```
-grep '\[4f2a91c3\]' backend.log
-```
+Grepping or otherwise searching by `[4f2a91c3]` here would show you only the relevant logs for this query.
 
-That will include the records from any thread `fetch_concurrently`
-started and any map render that ran in a worker process, since both carry
-the ID across ([§3](#3-trace-ids)).
 
-To see cache and upstream behaviour for a request, run the process with
-`LOG_LEVEL=DEBUG` and filter the same way — the hit/miss lines name the
-full cache key, so they line up with what `redis-cli --scan` shows.
