@@ -6,7 +6,7 @@ have to write to add a new endpoint.
 
 ---
 
-## 1. Overview: services, adapters, and the request path
+## 1. Overview: services, adapters, and middleware
 
 The backend has two layers between a FastAPI route and the outside
 world.
@@ -29,44 +29,22 @@ HTTP request to an upstream themselves.
 The consequences worth internalising:
 
 - Caching is a property of the *source*, not of the *endpoint*. Two
-  endpoints backed by the same upstream share one cache entry — for
+  endpoints backed by the same upstream can share one cache entry — for
   example `/exposures` and `/data-log` both read the single
   `consdb_exposures` entry for a night, projecting different columns
   from it.
 - Cache entries are per-dayobs buckets, so a request for a five-night
-  range is five independent lookups and only the uncached nights cost
+  range is five independent cache lookups and only the uncached nights cost
   an upstream call. A range that overlaps a previously requested range
   reuses the overlap.
 - Anything expensive belongs on the adapter side of the line, so that
   it lands in the cache. Anything that depends on the request's exact
   parameters belongs on the service side.
 
-The code layout mirrors this split:
-
-```
-python/lsst/ts/logging_and_reporting/
-├── main.py                  FastAPI app: routes, middleware registration
-├── cache_ttl.py             all TTL constants (Redis and client)
-├── redis_client.py          the shared Redis client
-├── refresh_worker.py        background cache-warming loop
-├── run_refresh_worker.py    worker process entrypoint
-├── adapters/
-│   ├── __init__.py          factory exports + the refresh-worker registry
-│   ├── base_adapters.py     cache bases: the cache loop lives here
-│   ├── base_clients.py      transport clients: RestClient, SqlClient
-│   ├── mixins.py            cross-adapter behaviour (TTL policy, auth, …)
-│   └── <source>.py          one concrete adapter per upstream source
-├── services/
-│   ├── base_service.py      Service ABC: error mapping, concurrent fetch
-│   └── <endpoint>.py        one service per endpoint
-├── middleware/              request logging, dayobs validation, Cache-Control
-└── utils/                   dayobs maths, collation, serialisation, auth,
-                             logging configuration
-```
 
 Three middlewares sit in front of the routes:
 `RequestLoggingMiddleware` logs each request, times it, and tags
-everything it logs with a trace ID (`doc/logging.md`),
+everything it logs with a trace ID (see `doc/logging.md`),
 `DayobsValidationMiddleware`
 rejects malformed or inverted dayobs ranges before they reach a service,
 and `CacheControlMiddleware` sets the response's `Cache-Control` header
@@ -95,36 +73,35 @@ the `_partition_by_field` helper ([§9](#9-shared-helpers)). The three
 differ only in what a key *is*, their public interface, and how a
 public call expands into a list of keys.
 
+If the upstream data the adapter is responsible for is based purely
+on a dayobs range, use `DayobsCachedAdapter`.
 Use `InstrumentDayobsCachedAdapter` when the upstream query is
-per-instrument and cannot be shared. When the upstream returns all
-instruments in one response (or is not based on instruments) it 
-is cheaper to use `DayobsCachedAdapter` and let the services 
-filter — `ExposurelogCachedAdapter` does exactly this, so 
-one fetch and one refresh cover every instrument. For adapters
-which are not based on a dayobs range, use `IdCachedAdapter`
-which allows you to use an arbitrary, opaque ID for each 
+per-instrument and cannot be shared (if the upstream returns all
+instruments in one response or is not based on instruments it
+is cheaper to use `DayobsCachedAdapter` and let the services
+filter).
+For adapters which are not based on a dayobs range, use `IdCachedAdapter`
+which allows you to use an arbitrary, opaque ID for each
 element you need to cache.
 
 **A transport client** (`adapters/base_clients.py`) supplies the request
 machinery. `RestClient` provides server-URL resolution, auth token
-retrieval, timeouts, `_get_json`, `_post_json`, and
-`_get_json_paged`. `SqlClient` extends it with ConsDB's `/consdb/query`
-endpoint and row shaping. An adapter with no HTTP upstream (the almanac,
-computed locally with astroplan; expected exposures, read via
-`rubin_sim.sim_archive`) simply has no client.
+retrieval, timeouts, and get/post helpers. `SqlClient` extends
+it with ConsDB's `/consdb/query` endpoint and row shaping. An adapter
+with no HTTP upstream simply has no client.
 
 **Zero or more mixins** (`adapters/mixins.py`) supply cross-cutting
 behaviour: `MutableDataMixin` (TTL policy, [§6](#6-ttls-three-data-kinds-two-tiers)),
-`JiraApiMixin` (Jira server resolution and Basic auth),
-`ConsdbSqlMixin` (request validation and duplicate-column merging for
-ConsDB SQL), `RubinNightsClientsMixin` (lazily built, process-cached
-`rubin_nights` connection clients).
+`JiraApiMixin` (Jira server resolution and Basic auth) etc. These are all 
+optional, and if you find yourself writing code shared between more than one 
+adapter you should consider making it a mixin.
 
-The declaration order is a real constraint, not a style choice —
+The declaration order is a real constraint, not a stylistic choice -
 Python's MRO resolves left to right, so **mixins first, then the client,
 then the cache base**:
 
 ```python
+# Examples
 class NightReportCachedAdapter(RestClient, DayobsCachedAdapter): ...
 class ExposurelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapter): ...
 class JiraObsCachedAdapter(JiraApiMixin, MutableDataMixin, RestClient, DayobsCachedAdapter): ...
@@ -139,20 +116,16 @@ class ZephyrAdapter(MutableDataMixin, RestClient, IdCachedAdapter): ...
 One service per endpoint, in `services/<endpoint>.py`, subclassing
 `Service` (`services/base_service.py`). Where an adapter is assembled
 from several collaborating classes, a service is a single class with a
-small fixed surface: the variation between services is in what they
-collate, not in how they are built.
-
-**`handle(...)`** *(abstract)* — the work of one request. Each subclass
-declares its own typed signature; the base class deliberately
-prescribes no parameters, since every endpoint's query parameters
-differ. The body is generally the same three moves: fetch from the
-adapter(s), merge, and return `self.collate_response(...)`.
+small fixed surface.
 
 **`handle_request(...)`** *(concrete)* — what the endpoint actually
 calls. It delegates to `handle` and converts anything raised into an
-HTTP response ([§13](#13-failure-semantics)). Endpoints must never call
-`handle` directly: that bypasses the error handling, so an 
-upstream failure surfaces as an unlogged 500 instead of a 502.
+HTTP response ([§13](#13-failure-semantics)). It should not usually
+be subclassed.
+
+**`handle(...)`** *(abstract)* — the work of one request.
+The body is generally the same three moves: fetch from the
+adapter(s), merge, and return `self.collate_response(...)`.
 
 **`collate_response(data)`** *(abstract)* — turns the merged data into
 the response payload. Most services return records in a
@@ -164,25 +137,16 @@ per-dayobs adapter data. A service may also give the method
 keyword-only arguments beyond `data` — `VisitMapsService` passes
 `instrument` and `applet_mode` — since only its own `handle` calls it.
 
-**`fetch_concurrently(tasks)`** *(concrete helper)* — runs several
-independent fetches at once, returning each one's result or its
-exception ([§9](#9-shared-helpers)).
 
 ### Services that do CPU-bound work
 
-Waiting on an upstream is what most services do, and threads are right
-for it — that is what `fetch_concurrently` uses. Work that *computes*
-rather than waits is the opposite case: under the GIL a thread buys no
-throughput at all, and the API process spends the whole render unable to
-serve anything else.
+For services that perform heavy local CPU work, a `WorkerPoolMixin`
+is provided to simplify performing that work in another process,
+preventing a single slow thread from causing performance degradations
+in other concurrent threads.
 
-Such a service mixes in `WorkerPoolMixin`
-(`services/worker_pool_mixin.py`) ahead of `Service`, and calls
-`run_in_worker(func, *args)` instead of calling `func` directly. Each
-service gets its own pool of worker processes, so a burst on one
-endpoint cannot take capacity from another. Both visit map services use it —
-`StaticVisitMapService` for the healpix PNG, `VisitMapsService` for the
-Bokeh document.
+This is currently used by both Visit Map services to generate their
+outputs using `self.run_in_worker`.
 
 ```python
 class StaticVisitMapService(WorkerPoolMixin, Service):
@@ -247,7 +211,7 @@ def get_night_report_service() -> NightReportService:
 ```
 
 That constructor — one named, typed, `None`-defaulting parameter per
-adapter — and the `functools.cache` factory are the standard
+adapter — and the `functools.cache` factory are the standard dependency injection
 construction idiom, shared with the adapter layer and described in
 [§7](#7-dependency-injection).
 
@@ -260,10 +224,6 @@ construction idiom, shared with the adapter layer and described in
 - **A service holds no per-request state.** Instances are shared across
   concurrent requests ([§7](#7-dependency-injection)); everything a
   request needs travels through arguments and return values.
-- **A service decides which of its sources are essential.** With
-  multiple adapters, some failures should fail the request and others
-  should degrade into an error field
-  ([§13](#13-failure-semantics)).
 
 ### Why both Service.handle and Service.collate_response?
 
@@ -339,7 +299,8 @@ Contracts that fall out of this, and that new adapters must respect:
 key forever; it must exceed the slowest expected upstream fetch. If a
 lock does expire mid-fetch and another request re-acquires it, the
 original holder's `_release_lock` deletes the new holder's lock — the
-cost is at worst one redundant upstream call.
+cost is at worst one redundant upstream call and increased latency,
+rather than potential data corruption or loss.
 
 ---
 
@@ -351,7 +312,7 @@ opaque ID
 ```
 adapter:<adapter name>:<key>                the entry
 lock:adapter:<adapter name>:<key>           its single-flight lock
-# e.g., 
+# e.g.,
 adapter:nightreport:20250101                DayobsCachedAdapter
 adapter:consdb_exposures:lsstcam:20250101   InstrumentDayobsCachedAdapter
 adapter:zephyr:BLOCK-T123                   IdCachedAdapter
@@ -388,7 +349,7 @@ Nothing in the cache layer depends on the client being a real
   read misses and every write is dropped, so the app runs as though the
   cache were permanently empty. Use it to observe raw upstream
   behaviour — timings, request volume, error handling — without
-  stopping the Redis server or changing any code.
+  changing any code.
 - **`FakeRedis`** (`tests/conftest.py`), exposed as the `fake_redis`
   fixture. An in-memory cache faithful enough to test caching
   behaviour against: entries really expire, the TTL used for each key
@@ -429,10 +390,7 @@ else.
 `TODAY_TTL` doubles as the `RefreshWorker`'s default interval, so a
 client is never served data staler than one refresh cycle.
 `TODAY_TTL_REDIS` must comfortably exceed that interval so today's entry
-cannot expire between cycles; since the worker overwrites the entry
-every interval regardless of remaining TTL, its length does not add
-staleness — it only bounds how stale the entry can get if the worker
-stalls entirely.
+cannot expire between cycles.
 
 ### How an adapter picks its TTL
 
@@ -477,7 +435,7 @@ unless something has gone _drastically_ wrong, so it returns
 ## 7. Dependency injection
 
 All layers use the same pattern: a process-wide singleton with an
-override seam for tests.
+override path for tests.
 
 **Endpoint → service** uses FastAPI's `Depends`:
 
@@ -520,9 +478,7 @@ def get_visit_overhead_adapter() -> VisitOverheadAdapter:
 Every adapter takes the Redis client as its first constructor argument;
 `RestClient` subclasses accept an optional `server_url` after it
 (defaulting to the deployment's resolved server —
-[§15](#15-upstream-authentication-and-server-resolution)), and
-individual adapters add their own tuning parameters — page size, record
-limit, observatory site.
+[§15](#15-upstream-authentication-and-server-resolution))
 
 ### Singletons lifetime and shared state.
 
@@ -534,9 +490,7 @@ to a critical requirement:
 
 Everything a request needs flows through arguments and return values.
 What instances legitimately hold is per-process configuration (server URL,
-page size, a composed adapter) and lazily built shared resources —
-`functools.cached_property` for the `rubin_nights` clients, so credential
-discovery happens once rather than per fetch.
+page size) and lazily built shared resources — composed adapters, `rubin_nights` clients etc.
 
 ---
 
@@ -563,8 +517,7 @@ Because `fetch_concurrently` returns either a result or the exception
 per task ([§9](#9-shared-helpers)), the service is able to decide which sources
 are essential. In the example `ExposuresService` a ConsDB failure re-raises and fails the request —
 exposures are the payload — while dome and time-accounting failures
-degrade into `open_dome_error` / `time_accounting_error` fields, so a
-flaky EFD does not take the endpoint down. `BlockDetailsService` uses
+degrade into `open_dome_error` / `time_accounting_error` field. `BlockDetailsService` uses
 the same helper across Zephyr and Jira, reporting a single-source
 failure in `errors` and failing only if both sources fail.
 
@@ -604,7 +557,7 @@ Composition is worth reaching for when the derived value is expensive
 *and* reusable. If it is cheap, or specific to one endpoint's
 parameters, do it in the service instead — `ExposuresService`'s
 twilight-windowed reduction over the cached overhead rows is exactly
-that case, since the window depends on the requested range.
+that case, since the window value depends on the requested range.
 
 ---
 
@@ -618,8 +571,8 @@ zero-argument thunks (for example, adapter.fetch lambdas)
 on a `ThreadPoolExecutor` sized to the number of tasks, and maps 
 each name to its return value *or to the exception it raised*. 
 Callers must therefore `isinstance(result, Exception)`-check
-before use — it lets one service treat a failure as
-fatal and another treat it as degradable.
+before use — it a service treat a failure of one adapter as fatal
+and a different adapter as recoverable.
 
 **`CachedAdapter._partition_by_field(rows, key="day_obs") -> dict`**
 buckets a flat list of rows by a field value or by a callable applied to
@@ -664,7 +617,7 @@ anything derived from a DataFrame before it is returned from
 ## 10. Worked example: a `/night-reports` request end to end
 
 This is the simplest complete chain in the codebase: one service, one
-adapter, no instrument dimension, no mixins. Take the request
+adapter, no instrument, no mixins. Take the request
 
 ```
 GET /night-reports?dayObsStart=20250101&dayObsEnd=20250104
@@ -682,7 +635,8 @@ route calls `service.handle_request(20250101, 20250104)`.
 **2 · `Service.handle_request(*args)` → `dict`** — passes straight
 through to `handle`, existing only to map failures: `HTTPException`
 re-raised untouched, `requests.RequestException` → 502, anything else →
-500, each logged with the service name
+500, each logged as a traceback and a generic error message containing
+the service name sent to the user
 ([§13](#13-failure-semantics)).
 
 **3 · `NightReportService.handle(20250101, 20250104)` → `dict`** —
@@ -774,7 +728,7 @@ Create `adapters/<source>.py`.
 1. **Choose a cache base** by key shape (table in
    [§2](#2-anatomy-of-an-adapter-cache-base--client--mixins)), plus a
    client if the source is REST or ConsDB SQL, plus any mixins —
-   declared in order mixins-first, client, base last.
+   declared in order mixins-first, then client, base last.
 2. **Set `name`** to a unique, stable identifier. It namespaces the
    cache keys and log messages.
 3. **Implement the fetch method:** `_fetch_run(run_start, run_end)` for
@@ -794,7 +748,7 @@ Create `adapters/<source>.py`.
 - `MutableDataMixin` if records can be edited after the fact.
 - `__init__` for configuration (page size, limits, a composed adapter);
   call `super().__init__(redis, ...)` first.
-- `_ttl` if neither standard policy fits (e.g., almanac).
+- `_ttl` if neither standard policy fits.
 - `auth_source` and/or a `server` property for a non-default upstream
   (e.g., Zephyr, Jira) —
   [§15](#15-upstream-authentication-and-server-resolution).
@@ -813,7 +767,7 @@ Create `services/<endpoint>.py`.
 1. **Subclass `Service`.**
 2. **`__init__`** with one named, typed, `None`-defaulting parameter per
    adapter, each falling back to its factory.
-3. **`handle(...)`** with the endpoint's own typed signature. 
+3. **`handle(...)`** with the endpoint's own typed signature.
    This should : fetch, merge, return `self.collate_response(...)`. Use
    `fetch_concurrently` when there is more than one independent fetch.
 4. **`collate_response(data)`** producing the response payload
@@ -887,14 +841,14 @@ test alongside the existing exceptional cases.
 Today's entry is the hot key: every user looking at the current night
 wants it, and it is the one entry that keeps changing. Left to demand,
 it would expire every `TODAY_TTL_REDIS` and the next arrival would pay
-the full upstream cost — repeatedly, 24/7. The refresh worker
+the full upstream cost. The refresh worker
 keeps it warm so that in normal operation a request for today never
 triggers an upstream fetch.
 
 ### The cycle
 
-`RefreshWorker.run()` executes `_refresh_cycle` immediately — so a
-deploy or restart warms the cache at once rather than after one idle
+`RefreshWorker.run()` executes `_refresh_cycle` immediately on startup — so
+a deploy or restart warms the cache at once rather than after one idle
 interval — and then repeats it every `interval_seconds` (default
 `TODAY_TTL`, 5 minutes). Each subsequent cycle starts one interval after
 the *previous cycle started*: the elapsed run time is deducted from the
@@ -904,37 +858,12 @@ the next.
 Each cycle calls `adapter.refresh(today)` on every registered adapter,
 in registration order. `refresh` is **fetch-then-overwrite**: it fetches
 fresh data first and only then replaces the entry with a single `SET`.
-The old value is never deleted ahead of the fetch, so a request arriving
-mid-refresh is served the previous value instead of falling into a
-cold-miss window, and a failed fetch leaves the existing entry intact.
-This is also why `refresh` bypasses the single-flight lock — it never
-empties the cache, so there is no stampede to prevent, and the worst
-case against a racing cold fetch is one redundant upstream call.
-`InstrumentDayobsCachedAdapter.refresh` does this once per instrument,
-catching per instrument so one instrument's upstream failure does not
-stop the others.
-
-**`INSTRUMENTS`.** A refresh has no request to take an instrument from,
-so the set of instruments to warm is a class constant on
-`InstrumentDayobsCachedAdapter` — currently `("lsstcam", "latiss")`.
-The same constant is what `ConsdbSqlMixin._validate_instrument` checks
-a request against, so it carries two jobs at once: adding an instrument
-there both starts warming its entries every cycle and makes it an
-accepted value on the endpoints, while removing one stops the warming
-and turns previously valid requests into 422s. The values are
-lower-case because they are used verbatim in cache keys
-(`adapter:consdb_exposures:lsstcam:20250101`) and interpolated into
-ConsDB schema names (`cdb_lsstcam.exposure`); `fetch` lower-cases the
-incoming instrument before either use. Overriding the constant on a
-single adapter is legitimate if one source serves a different set.
+It also bypasses the existing cache and single-flight lock by design.
 
 **Rollover.** When the astronomical dayobs rolls over at 12:00 UTC, the
 worker refreshes the *previous* dayobs one final time before moving on.
 This finalisation pass fetches the now-complete night and re-stores it
-with the long historic TTL. Without it, yesterday's entry would still
-carry the short today TTL and expire minutes after rollover — a
-guaranteed daily cold miss on the most-viewed historical night, possibly
-serving a copy truncated at the last pre-rollover refresh.
+with the long historic TTL.
 
 **Failure isolation.** `_refresh_all` catches per adapter: one adapter's
 failure is logged with its `name` and the loop continues.
@@ -964,20 +893,9 @@ REFRESH_ADAPTERS = (
 )
 ```
 
-The list lives with the adapters rather than in the entrypoint because
-what is worth keeping warm is a property of the adapter, not of the
-process that starts the worker — and because adding an adapter then puts
-both lists in front of you. `run_refresh_worker.py` only calls each
-factory and hands the results to `RefreshWorker`.
-
 Order matters only for composed adapters — put a dependent adapter after
 the adapter it reads, which is why the tuple is not sorted to match
-`__all__`. Membership is not simply "every dayobs-cached adapter":
-`IdCachedAdapter` implementations (zephyr, jira_block) are **not**
-registered, since they have no "today" entry and no `refresh` method and
-their keys are only known from a request, and `almanac` is not either,
-being local computation cheap enough that warming it buys nothing.
-`tests/test_refresh_worker.py` asserts both exclusions.
+`__all__`. 
 
 ### In infrastructure
 
@@ -987,22 +905,15 @@ built from the same image and sharing one Redis:
 - `pyproject.toml` declares the console script
   `run_refresh_worker = lsst.ts.logging_and_reporting.run_refresh_worker:run_refresh_worker`.
 - `docker/refresh_worker.sh` sources the environment and runs it;
-  `docker/startup.sh` is the API container's equivalent. The Dockerfile
-  defaults to `docker/startup.sh`, so the worker container overrides the
-  command with `docker/refresh_worker.sh`.
-- `run_refresh_worker()` installs SIGTERM and SIGINT handlers that call
-  `worker.stop()`, so container shutdown lets the refresh in progress
-  finish instead of killing it mid-fetch.
 - If `ND_CACHING_DISABLE_REDIS` is set the worker logs a warning and
   exits immediately: with nothing to warm it would only add upstream
   load.
 
 **Exactly one instance must run per deployment.** Nothing in the process
 coordinates with peers, so a second instance merely duplicates upstream
-fetches (harmlessly — fetch-then-overwrite is idempotent — but
-wastefully). Uniqueness is the deployment's responsibility: a single
-`refresh-worker` container in docker-compose, a single-replica
-deployment in Kubernetes.
+fetches (harmlessly but wastefully). Uniqueness is the deployment's 
+responsibility: a single `refresh-worker` container in docker-compose, a 
+single-replica deployment in Kubernetes.
 
 ---
 
@@ -1023,8 +934,7 @@ an unknown instrument, or `WorkerPoolMixin`'s 503 when its pool is
 saturated) passes through untouched;
 `requests.RequestException` becomes a 502 naming the service; anything
 else becomes a 500. All are logged with a traceback, while
-a minimal error message is returned to the user. Endpoints
-**must** call `handle_request`, never `handle` to gain these benefits.
+a minimal generic error message is returned to the user. 
 
 `redis.RedisError` is caught separately, purely so it can be logged at
 `CRITICAL` (`doc/logging.md`) — an unreachable cache is a deployment
@@ -1102,14 +1012,14 @@ exactly:
 | USDF dev | `https://usdf-rsp-dev.slac.stanford.edu` |
 
 Anything else — including unset — makes `Server.get_url()` raise
-`ValueError`, which surfaces as a 500 from the endpoint that triggered
-the fetch. 
+`ValueError`, which is logged as `CRITICAL` and surfaces as a
+500 from the endpoint that triggered the fetch.
 
-Adapters whose upstream is *not* the local deployment override the
-`server` property instead: `ZephyrAdapter` returns the Zephyr Scale
-cloud API, and `JiraApiMixin` builds `https://{JIRA_API_HOSTNAME}`
-(raising a 500 if that variable is unset). The `server_url` constructor
-argument exists mainly so tests can point an adapter at a fake host.
+Adapters whose upstream is *not* the default RSP endpoint override the
+`server` property instead: `ZephyrAdapter` uses the Zephyr Scale
+cloud API, and `JiraApiMixin` uses `https://{JIRA_API_HOSTNAME}`.
+The `server_url` constructor argument exists mainly so tests can point
+an adapter at a fake host.
 
 ### Which token an adapter sends
 
@@ -1122,19 +1032,6 @@ one with the `auth_source` class attribute:
 | `"jira"` | `JIRA_API_TOKEN` | `JiraApiMixin` adapters (`jira_obs`, `jira_block`) |
 | `"zephyr"` | `ZEPHYR_API_TOKEN` | `ZephyrAdapter` |
 
-`retrieve_access_token(config)` reads the environment variable the
-source names and returns it. The backend authenticates as a
-**service account**, so there is no per-user token,
-and a caller's own `Authorization` header is never consulted.
-An unset variable is a misconfigured deployment rather than a
-bad request, so it raises a **500** — logged naming the source,
-returned to the client as a bare "Server configuration error". The failure 
-surfaces on the first fetch that needs the token, not at startup.
-
-Header construction differs by source: `RestClient._request_headers`
-uses `get_auth_header`, a bearer header, while `JiraApiMixin`
-overrides it to send `Authorization: Basic <token>` plus a JSON
-content type.
 
 ### Adding an adapter for a new upstream
 
@@ -1142,9 +1039,8 @@ If the source lives on the deployment and accepts the RSP token,
 subclass `RestClient` and set nothing — the defaults are correct. If it
 is external, override `server`, and add an entry to `AUTH_SOURCES` —
 an `env_var` naming its variable and a `label` for the error log —
-then point `auth_source` at it. Override
-`_request_headers` only if the upstream wants something other than a
-bearer token.
+then point `auth_source` at it. Override `_request_headers` only if the
+upstream wants something other than a bearer token.
 
 ---
 
@@ -1160,9 +1056,9 @@ bearer token.
 | `REDIS_HOST` | `localhost` | `redis_client.py` | Redis hostname (`redis` in the dev compose stack). |
 | `REDIS_PORT` | `6379` | `redis_client.py` | Redis port. |
 | `REDIS_DB` | `0` | `redis_client.py` | Redis logical database number. |
-| ND_CACHING_DISABLE_NGINX | unset | `frontend: docker/nginx.conf.template` | Any value other than empty or 0 disables the nginx cache |
-| `ND_CACHING_DISABLE_REDIS` | unset | `redis_client.py` | Any value other than empty or `0` disables caching entirely ([§5](#5-cache-keys-and-the-redis-client)) and makes the refresh worker exit at startup. |
+| `ND_CACHING_DISABLE_NGINX` | unset | `frontend: docker/nginx.conf.template` | Any value other than empty or 0 disables the nginx cache |
+| `ND_CACHING_DISABLE_REDIS` | unset | `redis_client.py` | Any value other than empty or `0` disables redis caching entirely and makes the refresh worker exit at startup. |
 | `LOG_LEVEL` | `INFO` | `utils/logging_config.py` | Log level for the entire app. |
 
-The API service needs all of these to be set correctly; the refresh worker 
+The API service needs all of these to be set correctly; the refresh worker
 needs the same set, since it drives the same adapters.
