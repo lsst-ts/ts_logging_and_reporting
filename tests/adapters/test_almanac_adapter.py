@@ -1,4 +1,5 @@
 import datetime as dt
+import threading
 from unittest.mock import Mock
 
 import pytest
@@ -31,6 +32,33 @@ class TestCaching:
         adapter._compute_night = Mock(side_effect=lambda dayobs: {"dayobs": dayobs})
         adapter.fetch(TODAY, TODAY)
         assert fake_redis.ttls[f"adapter:almanac:{TODAY}"] == HISTORIC_TTL_REDIS
+
+
+class TestSerialComputation:
+    """A fragmented request computes its runs on the calling thread."""
+
+    def test_parallel_runs_are_capped_at_one(self):
+        # Pinned deliberately rather than left at the base class
+        # default: these runs are local CPU work, so spreading them
+        # over threads only contends for the GIL and takes CPU from
+        # the threads serving other requests.
+        assert AlmanacCachedAdapter.MAX_PARALLEL_RUNS == 1
+
+    def test_split_runs_are_never_fanned_out(self, adapter):
+        threads = []
+
+        def compute(dayobs):
+            threads.append(threading.current_thread())
+            return {"dayobs": dayobs}
+
+        adapter._compute_night = Mock(side_effect=compute)
+        # Caching the middle day splits the next request's misses into
+        # two runs — the shape an adapter with a higher cap fans out.
+        adapter.fetch(20250102, 20250102)
+        adapter.fetch(20250101, 20250103)
+
+        assert adapter._compute_night.call_count == 3
+        assert set(threads) == {threading.current_thread()}
 
 
 class TestComputeNight:

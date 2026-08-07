@@ -1,8 +1,10 @@
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from lsst.ts.logging_and_reporting.adapters import base_adapters
 from lsst.ts.logging_and_reporting.adapters.base_adapters import (
     CachedAdapter,
     DayobsCachedAdapter,
@@ -64,11 +66,7 @@ def configured_adapter(fake_redis, adapter_class=RecordingAdapter, **overrides):
     Mirrors how a real adapter tunes it — as a class attribute on the
     subclass — rather than patching an instance.
     """
-    knobs = {
-        knob: overrides.pop(knob)
-        for knob in ("MAX_PARALLEL_RUNS",)
-        if knob in overrides
-    }
+    knobs = {knob: overrides.pop(knob) for knob in ("MAX_PARALLEL_RUNS",) if knob in overrides}
     subclass = type(f"Configured{adapter_class.__name__}", (adapter_class,), knobs)
     return subclass(fake_redis, **overrides)
 
@@ -88,12 +86,15 @@ def prime(adapter, *dayobs_list):
 class ConcurrencyProbe:
     """An ``on_fetch`` hook recording how many runs overlap.
 
-    Each call holds its slot briefly so genuinely parallel runs are
-    seen together; ``max_active`` is the high-water mark.
+    Each call holds its slot until ``group_size`` runs are inside the
+    hook together, so the overlap is forced rather than waited out: a
+    serial implementation never fills the group and breaks the barrier
+    instead of passing on a lucky schedule. ``max_active`` is the
+    high-water mark, which the cap must hold down.
     """
 
-    def __init__(self, hold=0.05):
-        self.hold = hold
+    def __init__(self, group_size, timeout=5):
+        self._barrier = threading.Barrier(group_size, timeout=timeout)
         self._mutex = threading.Lock()
         self.active = 0
         self.max_active = 0
@@ -102,7 +103,7 @@ class ConcurrencyProbe:
         with self._mutex:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
-        time.sleep(self.hold)
+        self._barrier.wait()
         with self._mutex:
             self.active -= 1
 
@@ -135,9 +136,7 @@ class RecordingInstrumentAdapter(InstrumentDayobsCachedAdapter):
 
     def _fetch_run(self, instrument, run_start, run_end):
         self.calls.append((instrument, run_start, run_end))
-        return {
-            dayobs: [{"day_obs": dayobs}] for dayobs in dayobs_range(run_start, run_end)
-        }
+        return {dayobs: [{"day_obs": dayobs}] for dayobs in dayobs_range(run_start, run_end)}
 
 
 class TestCacheLoop:
@@ -169,10 +168,7 @@ class TestCacheLoop:
         class StructuredAdapter(RecordingAdapter):
             def _fetch_run(self, run_start, run_end):
                 self.calls.append((run_start, run_end))
-                return {
-                    d: {"n": d, "items": [1, 2], "empty": None}
-                    for d in dayobs_range(run_start, run_end)
-                }
+                return {d: {"n": d, "items": [1, 2], "empty": None} for d in dayobs_range(run_start, run_end)}
 
         adapter = StructuredAdapter(fake_redis)
         first = adapter.fetch(20250101, 20250101)
@@ -282,9 +278,7 @@ class TestRunGrouping:
                 super()._fetch_run(run_start, run_end)
                 return {
                     dayobs: f"data-{dayobs}"
-                    for dayobs in dayobs_range(
-                        run_start, add_or_subtract_dayobs_days(run_end, 1)
-                    )
+                    for dayobs in dayobs_range(run_start, add_or_subtract_dayobs_days(run_end, 1))
                 }
 
         adapter = configured_adapter(fake_redis, adapter_class=OverreachingAdapter)
@@ -356,16 +350,19 @@ class TestRunParallelism:
 
     def test_concurrency_is_capped(self, fake_redis):
         adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=2)
-        prime(adapter, 20250102, 20250104, 20250106, 20250108)
-        probe = ConcurrencyProbe()
+        prime(adapter, 20250102, 20250104, 20250106)
+        # Runs are released in pairs, so the four runs make two whole
+        # groups and none is left waiting for a partner the cap will
+        # never let start.
+        probe = ConcurrencyProbe(group_size=2)
         adapter.on_fetch = probe
 
-        adapter.fetch(20250101, 20250109)
+        adapter.fetch(20250101, 20250107)
 
-        # Five runs, two at a time: the rest wait in the queue rather
-        # than being dropped or raising.
+        # Four runs, two at a time: the second pair waits in the queue
+        # rather than being dropped, raising, or joining the first.
         assert probe.max_active == 2
-        assert len(adapter.calls) == 5
+        assert len(adapter.calls) == 4
 
     def test_runs_over_the_cap_still_complete(self, fake_redis):
         adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=2)
@@ -431,18 +428,14 @@ class TestRunFailures:
     def test_one_failing_run_propagates(self, fake_redis):
         adapter = configured_adapter(fake_redis)
         prime(adapter, 20250103)
-        adapter.on_fetch = self.failing_run(
-            (20250104, 20250105), RuntimeError("upstream down")
-        )
+        adapter.on_fetch = self.failing_run((20250104, 20250105), RuntimeError("upstream down"))
         with pytest.raises(RuntimeError, match="upstream down"):
             adapter.fetch(20250101, 20250105)
 
     def test_nothing_from_a_failed_collation_is_cached(self, fake_redis):
         adapter = configured_adapter(fake_redis)
         prime(adapter, 20250103)
-        adapter.on_fetch = self.failing_run(
-            (20250104, 20250105), RuntimeError("upstream down")
-        )
+        adapter.on_fetch = self.failing_run((20250104, 20250105), RuntimeError("upstream down"))
         with pytest.raises(RuntimeError):
             adapter.fetch(20250101, 20250105)
         # The run that succeeded is discarded with the one that failed:
@@ -455,49 +448,73 @@ class TestRunFailures:
         adapter = configured_adapter(fake_redis)
         prime(adapter, 20250102)
 
+        later_failed = threading.Event()
+
         def fail_late_then_early(run_start, run_end):
             if run_start == 20250103:
+                later_failed.set()
                 raise ValueError("later run")
             if run_start == 20250101:
                 # Loses the race to raise, wins the report: the run
                 # order decides, not whichever thread failed first.
-                time.sleep(0.05)
+                assert later_failed.wait(timeout=5)
                 raise RuntimeError("earlier run")
 
         adapter.on_fetch = fail_late_then_early
         with pytest.raises(RuntimeError, match="earlier run"):
             adapter.fetch(20250101, 20250103)
 
-    def test_queued_runs_are_dropped_after_a_failure(self, fake_redis):
+    def test_queued_runs_are_dropped_after_a_failure(self, fake_redis, monkeypatch):
+        cancelled = threading.Event()
+        futures = []
+
+        class WatchedExecutor(ThreadPoolExecutor):
+            """Reports the moment a queued run is cancelled.
+
+            `Future.cancel` fires the done callbacks itself, so this
+            releases the held runs exactly when the cancellation has
+            landed rather than after a sleep long enough to hope it
+            has.
+            """
+
+            def submit(self, *args, **kwargs):
+                future = super().submit(*args, **kwargs)
+                future.add_done_callback(lambda done: cancelled.set() if done.cancelled() else None)
+                futures.append(future)
+                return future
+
+        monkeypatch.setattr(base_adapters, "ThreadPoolExecutor", WatchedExecutor)
+
         adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=2)
         prime(adapter, 20250102, 20250104, 20250106, 20250108, 20250110)
-        started = threading.Event()
 
         def fail_first_hold_the_rest(run_start, run_end):
             if run_start == 20250101:
                 raise RuntimeError("upstream down")
-            started.set()
-            # Occupies the workers long enough for the cancellation to
-            # land while the tail of the queue is still waiting.
-            time.sleep(0.3)
+            # Holding both workers until the cancellation lands is what
+            # keeps the tail of the queue provably unstarted: nothing
+            # can dequeue another run while they wait here.
+            cancelled.wait(timeout=5)
 
         adapter.on_fetch = fail_first_hold_the_rest
         with pytest.raises(RuntimeError, match="upstream down"):
             adapter.fetch(20250101, 20250111)
 
-        assert started.is_set()
-        # Six runs, two workers: whatever had already started is left
-        # to finish, but the last runs never reach upstream.
-        assert (20250109, 20250109) not in adapter.calls
-        assert (20250111, 20250111) not in adapter.calls
-        assert len(adapter.calls) < 6
+        # Vacuous otherwise: the held runs would be released by the
+        # timeout instead, and nothing would have been cancelled.
+        assert cancelled.is_set()
+        assert any(future.cancelled() for future in futures)
+        # Six runs, two workers, one of them freed by the failure: at
+        # most three can start, so the tail never reaches upstream.
+        assert (20250101, 20250101) in adapter.calls
+        assert len(adapter.calls) <= 3
+        for queued in [(20250107, 20250107), (20250109, 20250109), (20250111, 20250111)]:
+            assert queued not in adapter.calls
 
     def test_a_failure_in_the_inline_path_still_propagates(self, fake_redis):
         adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=1)
         prime(adapter, 20250102)
-        adapter.on_fetch = self.failing_run(
-            (20250103, 20250103), RuntimeError("upstream down")
-        )
+        adapter.on_fetch = self.failing_run((20250103, 20250103), RuntimeError("upstream down"))
         with pytest.raises(RuntimeError, match="upstream down"):
             adapter.fetch(20250101, 20250103)
 
@@ -506,9 +523,7 @@ class TestInstrumentRunSplitting:
     """The instrument base binds its instrument before the split."""
 
     def test_runs_split_per_instrument(self, fake_redis):
-        adapter = configured_adapter(
-            fake_redis, adapter_class=RecordingInstrumentAdapter
-        )
+        adapter = configured_adapter(fake_redis, adapter_class=RecordingInstrumentAdapter)
         adapter.fetch("lsstcam", 20250102, 20250102)
         adapter.calls.clear()
 
@@ -521,12 +536,8 @@ class TestInstrumentRunSplitting:
         assert result == {d: [{"day_obs": d}] for d in dayobs_range(20250101, 20250103)}
 
     def test_each_run_keeps_its_own_instrument(self, fake_redis):
-        adapter = configured_adapter(
-            fake_redis, adapter_class=RecordingInstrumentAdapter
-        )
-        adapter._fetch_from_source(
-            ["lsstcam:20250101", "latiss:20250101", "latiss:20250103"]
-        )
+        adapter = configured_adapter(fake_redis, adapter_class=RecordingInstrumentAdapter)
+        adapter._fetch_from_source(["lsstcam:20250101", "latiss:20250101", "latiss:20250103"])
 
         # The instrument is bound per run, so a run fanned out to a
         # thread cannot pick up the loop's last instrument instead.
@@ -537,9 +548,7 @@ class TestInstrumentRunSplitting:
         ]
 
     def test_runs_are_grouped_within_an_instrument_not_across(self, fake_redis):
-        adapter = configured_adapter(
-            fake_redis, adapter_class=RecordingInstrumentAdapter
-        )
+        adapter = configured_adapter(fake_redis, adapter_class=RecordingInstrumentAdapter)
         # Adjacent days, but different instruments: two runs, not one.
         fetched = adapter._fetch_from_source(["latiss:20250101", "lsstcam:20250102"])
         assert sorted(adapter.calls) == [
@@ -579,18 +588,12 @@ class TestTtlPolicy:
     def test_instrument_keys_get_today_ttl(self, fake_redis):
         adapter = RecordingInstrumentAdapter(fake_redis)
         adapter.fetch("lsstcam", TODAY, TODAY)
-        assert (
-            fake_redis.ttls[f"adapter:recording_instrument:lsstcam:{TODAY}"]
-            == TODAY_TTL_REDIS
-        )
+        assert fake_redis.ttls[f"adapter:recording_instrument:lsstcam:{TODAY}"] == TODAY_TTL_REDIS
 
     def test_instrument_keys_get_historic_ttl(self, fake_redis):
         adapter = RecordingInstrumentAdapter(fake_redis)
         adapter.fetch("lsstcam", 20200101, 20200101)
-        assert (
-            fake_redis.ttls["adapter:recording_instrument:lsstcam:20200101"]
-            == HISTORIC_TTL_REDIS
-        )
+        assert fake_redis.ttls["adapter:recording_instrument:lsstcam:20200101"] == HISTORIC_TTL_REDIS
 
     def test_mutable_mixin_keeps_today_ttl_for_instrument_keys(self, fake_redis):
         class MutableInstrumentAdapter(MutableDataMixin, RecordingInstrumentAdapter):
@@ -598,10 +601,7 @@ class TestTtlPolicy:
 
         adapter = MutableInstrumentAdapter(fake_redis)
         adapter.fetch("lsstcam", TODAY, TODAY)
-        assert (
-            fake_redis.ttls[f"adapter:recording_instrument:lsstcam:{TODAY}"]
-            == TODAY_TTL_REDIS
-        )
+        assert fake_redis.ttls[f"adapter:recording_instrument:lsstcam:{TODAY}"] == TODAY_TTL_REDIS
 
     def test_mutable_mixin_shortens_historical_instrument_ttl(self, fake_redis):
         class MutableInstrumentAdapter(MutableDataMixin, RecordingInstrumentAdapter):
@@ -609,10 +609,7 @@ class TestTtlPolicy:
 
         adapter = MutableInstrumentAdapter(fake_redis)
         adapter.fetch("lsstcam", 20200101, 20200101)
-        assert (
-            fake_redis.ttls["adapter:recording_instrument:lsstcam:20200101"]
-            == MUTABLE_TTL_REDIS
-        )
+        assert fake_redis.ttls["adapter:recording_instrument:lsstcam:20200101"] == MUTABLE_TTL_REDIS
 
 
 class TestIsToday:
@@ -733,9 +730,7 @@ class TestPartialLockCollision:
     def test_the_contended_key_is_left_out_of_the_fetch(self, fake_redis):
         adapter = RecordingAdapter(fake_redis)
         # A finishes while B is upstream for the keys it won.
-        adapter.on_fetch = lambda *_: self.store_as_request_a(
-            adapter, fake_redis, self.CONTENDED
-        )
+        adapter.on_fetch = lambda *_: self.store_as_request_a(adapter, fake_redis, self.CONTENDED)
         # Short-lived so a fetch ordered after the wait cannot hang.
         self.hold_lock(adapter, fake_redis, self.CONTENDED, ex=1.0)
 
@@ -768,18 +763,14 @@ class TestPartialLockCollision:
 
     def test_own_locks_are_released_before_waiting(self, fake_redis):
         adapter = RecordingAdapter(fake_redis)
-        adapter.on_fetch = lambda *_: self.store_as_request_a(
-            adapter, fake_redis, self.CONTENDED
-        )
+        adapter.on_fetch = lambda *_: self.store_as_request_a(adapter, fake_redis, self.CONTENDED)
         self.hold_lock(adapter, fake_redis, self.CONTENDED)
         still_held = []
         real_wait = adapter._wait_for_entry
 
         def recording_wait(key):
             still_held.extend(
-                day
-                for day in (20250104, 20250105)
-                if fake_redis.exists(adapter._lock_key(day))
+                day for day in (20250104, 20250105) if fake_redis.exists(adapter._lock_key(day))
             )
             return real_wait(key)
 
@@ -790,9 +781,7 @@ class TestPartialLockCollision:
         # your own is what lets two crossed requests deadlock.
         assert still_held == []
 
-    def test_orphaned_contended_lock_is_taken_over_after_the_partial_fetch(
-        self, fake_redis
-    ):
+    def test_orphaned_contended_lock_is_taken_over_after_the_partial_fetch(self, fake_redis):
         adapter = RecordingAdapter(fake_redis)
         # A died mid-fetch: lock about to expire, nothing stored.
         self.hold_lock(adapter, fake_redis, self.CONTENDED, ex=0.05)
@@ -821,16 +810,12 @@ class TestPartialLockCollision:
         result = adapter.fetch(20250103, 20250105)
 
         assert adapter.calls == []
-        assert result == {
-            d: f"from-request-a-{d}" for d in dayobs_range(20250103, 20250105)
-        }
+        assert result == {d: f"from-request-a-{d}" for d in dayobs_range(20250103, 20250105)}
 
     def test_a_won_key_cached_during_the_race_splits_the_fetch_run(self, fake_redis):
         adapter = RecordingAdapter(fake_redis)
         self.hold_lock(adapter, fake_redis, self.CONTENDED)
-        adapter.on_fetch = lambda *_: self.store_as_request_a(
-            adapter, fake_redis, self.CONTENDED
-        )
+        adapter.on_fetch = lambda *_: self.store_as_request_a(adapter, fake_redis, self.CONTENDED)
         real_acquire = adapter._acquire_lock
 
         def acquire_racing_with_another_store(key):
@@ -888,12 +873,8 @@ class TestConcurrentPartialOverlap:
         assert not request_a.is_alive() and not request_b.is_alive()
         # The shared key was fetched by A only.
         assert sorted(adapter.calls) == [(20250101, 20250103), (20250104, 20250105)]
-        assert results["a"] == {
-            d: f"data-{d}" for d in dayobs_range(20250101, 20250103)
-        }
-        assert results["b"] == {
-            d: f"data-{d}" for d in dayobs_range(20250103, 20250105)
-        }
+        assert results["a"] == {d: f"data-{d}" for d in dayobs_range(20250101, 20250103)}
+        assert results["b"] == {d: f"data-{d}" for d in dayobs_range(20250103, 20250105)}
 
     def test_crossed_key_order_does_not_deadlock(self, fake_redis):
         # Only ID keys can arrive in arbitrary order — dayobs ranges
