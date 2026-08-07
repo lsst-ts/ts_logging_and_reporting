@@ -35,6 +35,7 @@ from .middleware import (
     DayobsValidationMiddleware,
     RequestLoggingMiddleware,
 )
+from .redis_client import get_redis_client
 from .services.worker_pool_mixin import preload_worker_modules
 from .utils.logging_config import configure_logging
 
@@ -108,6 +109,20 @@ async def health():
     """Health check endpoint.
     Used by kubernetes readiness and liveness probes.
     """
+    return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/flush-redis")
+@app.get("/flush-redis/")
+def flush_redis():
+    """Empty the cache database, for performance testing only.
+
+    Temporary: `scripts/perf_test.py --use-endpoint-flush` uses this to
+    reach a Redis it has no `redis-cli` access to, such as one inside a
+    remote deployment. It is removed before the refactor merges.
+    """
+    get_redis_client().flushdb()
+    logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
 
 

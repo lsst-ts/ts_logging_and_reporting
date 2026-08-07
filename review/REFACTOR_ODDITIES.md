@@ -1184,6 +1184,14 @@ and the two scripts are the harnesses that produced the evidence. A single final
 commit removes the lot and does nothing else, so it can be taken after review,
 immediately before the epic merges.
 
+The same commit removes the **`/flush-redis` endpoint** (`main.py`), which issues
+a `FLUSHDB` against the cache database on request. It exists so `perf_test.py
+after --use-endpoint-flush` can reach the Redis of a backend it cannot run
+`redis-cli` against — a remote deployment, or one whose Redis is published only
+inside a container network. It is unauthenticated and destroys the whole cache,
+so it must not reach production; it is the one piece of the harness that lives in
+the application rather than in `scripts/`, which makes it the easiest to forget.
+
 ---
 
 ## 12. Serialisation fixes made in passing
