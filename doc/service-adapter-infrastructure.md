@@ -605,6 +605,13 @@ dayobs outside the request, which upstreams sometimes return at range
 boundaries. The seeding is what guarantees the "an entry for every
 requested key" contract from [§4](#4-the-single-flight-cache-loop).
 
+The adapter class attribute **`MAX_PARALLEL_RUNS`** (default `4`) caps how many
+of those runs are fetched at once per request. A single run — the most common
+case — is fetched inline on the calling thread; beyond that the runs go to a
+`ThreadPoolExecutor` which calls `fetch_run` concurrently. In the pathological
+event that a request requires > `MAX_PARALLEL_RUNS` upstream requests, the
+excess upstream requests will be placed in a queue.
+
 **`make_json_safe(obj)`** (`utils/serialization.py`) recursively
 converts numpy scalars, pandas timestamps and `NaT`, astropy `Time`
 objects, and non-finite floats into JSON-safe equivalents. Required for

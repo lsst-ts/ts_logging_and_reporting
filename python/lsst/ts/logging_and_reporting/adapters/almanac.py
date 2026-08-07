@@ -58,6 +58,10 @@ class AlmanacCachedAdapter(DayobsCachedAdapter):
 
     name = "almanac"
 
+    # Don't perform 'fetches' concurrently as they're just computation
+    # and just use local CPU
+    MAX_PARALLEL_RUNS = 1
+
     def __init__(self, redis: Any, site: str = "Rubin"):
         super().__init__(redis)
         self._site = site
@@ -74,7 +78,10 @@ class AlmanacCachedAdapter(DayobsCachedAdapter):
         return HISTORIC_TTL_REDIS
 
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, dict]:
-        return {dayobs: self._compute_night(dayobs) for dayobs in dayobs_range(run_start, run_end)}
+        return {
+            dayobs: self._compute_night(dayobs)
+            for dayobs in dayobs_range(run_start, run_end)
+        }
 
     def _compute_night(self, dayobs: int) -> dict:
         logger.debug(f"Computing almanac events for dayobs {dayobs}")
@@ -85,11 +92,17 @@ class AlmanacCachedAdapter(DayobsCachedAdapter):
                 Time(date, format="datetime", scale="utc", location=observer.location),
                 which="next",
             )
-            nau_twilight_morning = observer.twilight_morning_nautical(midnight, which="next")
-            nau_twilight_evening = observer.twilight_evening_nautical(midnight, which="previous")
+            nau_twilight_morning = observer.twilight_morning_nautical(
+                midnight, which="next"
+            )
+            nau_twilight_evening = observer.twilight_evening_nautical(
+                midnight, which="previous"
+            )
             return {
                 "dayobs": dayobs,
-                "night_hours": (nau_twilight_morning - nau_twilight_evening).to_value("hr"),
+                "night_hours": (nau_twilight_morning - nau_twilight_evening).to_value(
+                    "hr"
+                ),
                 "twilight_evening_18deg": _iso(
                     observer.twilight_evening_astronomical(midnight, which="previous")
                 ),
@@ -98,12 +111,24 @@ class AlmanacCachedAdapter(DayobsCachedAdapter):
                 ),
                 "twilight_evening_12deg": _iso(nau_twilight_evening),
                 "twilight_morning_12deg": _iso(nau_twilight_morning),
-                "twilight_evening_6deg": _iso(observer.twilight_evening_civil(midnight, which="previous")),
-                "twilight_morning_6deg": _iso(observer.twilight_morning_civil(midnight, which="next")),
-                "twilight_evening_0deg": _iso(observer.sun_set_time(midnight, which="previous")),
-                "twilight_morning_0deg": _iso(observer.sun_rise_time(midnight, which="next")),
-                "moon_rise_time": _iso(observer.moon_rise_time(midnight, which="nearest")),
-                "moon_set_time": _iso(observer.moon_set_time(midnight, which="nearest")),
+                "twilight_evening_6deg": _iso(
+                    observer.twilight_evening_civil(midnight, which="previous")
+                ),
+                "twilight_morning_6deg": _iso(
+                    observer.twilight_morning_civil(midnight, which="next")
+                ),
+                "twilight_evening_0deg": _iso(
+                    observer.sun_set_time(midnight, which="previous")
+                ),
+                "twilight_morning_0deg": _iso(
+                    observer.sun_rise_time(midnight, which="next")
+                ),
+                "moon_rise_time": _iso(
+                    observer.moon_rise_time(midnight, which="nearest")
+                ),
+                "moon_set_time": _iso(
+                    observer.moon_set_time(midnight, which="nearest")
+                ),
                 "moon_illumination": f"{observer.moon_illumination(midnight):.0%}",
             }
 

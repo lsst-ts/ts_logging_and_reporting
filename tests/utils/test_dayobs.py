@@ -85,7 +85,12 @@ class TestDayobsRange:
         assert dayobs_range(20250101, 20250103) == [20250101, 20250102, 20250103]
 
     def test_crosses_month_and_year(self):
-        assert dayobs_range(20241230, 20250102) == [20241230, 20241231, 20250101, 20250102]
+        assert dayobs_range(20241230, 20250102) == [
+            20241230,
+            20241231,
+            20250101,
+            20250102,
+        ]
 
     def test_single_day(self):
         assert dayobs_range(20250101, 20250101) == [20250101]
@@ -106,6 +111,18 @@ class TestContiguousRuns:
 
     def test_deduplicates(self):
         assert contiguous_runs([20250101, 20250101, 20250102]) == [(20250101, 20250102)]
+
+    def test_single_day(self):
+        assert contiguous_runs([20250101]) == [(20250101, 20250101)]
+
+    def test_a_single_absent_day_splits_a_run(self):
+        assert contiguous_runs([20250101, 20250103]) == [
+            (20250101, 20250101),
+            (20250103, 20250103),
+        ]
+
+    def test_calendar_aware_across_a_year(self):
+        assert contiguous_runs([20241231, 20250101]) == [(20241231, 20250101)]
 
 
 class TestDayobsAt:
@@ -154,7 +171,9 @@ class TestDayobsToUnixMs:
         assert dayobs_to_unix_ms(19700101, hour=3) == 3 * ONE_HOUR_UNIX_MS
 
     def test_matches_datetime_timestamp(self):
-        expected = int(dt.datetime(2025, 6, 15, 12, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        expected = int(
+            dt.datetime(2025, 6, 15, 12, tzinfo=dt.timezone.utc).timestamp() * 1000
+        )
         assert dayobs_to_unix_ms(20250615) == expected
 
 
@@ -163,5 +182,8 @@ class TestAlmanacToUnixMs:
         assert almanac_to_unix_ms("1970-01-02 00:00:00") == 24 * ONE_HOUR_UNIX_MS
 
     def test_matches_datetime_timestamp(self):
-        expected = int(dt.datetime(2025, 6, 15, 3, 30, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        expected = int(
+            dt.datetime(2025, 6, 15, 3, 30, 0, tzinfo=dt.timezone.utc).timestamp()
+            * 1000
+        )
         assert almanac_to_unix_ms("2025-06-15 03:30:00") == expected

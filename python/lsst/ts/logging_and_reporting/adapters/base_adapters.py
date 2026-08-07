@@ -22,12 +22,14 @@
 
 """Adapter base classes for the Redis-backed caching architecture."""
 
+import contextvars
 import json
 import logging
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from lsst.ts.logging_and_reporting.cache_ttl import (
@@ -80,6 +82,17 @@ class CachedAdapter:
     POLL_INTERVAL = 0.1
     """Sleep (seconds) between cache polls while another request
     holds the fetch lock for a key we need."""
+
+    MAX_PARALLEL_RUNS = 4
+    """Runs fetched concurrently when a request misses more than one.
+
+    Caps the threads one collation may start, so a fragmented range
+    cannot fan out without bound. Set to ``1`` on an adapter whose
+    runs gain nothing from overlapping — one whose `_fetch_run`
+    computes locally rather than waiting on an upstream, where extra
+    threads only contend for the GIL and take CPU from the threads
+    serving other requests.
+    """
 
     def __init__(self, redis: Any):
         self._redis = redis
@@ -137,25 +150,84 @@ class CachedAdapter:
     ) -> dict[int, Any]:
         """Seed each dayobs, then fill from one ``fetch_run`` per run.
 
-        Issues one fetch per contiguous run and merges each run's dayobs
-        partition back in.
+        Issues one fetch per contiguous run and merges each
+        run's dayobs partition back in. Only the requested dayobs are
+        kept, so a day an upstream returns outside the run's bounds is
+        discarded here rather than reaching the cache.
+
+        A single run is fetched on the calling thread, while multiple
+        runs use a `ThreadPoolExecutor` to split the work concurrently.
         """
         results: dict[int, Any] = {
             dayobs: self._empty_value() for dayobs in dayobs_list
         }
-        for run_start, run_end in contiguous_runs(dayobs_list):
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Fetching {self.name} for dayobs {run_start}..{run_end}")
-            fetched = fetch_run(run_start, run_end)
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Fetched {self.name} for dayobs {run_start}..{run_end}: "
-                    f"{_payload_summary(fetched)}"
-                )
+        runs = contiguous_runs(dayobs_list)
+        if len(runs) > 1 and self.MAX_PARALLEL_RUNS > 1:
+            payloads = self._fetch_runs_in_parallel(runs, fetch_run)
+        else:
+            payloads = [self._fetch_one_run(fetch_run, run) for run in runs]
+        for fetched in payloads:
             for dayobs, value in fetched.items():
                 if dayobs in results:
                     results[dayobs] = value
         return results
+
+    def _fetch_one_run(
+        self,
+        fetch_run: Callable[[int, int], dict[int, Any]],
+        run: tuple[int, int],
+    ) -> dict[int, Any]:
+        """Fetch one run's dayobs partition, with its debug logging."""
+        run_start, run_end = run
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Fetching {self.name} for dayobs {run_start}..{run_end}")
+        fetched = fetch_run(run_start, run_end)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Fetched {self.name} for dayobs {run_start}..{run_end}: "
+                f"{_payload_summary(fetched)}"
+            )
+        return fetched
+
+    def _fetch_runs_in_parallel(
+        self,
+        runs: list[tuple[int, int]],
+        fetch_run: Callable[[int, int], dict[int, Any]],
+    ) -> list[dict[int, Any]]:
+        """Fetch every run, up to `MAX_PARALLEL_RUNS` at a time.
+
+        Runs beyond the cap wait in the executor's queue and start as
+        workers free up. Each run is fetched under its own copy of the
+        calling context, so what a worker thread logs is still
+        attributed to the request that asked for it.
+
+        Returns the payloads in run order.
+        """
+        workers = min(len(runs), self.MAX_PARALLEL_RUNS)
+        logger.debug(
+            f"Fetching {len(runs)} {self.name} runs across {workers} thread(s)"
+        )
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(
+                    contextvars.copy_context().run, self._fetch_one_run, fetch_run, run
+                )
+                for run in runs
+            ]
+            for future in as_completed(futures):
+                if future.exception() is not None:
+                    # One failure fails the whole collation, so runs
+                    # still queued behind the cap are dropped instead
+                    # of being sent upstream for a discarded result.
+                    # Runs already started are left to finish; nothing
+                    # can interrupt a thread mid-request anyway.
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+        # Leaving the block waits for every run, so no thread outlives
+        # the collation. Workers take the queue in order, so anything
+        # cancelled sits after the failure and this re-raises the
+        # earliest failing run before reaching one.
+        return [future.result() for future in futures if not future.cancelled()]
 
     def _cache_key(self, key) -> str:
         """The Redis key for one entry, namespaced by adapter name.
