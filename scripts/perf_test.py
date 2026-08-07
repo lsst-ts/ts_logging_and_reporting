@@ -13,7 +13,10 @@ or equivalently::
     python -m lsst.ts.logging_and_reporting.run_logging_and_reporting
 
 The ``after`` mode additionally needs the Redis instance the backend is
-using, reachable by ``redis-cli`` (defaults: 127.0.0.1:6379).
+using, reachable by ``redis-cli`` (defaults: 127.0.0.1:6379). If it is
+not — a remote deployment, or a Redis published only inside a container
+network — pass ``--use-endpoint-flush`` and the flushes go through the
+backend's ``/flush-redis`` endpoint instead.
 
 Point this script at the backend directly (port 8080), never through
 nginx, so HTTP-layer caching does not contaminate the numbers.
@@ -237,6 +240,9 @@ DEFAULT_WORK_DIR = "./perf_test_working"
 # Only the TCP connection matters, so any cheap path will do and the
 # response, including a 404, is discarded.
 CONNECTION_WARMUP_PATH = "/health"
+# Backend-side FLUSHDB, used instead of redis-cli under
+# --use-endpoint-flush.
+FLUSH_PATH = "/flush-redis"
 
 
 def add_days(dayobs: int, days: int) -> int:
@@ -375,8 +381,22 @@ class Runner:
         self._thread_local = threading.local()
         self.redis_host = getattr(args, "redis_host", None)
         self.redis_port = getattr(args, "redis_port", None)
+        self.use_endpoint_flush = getattr(args, "use_endpoint_flush", False)
 
     def flush_redis(self):
+        if self.use_endpoint_flush:
+            self._flush_via_endpoint()
+        else:
+            self._flush_via_cli()
+
+    def _flush_via_endpoint(self):
+        """FLUSHDB through the backend, for a Redis we cannot reach."""
+        result = self.request(FLUSH_PATH, {})
+        if result["status"] != 200:
+            detail = result.get("error") or f"HTTP {result['status']}"
+            sys.exit(f"{self.base_url}{FLUSH_PATH} failed: {detail}")
+
+    def _flush_via_cli(self):
         result = subprocess.run(
             ["redis-cli", "-h", self.redis_host, "-p", str(self.redis_port), "FLUSHDB"],
             capture_output=True,
@@ -1165,6 +1185,15 @@ def main():
     add_run_args(after)
     after.add_argument("--redis-host", default="127.0.0.1")
     after.add_argument("--redis-port", type=int, default=6379)
+    after.add_argument(
+        "--use-endpoint-flush",
+        action="store_true",
+        help=(
+            f"Flush by requesting the backend's {FLUSH_PATH} endpoint instead of running "
+            "redis-cli, for a Redis this machine cannot reach directly (--redis-host and "
+            "--redis-port are then unused)"
+        ),
+    )
 
     combine = sub.add_parser("combine", help="Join per-scenario files into one result file")
     combine.add_argument("work_dir", help="Directory of per-scenario result files")
