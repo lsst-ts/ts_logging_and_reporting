@@ -916,12 +916,11 @@ pools are started and stopped by the application's lifespan hook, from the
 
 Two unrelated problems forced this, and neither is fixable with a thread. The
 renders are CPU-bound Python, so under the GIL a threadpool gives no throughput —
-FastAPI already ran these handlers in one, which is why ten concurrent requests
-cost very nearly ten times one. Separately, `build_static_visit_map` goes through
+FastAPI already ran these handlers in one. Separately, `build_static_visit_map` goes through
 pyplot's process-global active figure and axes, which healpy and maf both depend
 on: concurrent renders in one process overwrote each other, and during performance
 testing 92–98 of 100 runs returned an image that did not match the single-threaded
-result, about a quarter raising `IndexError` from inside healpy instead. Only
+result, with about a quarter raising `IndexError` from inside healpy. Only
 separate processes fix that one, since the state is per-process by construction.
 
 Four operational consequences:
@@ -943,12 +942,12 @@ Four operational consequences:
   `pool_workers` concurrent renders per map endpoint, and note that an OOM kill now
   costs one worker rather than the API process.
 - **These endpoints now shed load.** Each service admits `pool_workers + pool_queue`
-  requests — **8** on the current defaults — and refuses the rest with an immediate
+  requests — **24** on the current defaults — and refuses the rest with an immediate
   **503** rather than queueing them, since queued requests would occupy the
   threadpool workers every other endpoint needs. A render that outruns
   `pool_timeout` (default 180 s) gets a **504**. All of these were previously a slow
-  200, a 500, or a client timeout. However, even this quite low limit is
-  already guarded by nginx with `proxy_cache_lock on`
+  200, a 500, or a client timeout. Also, this limit is already guarded
+  by nginx with `proxy_cache_lock on`.
 - **`fork` is not used, deliberately.** The API process is multi-threaded by the
   time a request arrives, and forking a threaded process can deadlock on a lock held
   at fork time. `multiprocessing.Pool` rather than `ProcessPoolExecutor` for the same
