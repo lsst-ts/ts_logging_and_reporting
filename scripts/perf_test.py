@@ -21,6 +21,10 @@ backend's ``/flush-redis`` endpoint instead.
 Point this script at the backend directly (port 8080), never through
 nginx, so HTTP-layer caching does not contaminate the numbers.
 
+A backend sitting behind authentication needs a token: pass
+``--access-token`` or set ``ACCESS_TOKEN``, and every request — timed,
+priming and flush alike — carries it as ``Authorization: Bearer``.
+
 Modes
 -----
 baseline
@@ -378,6 +382,10 @@ class Runner:
         self.bursts = args.bursts
         self.burst_pause = args.burst_pause
         self.session = requests.Session()
+        # Set on the shared session, so _thread_session() copies it to
+        # every burst worker.
+        if getattr(args, "access_token", None):
+            self.session.headers["Authorization"] = f"Bearer {args.access_token}"
         self._thread_local = threading.local()
         self.redis_host = getattr(args, "redis_host", None)
         self.redis_port = getattr(args, "redis_port", None)
@@ -1139,6 +1147,14 @@ def main():
             help="First dayobs of the fixed historical test week (YYYYMMDD)",
         )
         p.add_argument("--instrument", default="LSSTCam")
+        p.add_argument(
+            "--access-token",
+            default=os.environ.get("ACCESS_TOKEN"),
+            help=(
+                "Bearer token sent as Authorization on every request, for a backend behind "
+                "authentication (default: the ACCESS_TOKEN environment variable)"
+            ),
+        )
         p.add_argument("--runs", type=int, default=DEFAULT_RUNS, help="Timed runs per scenario")
         p.add_argument(
             "--pause", type=float, default=DEFAULT_PAUSE, help="Seconds to sleep between timed runs"
