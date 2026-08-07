@@ -15,7 +15,15 @@ from lsst.ts.logging_and_reporting.cache_ttl import (
     MUTABLE_TTL_REDIS,
     TODAY_TTL_REDIS,
 )
-from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs, dayobs_range
+from lsst.ts.logging_and_reporting.utils.dayobs import (
+    add_or_subtract_dayobs_days,
+    current_dayobs,
+    dayobs_range,
+)
+from lsst.ts.logging_and_reporting.utils.logging_config import (
+    current_trace_id,
+    set_trace_id,
+)
 
 TODAY = current_dayobs()
 
@@ -29,6 +37,9 @@ class RecordingAdapter(DayobsCachedAdapter):
     def __init__(self, redis, delay=0.0, error=None, on_fetch=None):
         super().__init__(redis)
         self.calls = []
+        # The thread each _fetch_run ran on, in call order: what
+        # distinguishes a run fetched inline from one fanned out.
+        self.call_threads = []
         self.delay = delay
         self.error = error
         # Called while this request is "upstream", i.e. holding the
@@ -37,6 +48,7 @@ class RecordingAdapter(DayobsCachedAdapter):
 
     def _fetch_run(self, run_start, run_end):
         self.calls.append((run_start, run_end))
+        self.call_threads.append(threading.current_thread())
         if self.on_fetch is not None:
             self.on_fetch(run_start, run_end)
         if self.delay:
@@ -44,6 +56,55 @@ class RecordingAdapter(DayobsCachedAdapter):
         if self.error is not None:
             raise self.error
         return {dayobs: f"data-{dayobs}" for dayobs in dayobs_range(run_start, run_end)}
+
+
+def configured_adapter(fake_redis, adapter_class=RecordingAdapter, **overrides):
+    """Build an adapter subclass with `MAX_PARALLEL_RUNS` set.
+
+    Mirrors how a real adapter tunes it — as a class attribute on the
+    subclass — rather than patching an instance.
+    """
+    knobs = {
+        knob: overrides.pop(knob)
+        for knob in ("MAX_PARALLEL_RUNS",)
+        if knob in overrides
+    }
+    subclass = type(f"Configured{adapter_class.__name__}", (adapter_class,), knobs)
+    return subclass(fake_redis, **overrides)
+
+
+def prime(adapter, *dayobs_list):
+    """Cache each dayobs on its own, then forget the calls that did it.
+
+    Priming days individually is what leaves the cache fragmented, so
+    the next request's misses form more than one run.
+    """
+    for dayobs in dayobs_list:
+        adapter.fetch(dayobs, dayobs)
+    adapter.calls.clear()
+    adapter.call_threads.clear()
+
+
+class ConcurrencyProbe:
+    """An ``on_fetch`` hook recording how many runs overlap.
+
+    Each call holds its slot briefly so genuinely parallel runs are
+    seen together; ``max_active`` is the high-water mark.
+    """
+
+    def __init__(self, hold=0.05):
+        self.hold = hold
+        self._mutex = threading.Lock()
+        self.active = 0
+        self.max_active = 0
+
+    def __call__(self, *_):
+        with self._mutex:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        time.sleep(self.hold)
+        with self._mutex:
+            self.active -= 1
 
 
 class RecordingIdAdapter(IdCachedAdapter):
@@ -100,8 +161,9 @@ class TestCacheLoop:
         adapter.fetch(20250102, 20250102)
         adapter.calls.clear()
         adapter.fetch(20250101, 20250103)
-        # The cached 20250102 splits the misses into two single-day runs.
-        assert adapter.calls == [(20250101, 20250101), (20250103, 20250103)]
+        # The cached 20250102 splits the misses into two single-day
+        # runs, which are fetched concurrently, so in no fixed order.
+        assert sorted(adapter.calls) == [(20250101, 20250101), (20250103, 20250103)]
 
     def test_values_json_roundtrip(self, fake_redis):
         class StructuredAdapter(RecordingAdapter):
@@ -172,6 +234,319 @@ class TestCacheLoop:
             adapter.fetch(20250101, 20250101)
         assert fake_redis.keys() == []  # no data, and locks released
         assert fake_redis.exists("lock:adapter:recording:20250101") == 0
+
+
+class TestRunGrouping:
+    """How missing dayobs are grouped into ``_fetch_run`` calls."""
+
+    def test_one_run_is_fetched_inline(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        adapter.fetch(20250101, 20250105)
+        assert adapter.calls == [(20250101, 20250105)]
+        # No pool for the common case: one unbroken stretch of misses.
+        assert adapter.call_threads == [threading.current_thread()]
+
+    def test_a_cached_day_splits_the_misses_into_two_runs(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        prime(adapter, 20250102)
+        adapter.fetch(20250101, 20250103)
+        assert sorted(adapter.calls) == [(20250101, 20250101), (20250103, 20250103)]
+
+    def test_days_outside_the_run_are_dropped(self, fake_redis):
+        class OverreachingAdapter(RecordingAdapter):
+            """Upstream that returns a day either side of the run.
+
+            Real ones do this at range boundaries, where the upstream's
+            end convention is exclusive or its rows straddle midnight.
+            """
+
+            def _fetch_run(self, run_start, run_end):
+                super()._fetch_run(run_start, run_end)
+                return {
+                    dayobs: f"data-{dayobs}"
+                    for dayobs in dayobs_range(
+                        add_or_subtract_dayobs_days(run_start, -1),
+                        add_or_subtract_dayobs_days(run_end, 1),
+                    )
+                }
+
+        adapter = configured_adapter(fake_redis, adapter_class=OverreachingAdapter)
+        assert adapter._fetch_from_source([20250102, 20250103]) == {
+            20250102: "data-20250102",
+            20250103: "data-20250103",
+        }
+
+    def test_a_day_outside_the_request_is_never_cached(self, fake_redis):
+        class OverreachingAdapter(RecordingAdapter):
+            def _fetch_run(self, run_start, run_end):
+                super()._fetch_run(run_start, run_end)
+                return {
+                    dayobs: f"data-{dayobs}"
+                    for dayobs in dayobs_range(
+                        run_start, add_or_subtract_dayobs_days(run_end, 1)
+                    )
+                }
+
+        adapter = configured_adapter(fake_redis, adapter_class=OverreachingAdapter)
+        adapter.fetch(20250101, 20250102)
+        # Only keys this request holds a lock for may be written.
+        assert sorted(fake_redis.keys()) == [
+            "adapter:recording:20250101",
+            "adapter:recording:20250102",
+        ]
+
+    def test_no_missing_days_fetches_nothing(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        assert adapter._fetch_from_source([]) == {}
+        assert adapter.calls == []
+
+    def test_refresh_fetches_its_one_day_inline(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        adapter.refresh(20250101)
+        assert adapter.calls == [(20250101, 20250101)]
+        assert adapter.call_threads == [threading.current_thread()]
+
+
+class TestRunParallelism:
+    """Runs beyond the first are fetched concurrently."""
+
+    def two_run_adapter(self, fake_redis, **overrides):
+        """An adapter whose next 20250101-05 request misses two runs."""
+        adapter = configured_adapter(fake_redis, **overrides)
+        prime(adapter, 20250103)
+        return adapter
+
+    def test_split_runs_overlap(self, fake_redis):
+        adapter = self.two_run_adapter(fake_redis)
+        # Each run waits for the other to arrive: a serial
+        # implementation breaks the barrier and fails the fetch.
+        barrier = threading.Barrier(2)
+        adapter.on_fetch = lambda *_: barrier.wait(timeout=5)
+
+        result = adapter.fetch(20250101, 20250105)
+
+        assert sorted(adapter.calls) == [(20250101, 20250102), (20250104, 20250105)]
+        assert result == {d: f"data-{d}" for d in dayobs_range(20250101, 20250105)}
+
+    def test_split_runs_leave_the_calling_thread(self, fake_redis):
+        adapter = self.two_run_adapter(fake_redis)
+        # Held together so the pool cannot serve both from one reused
+        # thread, which it may do when the first run finishes first.
+        barrier = threading.Barrier(2)
+        adapter.on_fetch = lambda *_: barrier.wait(timeout=5)
+
+        adapter.fetch(20250101, 20250105)
+
+        assert len(adapter.call_threads) == 2
+        assert threading.current_thread() not in adapter.call_threads
+        assert len(set(adapter.call_threads)) == 2
+
+    def test_every_run_is_fetched_and_merged(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        prime(adapter, 20250102, 20250104, 20250106, 20250108)
+        result = adapter.fetch(20250101, 20250109)
+        assert sorted(adapter.calls) == [
+            (20250101, 20250101),
+            (20250103, 20250103),
+            (20250105, 20250105),
+            (20250107, 20250107),
+            (20250109, 20250109),
+        ]
+        assert result == {d: f"data-{d}" for d in dayobs_range(20250101, 20250109)}
+
+    def test_concurrency_is_capped(self, fake_redis):
+        adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=2)
+        prime(adapter, 20250102, 20250104, 20250106, 20250108)
+        probe = ConcurrencyProbe()
+        adapter.on_fetch = probe
+
+        adapter.fetch(20250101, 20250109)
+
+        # Five runs, two at a time: the rest wait in the queue rather
+        # than being dropped or raising.
+        assert probe.max_active == 2
+        assert len(adapter.calls) == 5
+
+    def test_runs_over_the_cap_still_complete(self, fake_redis):
+        adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=2)
+        prime(adapter, 20250102, 20250104, 20250106, 20250108)
+        result = adapter.fetch(20250101, 20250109)
+        assert result == {d: f"data-{d}" for d in dayobs_range(20250101, 20250109)}
+        assert len(adapter.call_threads) == 5
+
+    @pytest.mark.parametrize("max_parallel", [1, 0])
+    def test_cap_of_one_or_less_stays_sequential(self, fake_redis, max_parallel):
+        # The escape hatch for an adapter whose client cannot be driven
+        # from two threads: no pool, and runs in ascending order.
+        adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=max_parallel)
+        prime(adapter, 20250102, 20250104)
+        result = adapter.fetch(20250101, 20250105)
+        assert adapter.calls == [
+            (20250101, 20250101),
+            (20250103, 20250103),
+            (20250105, 20250105),
+        ]
+        assert set(adapter.call_threads) == {threading.current_thread()}
+        assert result == {d: f"data-{d}" for d in dayobs_range(20250101, 20250105)}
+
+    def test_trace_id_reaches_the_worker_threads(self, fake_redis):
+        adapter = self.two_run_adapter(fake_redis)
+        seen = []
+        adapter.on_fetch = lambda *_: seen.append(current_trace_id())
+        previous = current_trace_id()
+        set_trace_id("trace-abc")
+        try:
+            adapter.fetch(20250101, 20250105)
+        finally:
+            set_trace_id(previous)
+        # A bare thread starts with an empty context, so without the
+        # context copy these would log under no request at all.
+        assert seen == ["trace-abc", "trace-abc"]
+
+    def test_every_day_of_every_run_is_stored_and_unlocked(self, fake_redis):
+        adapter = self.two_run_adapter(fake_redis)
+        adapter.fetch(20250101, 20250105)
+        # Storing happens back on the calling thread, after the runs
+        # rejoin, so a fanned-out fetch caches exactly what an inline
+        # one would.
+        assert sorted(fake_redis.keys()) == [
+            f"adapter:recording:{d}" for d in dayobs_range(20250101, 20250105)
+        ]
+        for dayobs in dayobs_range(20250101, 20250105):
+            assert fake_redis.exists(f"lock:adapter:recording:{dayobs}") == 0
+
+
+class TestRunFailures:
+    """A failing run fails the whole collation."""
+
+    def failing_run(self, target, error):
+        """An ``on_fetch`` that raises only for one run."""
+
+        def hook(run_start, run_end):
+            if (run_start, run_end) == target:
+                raise error
+
+        return hook
+
+    def test_one_failing_run_propagates(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        prime(adapter, 20250103)
+        adapter.on_fetch = self.failing_run(
+            (20250104, 20250105), RuntimeError("upstream down")
+        )
+        with pytest.raises(RuntimeError, match="upstream down"):
+            adapter.fetch(20250101, 20250105)
+
+    def test_nothing_from_a_failed_collation_is_cached(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        prime(adapter, 20250103)
+        adapter.on_fetch = self.failing_run(
+            (20250104, 20250105), RuntimeError("upstream down")
+        )
+        with pytest.raises(RuntimeError):
+            adapter.fetch(20250101, 20250105)
+        # The run that succeeded is discarded with the one that failed:
+        # only the primed day survives, and every lock is released.
+        assert fake_redis.keys() == ["adapter:recording:20250103"]
+        for dayobs in dayobs_range(20250101, 20250105):
+            assert fake_redis.exists(f"lock:adapter:recording:{dayobs}") == 0
+
+    def test_the_earliest_failing_run_is_the_one_raised(self, fake_redis):
+        adapter = configured_adapter(fake_redis)
+        prime(adapter, 20250102)
+
+        def fail_late_then_early(run_start, run_end):
+            if run_start == 20250103:
+                raise ValueError("later run")
+            if run_start == 20250101:
+                # Loses the race to raise, wins the report: the run
+                # order decides, not whichever thread failed first.
+                time.sleep(0.05)
+                raise RuntimeError("earlier run")
+
+        adapter.on_fetch = fail_late_then_early
+        with pytest.raises(RuntimeError, match="earlier run"):
+            adapter.fetch(20250101, 20250103)
+
+    def test_queued_runs_are_dropped_after_a_failure(self, fake_redis):
+        adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=2)
+        prime(adapter, 20250102, 20250104, 20250106, 20250108, 20250110)
+        started = threading.Event()
+
+        def fail_first_hold_the_rest(run_start, run_end):
+            if run_start == 20250101:
+                raise RuntimeError("upstream down")
+            started.set()
+            # Occupies the workers long enough for the cancellation to
+            # land while the tail of the queue is still waiting.
+            time.sleep(0.3)
+
+        adapter.on_fetch = fail_first_hold_the_rest
+        with pytest.raises(RuntimeError, match="upstream down"):
+            adapter.fetch(20250101, 20250111)
+
+        assert started.is_set()
+        # Six runs, two workers: whatever had already started is left
+        # to finish, but the last runs never reach upstream.
+        assert (20250109, 20250109) not in adapter.calls
+        assert (20250111, 20250111) not in adapter.calls
+        assert len(adapter.calls) < 6
+
+    def test_a_failure_in_the_inline_path_still_propagates(self, fake_redis):
+        adapter = configured_adapter(fake_redis, MAX_PARALLEL_RUNS=1)
+        prime(adapter, 20250102)
+        adapter.on_fetch = self.failing_run(
+            (20250103, 20250103), RuntimeError("upstream down")
+        )
+        with pytest.raises(RuntimeError, match="upstream down"):
+            adapter.fetch(20250101, 20250103)
+
+
+class TestInstrumentRunSplitting:
+    """The instrument base binds its instrument before the split."""
+
+    def test_runs_split_per_instrument(self, fake_redis):
+        adapter = configured_adapter(
+            fake_redis, adapter_class=RecordingInstrumentAdapter
+        )
+        adapter.fetch("lsstcam", 20250102, 20250102)
+        adapter.calls.clear()
+
+        result = adapter.fetch("lsstcam", 20250101, 20250103)
+
+        assert sorted(adapter.calls) == [
+            ("lsstcam", 20250101, 20250101),
+            ("lsstcam", 20250103, 20250103),
+        ]
+        assert result == {d: [{"day_obs": d}] for d in dayobs_range(20250101, 20250103)}
+
+    def test_each_run_keeps_its_own_instrument(self, fake_redis):
+        adapter = configured_adapter(
+            fake_redis, adapter_class=RecordingInstrumentAdapter
+        )
+        adapter._fetch_from_source(
+            ["lsstcam:20250101", "latiss:20250101", "latiss:20250103"]
+        )
+
+        # The instrument is bound per run, so a run fanned out to a
+        # thread cannot pick up the loop's last instrument instead.
+        assert sorted(adapter.calls) == [
+            ("latiss", 20250101, 20250101),
+            ("latiss", 20250103, 20250103),
+            ("lsstcam", 20250101, 20250101),
+        ]
+
+    def test_runs_are_grouped_within_an_instrument_not_across(self, fake_redis):
+        adapter = configured_adapter(
+            fake_redis, adapter_class=RecordingInstrumentAdapter
+        )
+        # Adjacent days, but different instruments: two runs, not one.
+        fetched = adapter._fetch_from_source(["latiss:20250101", "lsstcam:20250102"])
+        assert sorted(adapter.calls) == [
+            ("latiss", 20250101, 20250101),
+            ("lsstcam", 20250102, 20250102),
+        ]
+        assert sorted(fetched) == ["latiss:20250101", "lsstcam:20250102"]
 
 
 class TestTtlPolicy:
