@@ -60,7 +60,9 @@ def preload_worker_modules(services: Iterable["WorkerPoolMixin"]) -> None:
     services : iterable of `WorkerPoolMixin`
         Every service that will start a pool.
     """
-    modules = sorted({module for service in services for module in service.pool_preload})
+    modules = sorted(
+        {module for service in services for module in service.pool_preload}
+    )
     if not modules:
         return
     multiprocessing.get_context("forkserver").set_forkserver_preload(modules)
@@ -118,7 +120,7 @@ class WorkerPoolMixin:
     """
 
     pool_workers: int = 4
-    pool_queue: int = 4
+    pool_queue: int = 20
     pool_timeout: float = 180.0
     pool_preload: tuple[str, ...] = ()
 
@@ -169,9 +171,9 @@ class WorkerPoolMixin:
         started = time.monotonic()
         try:
             logger.debug(f"{name} submitting {func.__name__} to a worker")
-            result = pool.apply_async(_call_with_trace_id, (current_trace_id(), func, args)).get(
-                timeout=self.pool_timeout
-            )
+            result = pool.apply_async(
+                _call_with_trace_id, (current_trace_id(), func, args)
+            ).get(timeout=self.pool_timeout)
         except multiprocessing.TimeoutError as e:
             logger.error(f"{name} worker call exceeded {self.pool_timeout}s")
             raise HTTPException(status_code=504, detail=TIMEOUT_DETAIL) from e
@@ -194,8 +196,12 @@ class WorkerPoolMixin:
                 name = type(self).__name__
                 context = multiprocessing.get_context("forkserver")
                 logger.info(f"{name} starting {self.pool_workers} workers")
-                self._pool = context.Pool(self.pool_workers, initializer=start_worker, initargs=(name,))
-                self._pool_slots = threading.Semaphore(self.pool_workers + self.pool_queue)
+                self._pool = context.Pool(
+                    self.pool_workers, initializer=start_worker, initargs=(name,)
+                )
+                self._pool_slots = threading.Semaphore(
+                    self.pool_workers + self.pool_queue
+                )
             return self._pool, self._pool_slots
 
     def shutdown_worker_pool(self) -> None:
