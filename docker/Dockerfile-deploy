@@ -3,6 +3,8 @@ ARG py_version=3.13
 
 FROM ts-dockerhub.lsst.org/conda_package_builder:latest AS builder
 
+ARG py_version
+
 WORKDIR /tmp/build
 COPY . .
 
