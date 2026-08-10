@@ -8,6 +8,7 @@ pipeline {
   environment {
     dockerImageName = "rubincr.lsst.org/nightlydigest-backend:"
     dockerImage = ""
+    pythonVersion = "3.13"
   }
 
   stages {
@@ -60,7 +61,7 @@ pipeline {
           image_tag = "develop"
           dockerImageName = dockerImageName + image_tag
           echo "dockerImageName: ${dockerImageName}"
-          dockerImage = docker.build(dockerImageName, "-f docker/Dockerfile-deploy .")
+          dockerImage = docker.build(dockerImageName, "--build-arg py_version=${pythonVersion} -f docker/Dockerfile-deploy .")
         }
       }
     }
