@@ -73,7 +73,7 @@ prompts before overwriting.
 
 Scenarios
 ---------
-All scenarios issue N timed requests (``--runs``, default 50) with a
+All scenarios issue N timed requests (``--runs``, default 20) with a
 short pause before and between runs (``--pause``), against fixed
 historical dayobs ranges derived from ``--day-start``: "1day" = day 1
 only, "7day" = days 1-7. ``dayObsEnd`` is exclusive, so those are sent as
@@ -129,7 +129,7 @@ After mode, per dayobs endpoint:
     row is paying a per-run fixed cost.
 
 Burst scenarios fire ``--burst-size`` (default 10) simultaneous
-requests per round, ``--bursts`` (default 30) rounds, with a longer
+requests per round, ``--bursts`` (default 10) rounds, with a longer
 ``--burst-pause`` (default 5 s) before and between rounds. Flushing/priming
 happens once per round, mirroring the equivalent single-request
 scenario. Per-request p50/p95 describe the typical user in the crowd;
@@ -209,11 +209,11 @@ import requests
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 DEFAULT_DAY_START = 20260611
-DEFAULT_RUNS = 50
+DEFAULT_RUNS = 20
 DEFAULT_PAUSE = 1.0  # seconds between timed runs
 DEFAULT_TIMEOUT = 120  # seconds
 DEFAULT_BURST_SIZE = 10  # simultaneous requests per burst
-DEFAULT_BURSTS = 30  # bursts per burst scenario
+DEFAULT_BURSTS = 10  # bursts per burst scenario
 DEFAULT_BURST_PAUSE = 5.0  # seconds between bursts
 DEFAULT_BLOCK_KEYS = [
     "BLOCK-407",
@@ -232,8 +232,11 @@ DEFAULT_BLOCK_KEYS = [
 ENDPOINTS = [
     {"name": "almanac", "path": "/almanac", "instrument": False},
     {"name": "narrative-log", "path": "/narrative-log", "instrument": True},
+    {"name": "context-feed", "path": "/context-feed", "instrument": False},
+    {"name": "jira-tickets", "path": "/jira-tickets", "instrument": True},
     {"name": "exposure-entries", "path": "/exposure-entries", "instrument": True},
     {"name": "exposures", "path": "/exposures", "instrument": True},
+    {"name": "data-log", "path": "/data-log", "instrument": True},
     {"name": "obs-status", "path": "/obs-status", "instrument": False},
     {"name": "multi-night-visit-maps", "path": "/multi-night-visit-maps", "instrument": True},
     {"name": "static-visit-map", "path": "/static-visit-map", "instrument": True},
