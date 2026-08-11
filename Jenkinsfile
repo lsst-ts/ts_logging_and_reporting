@@ -7,6 +7,7 @@ pipeline {
 
   environment {
     dockerImageName = "rubincr.lsst.org/nightlydigest-backend:"
+    dockerImageTag = "alpha"
     dockerImage = ""
     pythonVersion = "3.13"
   }
@@ -54,12 +55,12 @@ pipeline {
       when {
         anyOf {
           branch "develop"
+          branch "alpha-release"
         }
       }
       steps {
         script {
-          image_tag = "develop"
-          dockerImageName = dockerImageName + image_tag
+          dockerImageName = dockerImageName + dockerImageTag
           echo "dockerImageName: ${dockerImageName}"
           dockerImage = docker.build(dockerImageName, "--build-arg py_version=${pythonVersion} -f docker/Dockerfile-deploy .")
         }
@@ -70,6 +71,7 @@ pipeline {
       when {
         anyOf {
           branch "develop"
+          branch "alpha-release"
         }
       }
       steps {

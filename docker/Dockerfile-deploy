@@ -18,10 +18,9 @@ LABEL maintainer Sebastian Aranda <sebastian.aranda@noirlab.edu>
 WORKDIR /home/saluser/develop
 
 COPY --from=builder /tmp/conda-bld /tmp/conda-bld
-COPY . .
 
 USER root
-RUN chown -R saluser:saluser /home/saluser/develop /tmp/conda-bld
+RUN chown saluser:saluser /tmp/conda-bld
 USER saluser
 
 RUN source /home/saluser/.setup_sal_env.sh && \
@@ -40,7 +39,8 @@ RUN source /home/saluser/.setup_sal_env.sh && \
     pip install lsst-resources
 
 COPY docker/startup-deploy.sh /home/saluser/.startup.sh
+COPY docker/refresh-worker-deploy.sh /home/saluser/.refresh-worker.sh
 USER root
 RUN chown saluser:saluser /home/saluser/.startup.sh && \
-    chmod a+x /home/saluser/.startup.sh
+    chmod a+x /home/saluser/.startup.sh /home/saluser/.refresh-worker.sh
 USER saluser
