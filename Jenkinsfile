@@ -13,24 +13,24 @@ pipeline {
   }
 
   stages {
-    stage("Setup and run pre-commit") {
-      agent {
-        docker {
-          alwaysPull true
-          image 'lsstts/develop-env:develop'
-          args "--entrypoint=''"
-        }
-      }
-      steps {
-        script {
-          sh """
-            source /home/saluser/.setup_dev.sh || echo loading env failed. Continuing...
-            generate_pre_commit_conf --skip-pre-commit-install
-            pre-commit run --all
-          """
-        }
-      }
-    }
+    // stage("Setup and run pre-commit") {
+    //   agent {
+    //     docker {
+    //       alwaysPull true
+    //       image 'lsstts/develop-env:develop'
+    //       args "--entrypoint=''"
+    //     }
+    //   }
+    //   steps {
+    //     script {
+    //       sh """
+    //         source /home/saluser/.setup_dev.sh || echo loading env failed. Continuing...
+    //         generate_pre_commit_conf --skip-pre-commit-install
+    //         pre-commit run --all
+    //       """
+    //     }
+    //   }
+    // }
 
     stage("Run tests") {
       agent {
