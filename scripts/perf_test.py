@@ -250,6 +250,8 @@ CONNECTION_WARMUP_PATH = "/health"
 # Backend-side FLUSHDB, used instead of redis-cli under
 # --use-endpoint-flush.
 FLUSH_PATH = "/flush-redis"
+# Characters of each response body echoed beside its progress line.
+PREVIEW_CHARS = 100
 
 
 def add_days(dayobs: int, days: int) -> int:
@@ -269,6 +271,40 @@ def git_commit() -> str:
         ).stdout.strip()
     except Exception:
         return "unknown"
+
+
+def response_preview(response) -> str:
+    """The response body's first line, truncated to PREVIEW_CHARS.
+
+    Only the leading bytes are decoded. The whole body is already in
+    memory, but decoding a multi-megabyte data-log response on every
+    request would burn CPU the concurrent scenarios are measuring.
+    """
+    head = response.content[: PREVIEW_CHARS * 4].decode("utf-8", errors="replace")
+    first_line = head.lstrip().split("\n", 1)[0].strip()
+    return first_line[:PREVIEW_CHARS]
+
+
+def result_line(result: dict) -> str:
+    """One response as ``status preview``, or the failure that replaced it."""
+    if result.get("error"):
+        return f"FAILED {result['error']}"
+    return f"{result['status']} {result.get('preview', '')}".rstrip()
+
+
+def describe_token(token: str | None) -> str:
+    """Where the bearer token came from, and enough of it to check.
+
+    Masked deliberately: this line goes to a terminal and usually into a
+    log with it. The length and the ends are enough to catch the cases
+    that actually happen — an unset variable, a truncated paste, the
+    wrong one of two tokens.
+    """
+    if not token:
+        return "NONE — requests will be unauthenticated (set ACCESS_TOKEN or pass --access-token)"
+    source = "ACCESS_TOKEN" if token == os.environ.get("ACCESS_TOKEN") else "--access-token"
+    masked = f"{token[:6]}...{token[-4:]}" if len(token) > 16 else "(too short to mask)"
+    return f"{masked}, {len(token)} chars, from {source}"
 
 
 def sample_record(result: dict) -> dict:
@@ -419,6 +455,46 @@ class Runner:
                 f"port={self.redis_port}): {result.stderr or result.stdout}"
             )
 
+    def preflight(self, token: str | None) -> None:
+        """Prove the backend answers us with data, before measuring anything.
+
+        A proxy that wants a login answers an unauthenticated request
+        with a redirect to a login page, which resolves to a 200 full of
+        HTML: fast, uniform in size, and worthless. Every scenario would
+        happily time that page for hours and the whole sweep would have
+        to be thrown away, so this fails at the first request rather than
+        the last.
+        """
+        url = f"{self.base_url}{CONNECTION_WARMUP_PATH}"
+        print(f"Token: {describe_token(token)}", flush=True)
+        print(f"Checking {url}", flush=True)
+        try:
+            response = self.session.get(url, timeout=self.timeout)
+        except requests.RequestException as exc:
+            sys.exit(f"Cannot reach {url}: {exc}")
+        for hop in response.history:
+            print(f"  {hop.status_code} -> {hop.headers.get('Location', '?')}", flush=True)
+        content_type = response.headers.get("Content-Type", "(none)")
+        print(f"  {response.status_code} {content_type} {response_preview(response)}", flush=True)
+        if "json" in content_type:
+            return
+
+        # Not JSON: name the reason rather than leave it to be guessed.
+        host = urllib.parse.urlparse(url).netloc
+        final_host = urllib.parse.urlparse(response.url).netloc
+        if "Authorization" not in self.session.headers:
+            why = "no Authorization header was sent"
+        elif response.history and final_host != host:
+            why = (
+                f"the redirect left {host} for {final_host}, and requests drops the "
+                "Authorization header across hosts, so the backend never saw the token"
+            )
+        elif response.history:
+            why = "the token was sent, and the server redirected anyway"
+        else:
+            why = "the token was sent and the server answered with something other than JSON"
+        sys.exit(f"{url} did not return JSON: {why}. Nothing has been measured.")
+
     def full_url(self, path: str, params) -> str:
         """The exact URL a request with these params queries."""
         return requests.Request("GET", f"{self.base_url}{path}", params=params).prepare().url
@@ -433,6 +509,7 @@ class Runner:
                 "seconds": elapsed,
                 "bytes": len(response.content),
                 "status": response.status_code,
+                "preview": response_preview(response),
             }
         except requests.RequestException as exc:
             return {
@@ -448,19 +525,42 @@ class Runner:
             return
         print(f"{label} [{done}/{total}]", end="", flush=True)
 
-    def _progress_done(self, label: str) -> None:
+    def _progress_done(self, label: str, results: list) -> None:
+        """Close a run's line with what came back.
+
+        A burst round returns burst_size responses to one request, so
+        identical ones collapse to a single counted line and only a
+        genuine odd one out costs a second.
+        """
         if not label:
             return
-        print(" DONE", flush=True)
+        counts: dict[str, int] = {}
+        for result in results:
+            line = result_line(result)
+            counts[line] = counts.get(line, 0) + 1
+        first, *rest = [f"{count}x {line}" if count > 1 else line for line, count in counts.items()]
+        print(f" {first}", flush=True)
+        self._print_under(label, rest)
 
-    def _run_primes(self, prime: list | None) -> list:
-        """Issue the untimed priming requests, returning any failures."""
-        failures = []
+    def _run_primes(self, prime: list | None) -> tuple[list, list]:
+        """Issue the untimed priming requests.
+
+        Returns the failures, and one preview line per prime. Primes run
+        while the progress line is open, so their previews are held back
+        for the caller to print once it closes.
+        """
+        failures, previews = [], []
         for prime_path, prime_params in prime or []:
             result = self.request(prime_path, prime_params)
+            previews.append(f"prime {result_line(result)}")
             if result["status"] != 200:
                 failures.append(result)
-        return failures
+        return failures, previews
+
+    def _print_under(self, label: str, lines: list) -> None:
+        """Continuation lines, aligned under a closed progress line."""
+        for line in lines if label else []:
+            print(f"{' ' * len(label)}   {line}", flush=True)
 
     def _warn_first_prime_error(self, label: str, seen: list, new: list) -> None:
         """Warn once, on a scenario's first priming failure.
@@ -511,7 +611,7 @@ class Runner:
             self._progress_start(label, i + 1, self.runs)
             if flush_before_each:
                 self.flush_redis()
-            new_prime_errors = self._run_primes(prime)
+            new_prime_errors, prime_previews = self._run_primes(prime)
             prime_errors.extend(new_prime_errors)
             result = self.request(path, params)
             if result["status"] == 200:
@@ -519,7 +619,8 @@ class Runner:
             else:
                 errors.append(result)
             recorded.append(sample_record(result))
-            self._progress_done(label)
+            self._progress_done(label, [result])
+            self._print_under(label, prime_previews)
             self._warn_first_prime_error(label, prime_errors, new_prime_errors)
         self._warn_prime_total(label, prime_errors)
         return self._summarise(samples, errors, path, params, prime, recorded, prime_errors)
@@ -553,7 +654,7 @@ class Runner:
                 self._progress_start(label, i + 1, self.bursts)
                 if flush_before_each:
                     self.flush_redis()
-                new_prime_errors = self._run_primes(prime)
+                new_prime_errors, prime_previews = self._run_primes(prime)
                 prime_errors.extend(new_prime_errors)
                 start = time.perf_counter()
                 futures = [
@@ -567,7 +668,8 @@ class Runner:
                     else:
                         errors.append(result)
                 rounds.append([sample_record(result) for result in results])
-                self._progress_done(label)
+                self._progress_done(label, results)
+                self._print_under(label, prime_previews)
                 self._warn_first_prime_error(label, prime_errors, new_prime_errors)
         self._warn_prime_total(label, prime_errors)
         summary = self._summarise(samples, errors, path, params, prime, rounds, prime_errors)
@@ -636,6 +738,7 @@ class Runner:
                 "seconds": time.perf_counter() - start,
                 "bytes": len(response.content),
                 "status": response.status_code,
+                "preview": response_preview(response),
             }
         except requests.RequestException as exc:
             return {
@@ -702,6 +805,7 @@ def skip_notice(mode: str, endpoint: str, scenario: str) -> None:
 
 def run_baseline(args, store: ScenarioStore) -> None:
     runner = Runner(args)
+    runner.preflight(args.access_token)
     day1 = args.day_start
     day2 = add_days(day1, 1)
     day8 = add_days(day1, 7)
@@ -756,6 +860,7 @@ def run_baseline(args, store: ScenarioStore) -> None:
 
 def run_after(args, store: ScenarioStore) -> None:
     runner = Runner(args)
+    runner.preflight(args.access_token)
     day1 = args.day_start
     day2 = add_days(day1, 1)
     day7 = add_days(day1, 6)
