@@ -228,9 +228,6 @@ of a repository this size for the sake of a review that ends in their deletion.
 
 ## 2. The authentication path changed
 
-This is the single change in the refactor most likely to be missed by reading
-diffs, and the one with the widest blast radius.
-
 ### Before
 
 Every data endpoint took the caller's token as a FastAPI dependency and threaded it
@@ -1474,6 +1471,17 @@ for fields that are often null. Converting it to use an actual tabular
 data format such as CSV would potentially decrease transfer size (and 
 correspondingly, time) by ~50%
 
+### Some data is not required to be sent to the frontend
+
+The `/narrative-log` endpoint sends all collected narrative log messages
+to the frontend along with a `time_lost_to_faults` number. The frontend
+only uses `time_lost_to_faults` and all other fields in the response - which
+can be ~90kb - is discarded. The `/data-log` endpoint also sends a lot of
+data which is not used by the data-log page, just the plots page.
+
+In a similar vein, it might be worthwhile adding a dedicated plots endpoint
+which returns only a subset of the columns as required.
+
 
 ---
 
@@ -1527,9 +1535,9 @@ These were specified up front and shipped as described:
 4. **Transport was separated from caching.** `base_clients.py` (`RestClient`,
    `SqlClient`) is not in the plan. The plan instead specified an `adapters/http.py`
    holding `protected_get` / `protected_post` extracted from `source_adapters.py`;
-   that file was created then reworked into `base_clients.py` and those helpers were deleted outright. A
-   `RestCachedAdapter` was built during the work and then removed once the
-   mixin-plus-cache-base composition proved cleaner.
+   that file was created then reworked into `base_clients.py` and those helper
+   were deleted outright. A `RestCachedAdapter` was built during the work and
+   then removed once the mixin-plus-cache-base composition proved cleaner.
 5. **`Service.adapters: dict[str, CachedAdapter]` became named, typed constructor
    parameters.** The dict was untyped, made every access a string lookup, and gave
    no signal about which adapters a service actually required.
