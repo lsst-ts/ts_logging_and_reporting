@@ -1,1 +1,0 @@
-Properly pass py_version to Jenkins job to build develop image.
