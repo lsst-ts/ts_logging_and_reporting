@@ -5,13 +5,14 @@ Both captures were taken against the usdf-rsp-dev deployment.
 | | baseline | refactored |
 |---|---|---|
 | Deployment | `usdf-rsp-dev.slac.stanford.edu/nightlydigest/api/` | `…/nightlydigest/api/alpha/` |
+| Build (`/version`) | `0.15.2.dev10+g644edde` | `0.15.2.dev147+gd4de8f3` |
 | Capture window | 2026-08-12T07:41 → 10:22Z | 2026-08-12T10:47 → 08-13T02:49Z |
 | Runs / bursts | 20 sequential, 10 rounds × 10 concurrent | same |
 | Range | `dayObsStart=20260611`, `instrument=LSSTCam` | same |
 
 The `git_commit` field in both JSON files (`c8cb12f`, `528e289`) records the
-**harness** checkout at capture time, not the code deployed behind either URL. The
-baseline build is identified by its deployment path alone.
+**harness** checkout, not the code deployed behind either URL. The deployed build is
+`deployed_version`, shown above as each deployment reports it from `/version`.
 
 `scripts/perf_test.py` produced both captures and joins them into the table below.
 Scenario definitions and the constraints on a valid run are documented in that
@@ -31,7 +32,8 @@ script. The table is generated output; everything after it is interpretation.
   within one scenario; `[DIFFERS AFTER]` that the two runs settled on different
   sizes for the same request; `[OTHER WINDOW]` that the two rows did not request
   the same nights, so their sizes are not comparable — this is `partial-rolling`,
-  which measures the shifted week against a baseline for the original one. See §8.
+  which measures the shifted week against a baseline for the original one. See §8;
+  most of these flags are expected, and one is still open.
 
 ---
 
@@ -507,11 +509,14 @@ The byte flags in the table fall into three groups.
    working correctly. Sixteen rows across seven endpoints.
 2. **Intended content change.** `context-feed` returns 19,608 fewer bytes at 1 day
    and 41,472 fewer at 7 days — the `"NaT"` → `null` timestamp change.
-3. **Unexplained.** Two remain, both worth a body-level diff.
+3. **Cache-fill dependent.** `context-feed`, explained below and confirmed against
+   the deployment.
+4. **Serialisation noise.** The visit maps, whose Bokeh documents differ in
+   structure while carrying identical values.
 
-**Unexplained (i): `context-feed`'s payload depends on cache state.** Within the
-refactored build alone, the same URL returns different sizes according to how it was
-served:
+**Explained: a `context-feed` response is not a pure function of its URL.** Within
+the refactored build, the same request returns different sizes according to how the
+cache was filled:
 
 | scenario | bytes | vs cold of same range |
 |---|---|---|
@@ -521,15 +526,41 @@ served:
 | partial-extension-7day | 13,812,798 | **−1,954** |
 | partial-fragmented-7day | 13,812,902 | −1,850 |
 
-The same 1,954-byte quantum appears twice with opposite sign. Given that `"NaT"`
-(five characters) against `null` (four) is a one-byte difference per field, this has
-the shape of **both representations coexisting depending on whether the value
-round-tripped through Redis** — the conversion applying on one path and not the
-other. A fresh response and a cached response for the same request should be
-byte-identical; here they are not. Two bodies diffed would settle it.
+Reproduced directly against the deployment. Requesting
+`context-feed?dayObsStart=20260611&dayObsEnd=20260612` returns 4,845,605 bytes when
+day 11 is cached from a single-night query, and 4,847,559 bytes when the same day is
+cached from the 7-day query — the two values in the table, on demand.
 
-**Unexplained (ii): `multi-night-visit-maps` output varies when the cache is
-partially filled.** Its cold, hot and rolling scenarios are perfectly stable — 20/20
+Diffing the two bodies: **977 of 6,838 records differ, every one of them in the
+`config` column and nowhere else.**
+
+```
+narrow (1-day query):  exp 5   // dark 5.012548923492432 // open 0.0
+wide   (7-day query):  exp 5.0 // dark 5.012548923492432 // open 0.0
+```
+
+977 records × 2 bytes is exactly the 1,954-byte quantum. The cause is already on
+record in `REFACTOR_ODDITIES.md` §13: `make_config_col_for_image` interpolates raw
+DataFrame cells, so a whole-number exposure time renders as `5` or `5.0` depending
+on the dtype pandas inferred for whichever rows shared that query. A single night's
+rows infer an integer column; seven nights' rows infer a float one.
+
+That also explains why the table reads as a cold/hot split when the mechanism has
+nothing to do with cache freshness. `hot-1day` does not flush, so day 11 was already
+cached from an earlier 7-day scenario; `cold-1day` flushes and re-fetches it as a
+single-night query. The capture corroborates it independently: `partial-extension`,
+whose day 11 is primed as a 1-day request, is exactly 1,954 bytes *smaller* than
+`cold-7day`, whose day 11 arrives inside the wide query — same quantum, opposite
+sign.
+
+The values are numerically identical and the difference is confined to a display
+string, so nothing here is wrong on the wire. What it does mean is that **a
+response's content depends on the history of the cache rather than on the request
+alone**, which makes byte-level comparison between scenarios unreliable and would
+make any downstream string match on `config` fragile. The durable fix is to format
+that column explicitly rather than letting pandas' inferred dtype decide.
+
+**`multi-night-visit-maps` output varies when the cache is partially filled.** Its cold, hot and rolling scenarios are perfectly stable — 20/20
 identical sizes each. The two partial scenarios are not:
 
 ```
@@ -537,25 +568,27 @@ partial-extension-7day : 3325489 3325489 3325763 3326719 3325489 3327645 …  (5
 partial-fragmented-7day: 3327645 3327645 3327645 3325489 3327645 3325489 …  (4 distinct sizes / 20 runs)
 ```
 
-The two dominant values are exactly the stable sequential value (3,325,489) and the
-stable burst value (3,327,645). What the varying scenarios have in common, and the
-stable ones lack, is that **more than one contiguous run is fetched at once**
-(`8cc9308`, "Fetch a request's contiguous runs in parallel"). The natural reading is
-that merging parallel-fetched runs does not produce a deterministic row order, which
-changes the Bokeh document. `exposures` shows a smaller version of the same thing:
+**The variation carries no data.** Bokeh document creation is non-deterministic, and
+`review/capture-compare.md` measures what that costs: comparing the multiset of every
+leaf value in each document while ignoring position entirely, two independently
+generated documents are identical, with **zero** differing values across all four
+files it checked. The byte count moves because the document's structure and generated
+ids move, not because the visits do.
+
+The practical consequence is that **response size is not a usable signal for this
+endpoint**, as a regression check or a correctness one, and its `[DIFFERS]` flags
+should be read as noise. That the fully cold, hot and rolling scenarios happen to
+land on one size each is luck of the draw rather than evidence of stability.
+
+`exposures` shows a superficially similar variation that this does *not* explain —
 2,111,891 against 2,111,893 on `partial-fragmented`, and 2,111,889 on 20 of its 100
-`cold-7day-burst` responses.
+`cold-7day-burst` responses. That payload is plain JSON with no Bokeh involved, and a
+few bytes on 2.1 MB is consistent with the same dtype rendering seen on
+`context-feed` above.
 
-This has a consequence beyond the maps. **A byte count only catches reordering when
-it changes the serialised length**, so an endpoint could be returning
-correctly-sized but differently-ordered rows and this harness would not see it. A
-deterministic-order assertion in the merge path would close that gap.
-
-One point in the refactor's favour that the flags obscure: the baseline has a worse
-version of the same problem. `multi-night-visit-maps cold-1day-burst` returns up to
-four distinct sizes *within a single round of ten* for its first four rounds before
-settling, while every refactored burst round returns exactly one size. The worker
-pool of §6(b) is what buys that.
+A general caution the maps make concrete: **a byte count only catches reordering when
+it changes the serialised length**, so an endpoint could return correctly-sized but
+differently-ordered records and this harness would not see it.
 
 ---
 
@@ -585,24 +618,32 @@ pool of §6(b) is what buys that.
 - **Error rates are low on both sides** — 1 failure in 4,200 baseline requests, 29
   in 5,800 after, all of them the map queueing above, and none generated by the
   application itself.
-- **Two open return-value questions.** `context-feed` responses differ by a repeated
-  1,954-byte quantum depending on cache state, and `multi-night-visit-maps` output
-  varies run to run when the cache is partially filled. Both sit on paths where
-  cached and freshly fetched data are merged.
+- **A response is not always a pure function of its URL.** Confirmed on
+  `context-feed`: the `config` column renders `5` or `5.0` according to the dtype
+  pandas inferred for whichever nights shared the fetch, so the same request differs
+  by 1,954 bytes depending on how the cache was filled. Cosmetic on the wire, but it
+  makes byte comparison unreliable. `multi-night-visit-maps` sizes vary for a
+  different and harmless reason — Bokeh document structure is non-deterministic while
+  the values it carries are identical — so response size is not a usable signal for
+  that endpoint at all.
 
 ## Follow-ups, in order
 
 1. **Confirm `/api/` and `/api/alpha/` are resourced identically** — replicas, CPU
    and memory limits, node class, Redis. Every regression above is provisional until
    they are.
-2. **Diff two `context-feed` bodies** (cold against hot, same 1-day range) and two
-   `multi-night-visit-maps` bodies from `partial-extension-7day`. Minutes of work
-   each, and both are correctness questions rather than performance ones.
+2. **Format `context-feed`'s `config` column explicitly** rather than letting
+   pandas' inferred dtype decide, so a night's rendering does not depend on which
+   other nights shared its query.
 3. **Enable response compression.** The largest single win available, and already
    scoped.
 4. **Re-run the harness from inside the cluster.** That removes both the RTT floor
    and the transfer ceiling, and would for the first time measure the backend rather
    than the link.
 5. **Profile `data-log`'s cold path server-side** for the +3.7 s fixed cost.
-6. **Revisit `pool_workers` for the map services** against the gateway's 60 s
-   timeout, and re-measure `exposures`' partial-range merge.
+6. **Size `pool_workers` for the map services** once (1) is known. Four workers
+   parallelise cleanly on `static-visit-map`, whose bursts complete in ~3× a single
+   request, so the pod is not down to one core; what four workers cannot do is clear
+   a 60 s gateway budget for a ~20 s render. Whether the answer is more workers, more
+   replicas, or a cheaper render depends on the resourcing facts. Also re-measure
+   `exposures`' partial-range merge.
