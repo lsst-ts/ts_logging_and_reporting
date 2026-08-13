@@ -1118,12 +1118,29 @@ def request_keys(row: dict) -> list[str]:
     return sorted(urllib.parse.parse_qs(query).get("key", []))
 
 
+def request_window(row: dict) -> tuple[str, ...]:
+    """The dayobs range of a scenario's request URL.
+
+    ``partial-rolling`` scenarios shift the window rather than the cache
+    state, so they ask for different nights than the baseline row they
+    join against and their response sizes are not comparable with it.
+    """
+    query = urllib.parse.urlparse(row.get("url", "")).query
+    params = urllib.parse.parse_qs(query)
+    return tuple(params.get("dayObsStart", []) + params.get("dayObsEnd", []))
+
+
 def bytes_cell(row: dict, other: dict | None = None) -> str:
     """The scenario's modal response size, tagged where sizes vary.
 
     ``[DIFFERS]`` means the scenario's own responses were not all the
-    same size; ``[DIFFERS AFTER]`` that the before and after runs
-    settled on different sizes.
+    same size; ``[DIFFERS AFTER]`` that the two runs settled on
+    different sizes for the same request.
+
+    Where the two rows did not request the same nights, the sizes are
+    not comparable at all and the tag is ``[OTHER WINDOW]`` — a
+    different payload there is the scenario doing its job, not a
+    difference between the runs.
     """
     if row.get("bytes") is None:
         return "—"
@@ -1131,7 +1148,10 @@ def bytes_cell(row: dict, other: dict | None = None) -> str:
     if row.get("bytes_differ") or (other or {}).get("bytes_differ"):
         tags += " [DIFFERS]"
     if other is not None and other.get("bytes") != row.get("bytes"):
-        tags += " [DIFFERS AFTER]"
+        if request_window(other) != request_window(row):
+            tags += " [OTHER WINDOW]"
+        else:
+            tags += " [DIFFERS AFTER]"
     return f"{row['bytes']}{tags}"
 
 
