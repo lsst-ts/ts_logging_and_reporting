@@ -273,6 +273,28 @@ def git_commit() -> str:
         return "unknown"
 
 
+def deployed_version(base_url: str, access_token: str | None, timeout: float) -> str:
+    """The build reported by the backend's ``/version`` endpoint.
+
+    `git_commit` records the checkout this script runs from, which says
+    nothing about the code behind ``base_url``. Capturing the deployed
+    build is what makes a result file self-describing: without it, a
+    capture cannot later be attributed to a particular backend, and two
+    captures cannot be shown to have run against the same one.
+
+    Returns ``"unknown"`` rather than failing — a backend too old to
+    serve ``/version`` should still be measurable.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+    try:
+        response = requests.get(f"{base_url.rstrip('/')}/version", headers=headers, timeout=timeout)
+        response.raise_for_status()
+        return response.json().get("version", "unknown")
+    except (requests.RequestException, ValueError) as err:
+        print(f"WARNING: could not read {base_url}/version: {err}", file=sys.stderr)
+        return "unknown"
+
+
 def response_preview(response) -> str:
     """The response body's first line, truncated to PREVIEW_CHARS.
 
@@ -335,6 +357,7 @@ class ScenarioStore:
         self.metadata = {
             "mode": mode,
             "git_commit": git_commit(),
+            "deployed_version": deployed_version(args.base_url, args.access_token, args.timeout),
             "base_url": args.base_url,
             "day_start": args.day_start,
             "instrument": args.instrument,
@@ -1021,10 +1044,11 @@ def wall_cells(base: dict, after: dict) -> tuple[str, str, str]:
     )
 
 
-# ``mode`` and ``git_commit`` are expected to differ between the two
-# runs, so they are not compared. ``timestamp`` is handled separately.
+# ``mode``, ``git_commit``, ``deployed_version`` and ``base_url`` are
+# expected to differ between the two runs — the builds are by definition
+# different, and before/after may be two deployments — so they are not
+# compared. ``timestamp`` is handled separately.
 COMPARED_METADATA = (
-    "base_url",
     "day_start",
     "instrument",
     "timeout",
@@ -1087,6 +1111,16 @@ def timestamp_range(results: list) -> str:
 def commit_summary(results: list) -> str:
     commits = sorted({r["git_commit"] for r in results if r.get("git_commit")})
     return ", ".join(commits) if commits else "unknown"
+
+
+def version_summary(results: list) -> str:
+    """The deployed build(s) a result file was captured against.
+
+    Older files carry no ``deployed_version``; they predate its capture
+    and cannot be attributed to a build after the fact.
+    """
+    versions = sorted({r["deployed_version"] for r in results if r.get("deployed_version")})
+    return ", ".join(versions) if versions else "not recorded"
 
 
 def check_file_consistency(results: list, label: str, expected_mode: str) -> None:
@@ -1243,8 +1277,14 @@ def run_compare(args):
             )
     warn_metadata(mismatches)
 
-    print(f"\nBefore: {commit_summary(before_results)} ({timestamp_range(before_results)})")
-    print(f"After:  {commit_summary(after_results)} ({timestamp_range(after_results)})")
+    print(
+        f"\nBefore: {commit_summary(before_results)} "
+        f"({timestamp_range(before_results)}), backend {version_summary(before_results)}"
+    )
+    print(
+        f"After:  {commit_summary(after_results)} "
+        f"({timestamp_range(after_results)}), backend {version_summary(after_results)}"
+    )
     print(
         "\n| Endpoint | Scenario | completed (before → after) | before p50 (s) | after p50 (s) "
         "| change | before wall p50 (s) | after wall p50 (s) | wall change | bytes |"
