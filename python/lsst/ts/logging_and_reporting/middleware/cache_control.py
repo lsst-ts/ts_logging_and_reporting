@@ -92,9 +92,7 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             start = int(start_raw) if start_raw else None
             end = int(end_raw) if end_raw else None
         except (ValueError, TypeError):
-            logger.warning(
-                f"Uncacheable non-integer dayobs range for {path}: {start_raw}..{end_raw}"
-            )
+            logger.warning(f"Uncacheable non-integer dayobs range for {path}: {start_raw}..{end_raw}")
             return response
 
         # If only one bound is present, treat it as both

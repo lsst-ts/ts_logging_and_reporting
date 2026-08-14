@@ -120,9 +120,7 @@ class CachedAdapter:
         return []
 
     @staticmethod
-    def _partition_by_field(
-        rows: list, key: str | Callable = "day_obs"
-    ) -> dict[Any, list]:
+    def _partition_by_field(rows: list, key: str | Callable = "day_obs") -> dict[Any, list]:
         """Bucket rows by a field value or a computed key.
 
         Parameters
@@ -158,9 +156,7 @@ class CachedAdapter:
         A single run is fetched on the calling thread, while multiple
         runs use a `ThreadPoolExecutor` to split the work concurrently.
         """
-        results: dict[int, Any] = {
-            dayobs: self._empty_value() for dayobs in dayobs_list
-        }
+        results: dict[int, Any] = {dayobs: self._empty_value() for dayobs in dayobs_list}
         runs = contiguous_runs(dayobs_list)
         if len(runs) > 1 and self.MAX_PARALLEL_RUNS > 1:
             payloads = self._fetch_runs_in_parallel(runs, fetch_run)
@@ -184,8 +180,7 @@ class CachedAdapter:
         fetched = fetch_run(run_start, run_end)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"Fetched {self.name} for dayobs {run_start}..{run_end}: "
-                f"{_payload_summary(fetched)}"
+                f"Fetched {self.name} for dayobs {run_start}..{run_end}: {_payload_summary(fetched)}"
             )
         return fetched
 
@@ -204,14 +199,10 @@ class CachedAdapter:
         Returns the payloads in run order.
         """
         workers = min(len(runs), self.MAX_PARALLEL_RUNS)
-        logger.debug(
-            f"Fetching {len(runs)} {self.name} runs across {workers} thread(s)"
-        )
+        logger.debug(f"Fetching {len(runs)} {self.name} runs across {workers} thread(s)")
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [
-                executor.submit(
-                    contextvars.copy_context().run, self._fetch_one_run, fetch_run, run
-                )
+                executor.submit(contextvars.copy_context().run, self._fetch_one_run, fetch_run, run)
                 for run in runs
             ]
             for future in as_completed(futures):
@@ -268,22 +259,16 @@ class CachedAdapter:
         compact separators keep the cached bytes smaller.
         """
         cache_key = self._cache_key(key)
-        payload = json.dumps(
-            data, allow_nan=False, ensure_ascii=False, separators=(",", ":")
-        )
+        payload = json.dumps(data, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
         ttl = self._ttl(key)
         self._redis.set(cache_key, payload, ex=ttl)
         if logger.isEnabledFor(logging.DEBUG):
             # Encoded only when debug logging is on, since the size is
             # in bytes and the payload may be non-ASCII.
-            logger.debug(
-                f"Cache store for {cache_key}: {len(payload.encode())} bytes, TTL {ttl}s"
-            )
+            logger.debug(f"Cache store for {cache_key}: {len(payload.encode())} bytes, TTL {ttl}s")
 
     def _acquire_lock(self, key) -> bool:
-        return bool(
-            self._redis.set(self._lock_key(key), "1", nx=True, ex=self.LOCK_TTL)
-        )
+        return bool(self._redis.set(self._lock_key(key), "1", nx=True, ex=self.LOCK_TTL))
 
     def _release_lock(self, key) -> None:
         # Unconditional DEL: if our lock expired mid-fetch and another
@@ -311,8 +296,7 @@ class CachedAdapter:
                 missing.append(key)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"{len(results)} of {len(keys)} {self.name} key(s) served from cache, "
-                f"{len(missing)} to fetch"
+                f"{len(results)} of {len(keys)} {self.name} key(s) served from cache, {len(missing)} to fetch"
             )
         if not missing:
             return results
@@ -426,8 +410,9 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
 
     @abstractmethod
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, Any]:
-        """Fetch one contiguous dayobs run, partitioned by dayobs. Implemented by
-        the concrete subclass.
+        """Fetch one contiguous dayobs run, partitioned by dayobs.
+
+        Implemented by the concrete subclass.
 
         End with `_partition_by_field` to bucket the flat rows by dayobs.
 
@@ -480,9 +465,7 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
     today, and subclasses validate requests against this set.
     """
 
-    def fetch(
-        self, instrument: str, start_dayobs: int, end_dayobs: int
-    ) -> dict[int, list[dict]]:
+    def fetch(self, instrument: str, start_dayobs: int, end_dayobs: int) -> dict[int, list[dict]]:
         """Return rows for the range, partitioned by dayobs.
 
         Parameters
@@ -499,9 +482,7 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
         """
         instrument = instrument.lower()
         days = dayobs_range(start_dayobs, end_dayobs)
-        by_key = self._fetch_cached(
-            [self._compose_key(instrument, day) for day in days]
-        )
+        by_key = self._fetch_cached([self._compose_key(instrument, day) for day in days])
         return {day: by_key[self._compose_key(instrument, day)] for day in days}
 
     def refresh(self, dayobs: int) -> None:
@@ -517,9 +498,7 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
                 fetched = self._fetch_from_source([key])
                 self._store(key, fetched[key])
             except Exception:
-                logger.exception(
-                    f"{self.name} refresh failed for {instrument} dayobs {dayobs}"
-                )
+                logger.exception(f"{self.name} refresh failed for {instrument} dayobs {dayobs}")
 
     @staticmethod
     def _compose_key(instrument: str, dayobs: int) -> str:
@@ -548,20 +527,17 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
         for instrument, dayobs_list in by_instrument.items():
             per_day = self._collate_runs(
                 dayobs_list,
-                lambda run_start, run_end, i=instrument: self._fetch_run(
-                    i, run_start, run_end
-                ),
+                lambda run_start, run_end, i=instrument: self._fetch_run(i, run_start, run_end),
             )
             for dayobs, rows in per_day.items():
                 results[self._compose_key(instrument, dayobs)] = rows
         return results
 
     @abstractmethod
-    def _fetch_run(
-        self, instrument: str, run_start: int, run_end: int
-    ) -> dict[int, list[dict]]:
-        """Fetch one contiguous dayobs+instrument run, partitioned by dayobs. Implemented by
-        the concrete subclass.
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        """Fetch one contiguous dayobs+instrument run, partitioned by dayobs.
+
+        Implemented by the concrete subclass.
 
         End with `_partition_by_field` to bucket the flat rows by dayobs.
 

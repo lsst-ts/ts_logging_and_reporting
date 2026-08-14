@@ -76,9 +76,7 @@ def filter_tickets_by_instrument(tickets, instrument, exclude=False):
     def matches(ticket):
         obj_system_list = ticket["system"]
         search_terms = (instrument, INSTRUMENTS[instrument])
-        return any(
-            term in system for term in search_terms for system in obj_system_list
-        )
+        return any(term in system for term in search_terms for system in obj_system_list)
 
     if exclude:
         return [ticket for ticket in tickets if not matches(ticket)]
@@ -95,12 +93,10 @@ class JiraTicketsService(Service):
     """
 
     def __init__(self, jira_obs_adapter: JiraObsCachedAdapter | None = None) -> None:
-        self.jira_obs_adapter = (
-            jira_obs_adapter if jira_obs_adapter is not None else get_jira_obs_adapter()
-        )
+        self.jira_obs_adapter = jira_obs_adapter if jira_obs_adapter is not None else get_jira_obs_adapter()
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
-        """Return OBS tickets (updated and created) for the range and instrument.
+        """Return OBS tickets (updated and created) for range and instrument.
 
         Parameters
         ----------
@@ -112,9 +108,7 @@ class JiraTicketsService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.jira_obs_adapter.fetch(
-            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-        )
+        per_day = self.jira_obs_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
 
         # A ticket can sit in several dayobs buckets (created one day,
         # updated another) — keep the first occurrence of each key.
@@ -132,9 +126,7 @@ class JiraTicketsService(Service):
 
         if instrument in INSTRUMENT_EXCLUDE_MAP:
             for excluded_instrument in INSTRUMENT_EXCLUDE_MAP[instrument]:
-                tickets = filter_tickets_by_instrument(
-                    tickets, instrument=excluded_instrument, exclude=True
-                )
+                tickets = filter_tickets_by_instrument(tickets, instrument=excluded_instrument, exclude=True)
         else:
             tickets = filter_tickets_by_instrument(tickets, instrument=instrument)
 

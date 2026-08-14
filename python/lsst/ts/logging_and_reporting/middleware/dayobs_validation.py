@@ -47,9 +47,7 @@ def _validate_dayobs_range(start_raw: str, end_raw: str) -> str | None:
             return f"Invalid {label}: {value!r}"
 
     if start > end:
-        logger.warning(
-            f"Rejected inverted dayobs range: dayObsStart={start}, dayObsEnd={end}"
-        )
+        logger.warning(f"Rejected inverted dayobs range: dayObsStart={start}, dayObsEnd={end}")
         return f"dayObsStart ({start}) must not be after dayObsEnd ({end})"
 
     return None
@@ -65,11 +63,8 @@ class DayobsValidationMiddleware(BaseHTTPMiddleware):
         end_raw = request.query_params.get("dayObsEnd")
 
         if start_raw and end_raw:
-            # Only run if a match is found, otherwise let it fall through to 404
-            matched = any(
-                route.matches(request.scope)[0] == Match.FULL
-                for route in request.app.routes
-            )
+            # Only run if a match is found, else let it fall through to 404
+            matched = any(route.matches(request.scope)[0] == Match.FULL for route in request.app.routes)
             if matched:
                 error = _validate_dayobs_range(start_raw, end_raw)
                 if error:

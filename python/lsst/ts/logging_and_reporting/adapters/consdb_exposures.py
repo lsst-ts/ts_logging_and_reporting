@@ -61,15 +61,13 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
     the curated night-summary columns, `DataLogService` returns the full
     record.
 
-    Transformed-EFD is not available at the summit, so this adapter behaves slightly
-    differently based on EXTERNAL_INSTANCE_URL
+    Transformed-EFD is not available at the summit, so this adapter
+    behaves slightly differently based on EXTERNAL_INSTANCE_URL
     """
 
     name = "consdb_exposures"
 
-    def _fetch_run(
-        self, instrument: str, run_start: int, run_end: int
-    ) -> dict[int, list[dict]]:
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
         efd_fields = EFD_FIELDS.get(instrument, []) if efd_transform_available() else []
         efd_columns = "".join(f", f.{field}" for field in efd_fields)
         efd_join = (

@@ -60,9 +60,7 @@ class NarrativelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapte
 
     name = "narrativelog"
 
-    def __init__(
-        self, redis: Any, server_url: str | None = None, page_limit: int = 1000
-    ):
+    def __init__(self, redis: Any, server_url: str | None = None, page_limit: int = 1000):
         super().__init__(redis, server_url=server_url)
         self._page_limit = page_limit
 

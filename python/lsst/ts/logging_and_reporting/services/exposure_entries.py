@@ -45,13 +45,9 @@ class ExposureEntriesService(Service):
     happens here at collation time.
     """
 
-    def __init__(
-        self, exposurelog_adapter: ExposurelogCachedAdapter | None = None
-    ) -> None:
+    def __init__(self, exposurelog_adapter: ExposurelogCachedAdapter | None = None) -> None:
         self.exposurelog_adapter = (
-            exposurelog_adapter
-            if exposurelog_adapter is not None
-            else get_exposurelog_adapter()
+            exposurelog_adapter if exposurelog_adapter is not None else get_exposurelog_adapter()
         )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
@@ -67,9 +63,7 @@ class ExposureEntriesService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.exposurelog_adapter.fetch(
-            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-        )
+        per_day = self.exposurelog_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
         filtered = {
             dayobs: [m for m in messages if m.get("instrument") == instrument]
             for dayobs, messages in per_day.items()

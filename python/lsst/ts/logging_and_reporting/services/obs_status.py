@@ -71,9 +71,7 @@ def decode_states(mask: int) -> list[str]:
     """
     if mask == 0:
         return ["UNKNOWN"]
-    return [
-        name for name, bit in OBSERVATORY_STATES.items() if bit != 0 and (mask & bit)
-    ]
+    return [name for name, bit in OBSERVATORY_STATES.items() if bit != 0 and (mask & bit)]
 
 
 def is_unknown(status: int) -> bool:
@@ -256,9 +254,7 @@ def sum_interval_overlap(
                 night_i += 1
                 continue
             # Overlap -> accumulate.
-            total_ms += max(
-                0, min(interval_end, night_end) - max(interval_start, night_start)
-            )
+            total_ms += max(0, min(interval_end, night_end) - max(interval_start, night_start))
             # Interval finishes before the night ends -> next interval.
             if interval_end <= night_end:
                 break
@@ -298,13 +294,9 @@ class ObsStatusService(Service):
         almanac_adapter: AlmanacCachedAdapter | None = None,
     ) -> None:
         self.obs_status_adapter = (
-            obs_status_adapter
-            if obs_status_adapter is not None
-            else get_rubin_nights_obs_status_adapter()
+            obs_status_adapter if obs_status_adapter is not None else get_rubin_nights_obs_status_adapter()
         )
-        self.almanac_adapter = (
-            almanac_adapter if almanac_adapter is not None else get_almanac_adapter()
-        )
+        self.almanac_adapter = almanac_adapter if almanac_adapter is not None else get_almanac_adapter()
 
     def handle(
         self,
@@ -323,7 +315,7 @@ class ObsStatusService(Service):
                 add_or_subtract_dayobs_days(day_obs_start, -1), day_obs_end
             ),
         }
-        # Don't worry about using fetch_concurrently, almanac fetch is basically free
+        # No need for fetch_concurrently, the almanac fetch is basically free
         if need_almanac:
             tasks["almanac"] = lambda: self.almanac_adapter.fetch(
                 add_or_subtract_dayobs_days(day_obs_start, 1),

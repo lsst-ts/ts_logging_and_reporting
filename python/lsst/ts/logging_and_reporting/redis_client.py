@@ -66,9 +66,7 @@ class DisabledRedis:
     def get(self, name: str) -> None:
         return None
 
-    def set(
-        self, name: str, value: Any, nx: bool = False, ex: int | None = None
-    ) -> bool:
+    def set(self, name: str, value: Any, nx: bool = False, ex: int | None = None) -> bool:
         return True
 
     def delete(self, *names: str) -> int:

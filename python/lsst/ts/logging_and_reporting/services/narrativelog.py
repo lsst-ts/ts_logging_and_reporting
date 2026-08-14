@@ -44,13 +44,9 @@ class NarrativeLogService(Service):
     per dayobs; instrument filtering happens here at collation time.
     """
 
-    def __init__(
-        self, narrativelog_adapter: NarrativelogCachedAdapter | None = None
-    ) -> None:
+    def __init__(self, narrativelog_adapter: NarrativelogCachedAdapter | None = None) -> None:
         self.narrativelog_adapter = (
-            narrativelog_adapter
-            if narrativelog_adapter is not None
-            else get_narrativelog_adapter()
+            narrativelog_adapter if narrativelog_adapter is not None else get_narrativelog_adapter()
         )
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
@@ -66,9 +62,7 @@ class NarrativeLogService(Service):
         instrument : `str`
             Instrument to filter by (e.g. ``LSSTCam``).
         """
-        per_day = self.narrativelog_adapter.fetch(
-            day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1)
-        )
+        per_day = self.narrativelog_adapter.fetch(day_obs_start, add_or_subtract_dayobs_days(day_obs_end, -1))
         filtered = {
             dayobs: [m for m in messages if m.get("instrument") == instrument]
             for dayobs, messages in per_day.items()
@@ -90,12 +84,8 @@ class NarrativeLogService(Service):
         records = flatten_sorted(data, "date_begin")
         return {
             "narrative_log": records,
-            "time_lost_to_weather": sum(
-                m["time_lost"] for m in records if m["time_lost_type"] == "weather"
-            ),
-            "time_lost_to_faults": sum(
-                m["time_lost"] for m in records if m["time_lost_type"] == "fault"
-            ),
+            "time_lost_to_weather": sum(m["time_lost"] for m in records if m["time_lost_type"] == "weather"),
+            "time_lost_to_faults": sum(m["time_lost"] for m in records if m["time_lost_type"] == "fault"),
         }
 
 
