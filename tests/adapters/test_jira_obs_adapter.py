@@ -68,7 +68,7 @@ class TestGetSystemNames:
 class TestFetchFromSource:
     def test_buckets_ticket_by_created_dayobs(self, adapter):
         issues = [make_issue(created="2025-01-01T18:00:00.000+0000")]
-        with patch("requests.get", jira_requests_get(issues)):
+        with patch("requests.Session.get", jira_requests_get(issues)):
             result = adapter._fetch_from_source([20250101, 20250102])
         assert [t["key"] for t in result[20250101]] == ["OBS-1"]
         assert result[20250102] == []
@@ -80,20 +80,20 @@ class TestFetchFromSource:
                 updated="2025-01-02T18:00:00.000+0000",
             )
         ]
-        with patch("requests.get", jira_requests_get(issues)):
+        with patch("requests.Session.get", jira_requests_get(issues)):
             result = adapter._fetch_from_source([20250101, 20250102])
         assert [t["key"] for t in result[20250101]] == ["OBS-1"]
         assert [t["key"] for t in result[20250102]] == ["OBS-1"]
 
     def test_out_of_range_buckets_dropped(self, adapter):
         issues = [make_issue(created="2025-01-05T18:00:00.000+0000")]
-        with patch("requests.get", jira_requests_get(issues)):
+        with patch("requests.Session.get", jira_requests_get(issues)):
             result = adapter._fetch_from_source([20250101])
         assert result == {20250101: []}
 
     def test_one_search_per_contiguous_run(self, adapter):
         mock_get = jira_requests_get([])
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             adapter._fetch_from_source([20250101, 20250102, 20250105])
         urls = [call.args[0] for call in mock_get.call_args_list]
         assert urls.count(f"{SERVER}/rest/api/latest/myself") == 1
@@ -101,7 +101,7 @@ class TestFetchFromSource:
 
     def test_jql_window_and_fields(self, adapter):
         mock_get = jira_requests_get([])
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             adapter._fetch_from_source([20250101, 20250102])
         params = mock_get.call_args.kwargs["params"]
         jql = params["jql"]
@@ -114,7 +114,7 @@ class TestFetchFromSource:
 
     def test_jql_dates_converted_to_user_timezone(self, adapter):
         mock_get = jira_requests_get([], tz="Etc/GMT+3")
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             adapter._fetch_from_source([20250101])
         jql = mock_get.call_args.kwargs["params"]["jql"]
         assert 'created >= "2025-01-01 09:00"' in jql
@@ -127,7 +127,7 @@ class TestFetchFromSource:
                 systems=[{"name": "Simonyi", "child": {"name": "M1M3"}}],
             )
         ]
-        with patch("requests.get", jira_requests_get(issues)):
+        with patch("requests.Session.get", jira_requests_get(issues)):
             result = adapter._fetch_from_source([20250101])
         record = result[20250101][0]
         assert record == {
@@ -144,7 +144,7 @@ class TestFetchFromSource:
 
     def test_basic_auth_headers(self, adapter):
         mock_get = jira_requests_get([])
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             adapter._fetch_from_source([20250101])
         headers = mock_get.call_args.kwargs["headers"]
         assert headers["Authorization"] == "Basic test-token"
@@ -152,7 +152,7 @@ class TestFetchFromSource:
 
     def test_user_timezone_fetched_once_across_fetches(self, adapter):
         mock_get = jira_requests_get([])
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             adapter._fetch_from_source([20250101])
             adapter._fetch_from_source([20250102])
         urls = [call.args[0] for call in mock_get.call_args_list]
@@ -161,7 +161,7 @@ class TestFetchFromSource:
     def test_http_error_propagates(self, adapter):
         response = Mock()
         response.raise_for_status.side_effect = requests.HTTPError("502 Bad Gateway")
-        with patch("requests.get", return_value=response):
+        with patch("requests.Session.get", return_value=response):
             with pytest.raises(requests.HTTPError):
                 adapter._fetch_from_source([20250101])
 
@@ -169,6 +169,6 @@ class TestFetchFromSource:
 class TestTtl:
     def test_mutable_ttl_for_historical_dayobs(self, adapter, fake_redis):
         issues = [make_issue(created="2020-01-01T18:00:00.000+0000")]
-        with patch("requests.get", jira_requests_get(issues)):
+        with patch("requests.Session.get", jira_requests_get(issues)):
             adapter.fetch(20200101, 20200101)
         assert fake_redis.ttls["adapter:jira_obs:20200101"] == MUTABLE_TTL_REDIS

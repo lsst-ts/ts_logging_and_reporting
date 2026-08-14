@@ -33,7 +33,7 @@ def visits_adapter(fake_redis, monkeypatch):
 class TestVisitsAdapter:
     def test_queries_visit_tables_by_dayobs(self, visits_adapter):
         mock_post = consdb_post([])
-        with patch("requests.post", mock_post):
+        with patch("requests.Session.post", mock_post):
             visits_adapter._fetch_run("lsstcam", 20250101, 20250102)
         sql = sent_sql(mock_post)
         assert sql.startswith("SELECT v.*, q.*")
@@ -47,12 +47,12 @@ class TestVisitsAdapter:
             {"visit_id": 1, "day_obs": 20250101},
             {"visit_id": 2, "day_obs": 20250102},
         ]
-        with patch("requests.post", consdb_post(records)):
+        with patch("requests.Session.post", consdb_post(records)):
             result = visits_adapter.fetch("LSSTCam", 20250101, 20250102)
         assert {dayobs: len(rows) for dayobs, rows in result.items()} == {20250101: 1, 20250102: 1}
 
     def test_uses_own_cache_namespace(self, visits_adapter, fake_redis):
-        with patch("requests.post", consdb_post([])):
+        with patch("requests.Session.post", consdb_post([])):
             visits_adapter.fetch("lsstcam", 20250101, 20250101)
         assert "adapter:consdb_visits:lsstcam:20250101" in fake_redis.keys()
 

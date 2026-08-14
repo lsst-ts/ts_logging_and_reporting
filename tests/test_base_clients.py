@@ -75,7 +75,7 @@ class TestAuthentication:
         # Rotation must not need a restart: the token is read at call
         # time, not cached on the client.
         mock_get = Mock(return_value=mock_response([]))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             client._get_json(f"{SERVER}/first")
             monkeypatch.setenv("ACCESS_TOKEN", "rotated-token")
             client._get_json(f"{SERVER}/second")
@@ -86,14 +86,14 @@ class TestAuthentication:
         monkeypatch.setenv("ACCESS_TOKEN", "rsp-token")
         monkeypatch.setenv("JIRA_API_TOKEN", "jira-token")
         mock_get = Mock(return_value=mock_response([]))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             JiraClient(fake_redis, server_url=SERVER)._get_json(f"{SERVER}/issues")
         assert mock_get.call_args.kwargs["headers"]["Authorization"] == "Bearer jira-token"
 
     def test_missing_token_fails_before_the_request(self, fake_redis, monkeypatch):
         monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
         mock_get = Mock(return_value=mock_response([]))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             with pytest.raises(HTTPException) as excinfo:
                 JiraClient(fake_redis, server_url=SERVER)._get_json(f"{SERVER}/issues")
         # An unresolvable service-account token is a misconfigured
@@ -109,35 +109,35 @@ class TestAuthentication:
 
 class TestGetJson:
     def test_returns_the_decoded_body(self, client):
-        with patch("requests.get", Mock(return_value=mock_response({"id": 7}))):
+        with patch("requests.Session.get", Mock(return_value=mock_response({"id": 7}))):
             assert client._get_json(f"{SERVER}/thing") == {"id": 7}
 
     def test_sends_url_and_params(self, client):
         mock_get = Mock(return_value=mock_response([]))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             client._get_json(f"{SERVER}/thing", params={"instrument": "latiss"})
         assert mock_get.call_args.args[0] == f"{SERVER}/thing"
         assert mock_get.call_args.kwargs["params"] == {"instrument": "latiss"}
 
     def test_drops_none_params_but_keeps_falsy_ones(self, client):
         mock_get = Mock(return_value=mock_response([]))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             client._get_json(f"{SERVER}/thing", params={"offset": 0, "text": "", "flag": None})
         assert mock_get.call_args.kwargs["params"] == {"offset": 0, "text": ""}
 
     def test_applies_connect_and_read_timeouts(self, client):
         mock_get = Mock(return_value=mock_response([]))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             client._get_json(f"{SERVER}/thing")
         assert mock_get.call_args.kwargs["timeout"] == (Client.CONNECT_TIMEOUT, Client.READ_TIMEOUT)
 
     def test_unreachable_server_raises(self, client):
-        with patch("requests.get", Mock(side_effect=requests.ConnectionError("refused"))):
+        with patch("requests.Session.get", Mock(side_effect=requests.ConnectionError("refused"))):
             with pytest.raises(requests.ConnectionError):
                 client._get_json(f"{SERVER}/thing")
 
     def test_error_status_raises(self, client):
-        with patch("requests.get", Mock(return_value=error_response({}, status="404 Not Found"))):
+        with patch("requests.Session.get", Mock(return_value=error_response({}, status="404 Not Found"))):
             with pytest.raises(requests.HTTPError):
                 client._get_json(f"{SERVER}/thing")
 
@@ -145,7 +145,7 @@ class TestGetJson:
 class TestPostJson:
     def test_sends_the_body_and_returns_the_decoded_response(self, client):
         mock_post = Mock(return_value=mock_response({"ok": True}))
-        with patch("requests.post", mock_post):
+        with patch("requests.Session.post", mock_post):
             result = client._post_json(f"{SERVER}/thing", {"query": "SELECT 1"})
         assert result == {"ok": True}
         assert mock_post.call_args.args[0] == f"{SERVER}/thing"
@@ -153,7 +153,7 @@ class TestPostJson:
         assert mock_post.call_args.kwargs["timeout"] == (Client.CONNECT_TIMEOUT, Client.READ_TIMEOUT)
 
     def test_unreachable_server_raises(self, client):
-        with patch("requests.post", Mock(side_effect=requests.ConnectionError("refused"))):
+        with patch("requests.Session.post", Mock(side_effect=requests.ConnectionError("refused"))):
             with pytest.raises(requests.ConnectionError):
                 client._post_json(f"{SERVER}/thing", {})
 
@@ -165,14 +165,14 @@ def page(size, start=0):
 class TestPaging:
     def test_short_first_page_ends_the_fetch(self, client):
         mock_get = Mock(return_value=mock_response(page(1)))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             records = client._get_json_paged(f"{SERVER}/records", {}, page_limit=2)
         assert records == page(1)
         assert mock_get.call_count == 1
 
     def test_full_page_is_followed_by_another_request(self, client):
         mock_get = Mock(side_effect=[mock_response(page(2)), mock_response(page(1, start=2))])
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             records = client._get_json_paged(f"{SERVER}/records", {}, page_limit=2)
         assert records == page(3)
         offsets = [call.kwargs["params"]["offset"] for call in mock_get.call_args_list]
@@ -182,7 +182,7 @@ class TestPaging:
         # A full last page is indistinguishable from more to come, so
         # paging only stops once a short (here empty) page comes back.
         mock_get = Mock(side_effect=[mock_response(page(2)), mock_response([])])
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             records = client._get_json_paged(f"{SERVER}/records", {}, page_limit=2)
         assert records == page(2)
         assert mock_get.call_count == 2
@@ -190,7 +190,7 @@ class TestPaging:
     def test_caller_params_are_preserved_and_not_mutated(self, client):
         params = {"instrument": "latiss"}
         mock_get = Mock(return_value=mock_response([]))
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             client._get_json_paged(f"{SERVER}/records", params, page_limit=2)
         assert params == {"instrument": "latiss"}
         assert mock_get.call_args.kwargs["params"] == {"instrument": "latiss", "limit": 2, "offset": 0}
@@ -199,7 +199,7 @@ class TestPaging:
         client.MAX_RECORDS = 3
         pages = [mock_response(page(2)), mock_response(page(2, start=2)), mock_response(page(2, start=4))]
         mock_get = Mock(side_effect=pages)
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             with caplog.at_level(logging.WARNING):
                 records = client._get_json_paged(f"{SERVER}/records", {}, page_limit=2)
         assert len(records) == 4
@@ -208,7 +208,7 @@ class TestPaging:
 
     def test_failure_mid_paging_propagates(self, client):
         mock_get = Mock(side_effect=[mock_response(page(2)), requests.HTTPError("502 Bad Gateway")])
-        with patch("requests.get", mock_get):
+        with patch("requests.Session.get", mock_get):
             with pytest.raises(requests.HTTPError):
                 client._get_json_paged(f"{SERVER}/records", {}, page_limit=2)
 
@@ -217,7 +217,7 @@ class TestSqlQuery:
     def test_posts_sql_to_the_consdb_query_endpoint(self, sql_client):
         payload = {"columns": ["exposure_id", "day_obs"], "data": [[1, 20250101]]}
         mock_post = Mock(return_value=mock_response(payload))
-        with patch("requests.post", mock_post):
+        with patch("requests.Session.post", mock_post):
             rows = sql_client._query("SELECT exposure_id, day_obs FROM exposure")
         assert rows == [{"exposure_id": 1, "day_obs": 20250101}]
         assert mock_post.call_args.args[0] == f"{SERVER}/consdb/query"
@@ -225,12 +225,12 @@ class TestSqlQuery:
 
     def test_empty_result_gives_no_rows(self, sql_client):
         payload = {"columns": ["exposure_id"], "data": []}
-        with patch("requests.post", Mock(return_value=mock_response(payload))):
+        with patch("requests.Session.post", Mock(return_value=mock_response(payload))):
             assert sql_client._query("SELECT exposure_id FROM exposure") == []
 
     def test_sql_error_is_logged_with_the_postgres_message_and_reraised(self, sql_client, caplog):
         response = error_response({"message": 'column "nope" does not exist'})
-        with patch("requests.post", Mock(return_value=response)):
+        with patch("requests.Session.post", Mock(return_value=response)):
             with caplog.at_level(logging.ERROR):
                 with pytest.raises(requests.HTTPError):
                     sql_client._query("SELECT nope FROM exposure")
@@ -238,7 +238,7 @@ class TestSqlQuery:
         assert "SELECT nope FROM exposure" in caplog.text
 
     def test_connection_failure_propagates(self, sql_client):
-        with patch("requests.post", Mock(side_effect=requests.ConnectionError("refused"))):
+        with patch("requests.Session.post", Mock(side_effect=requests.ConnectionError("refused"))):
             with pytest.raises(requests.ConnectionError):
                 sql_client._query("SELECT 1")
 
