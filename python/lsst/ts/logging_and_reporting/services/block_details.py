@@ -68,12 +68,8 @@ class BlockDetailsService(Service):
         zephyr_adapter: ZephyrAdapter | None = None,
         jira_adapter: JiraBlockAdapter | None = None,
     ) -> None:
-        self.zephyr_adapter = (
-            zephyr_adapter if zephyr_adapter is not None else get_zephyr_adapter()
-        )
-        self.jira_adapter = (
-            jira_adapter if jira_adapter is not None else get_jira_block_adapter()
-        )
+        self.zephyr_adapter = zephyr_adapter if zephyr_adapter is not None else get_zephyr_adapter()
+        self.jira_adapter = jira_adapter if jira_adapter is not None else get_jira_block_adapter()
 
     def handle(self, keys: list[str]) -> dict:
         """Return summary, source, and URL per resolvable BLOCK key.
@@ -93,11 +89,7 @@ class BlockDetailsService(Service):
 
         fetched = self.fetch_concurrently(
             {
-                source: (
-                    lambda source=source, wanted=wanted: source_adapters[
-                        source
-                    ].fetch_by_ids(wanted)
-                )
+                source: (lambda source=source, wanted=wanted: source_adapters[source].fetch_by_ids(wanted))
                 for source, wanted in source_keys.items()
                 if wanted
             }
@@ -118,9 +110,7 @@ class BlockDetailsService(Service):
                 summaries[source] = result
 
         if "zephyr" in errors and "jira" in errors:
-            raise HTTPException(
-                status_code=500, detail="Both Zephyr and Jira requests failed."
-            )
+            raise HTTPException(status_code=500, detail="Both Zephyr and Jira requests failed.")
 
         response = self.collate_response({"summaries": summaries, "errors": errors})
         logger.debug(f"Collated {len(response['data'])} BLOCK details for keys: {keys}")

@@ -171,9 +171,7 @@ class TestDayobsToUnixMs:
         assert dayobs_to_unix_ms(19700101, hour=3) == 3 * ONE_HOUR_UNIX_MS
 
     def test_matches_datetime_timestamp(self):
-        expected = int(
-            dt.datetime(2025, 6, 15, 12, tzinfo=dt.timezone.utc).timestamp() * 1000
-        )
+        expected = int(dt.datetime(2025, 6, 15, 12, tzinfo=dt.timezone.utc).timestamp() * 1000)
         assert dayobs_to_unix_ms(20250615) == expected
 
 
@@ -182,8 +180,5 @@ class TestAlmanacToUnixMs:
         assert almanac_to_unix_ms("1970-01-02 00:00:00") == 24 * ONE_HOUR_UNIX_MS
 
     def test_matches_datetime_timestamp(self):
-        expected = int(
-            dt.datetime(2025, 6, 15, 3, 30, 0, tzinfo=dt.timezone.utc).timestamp()
-            * 1000
-        )
+        expected = int(dt.datetime(2025, 6, 15, 3, 30, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
         assert almanac_to_unix_ms("2025-06-15 03:30:00") == expected

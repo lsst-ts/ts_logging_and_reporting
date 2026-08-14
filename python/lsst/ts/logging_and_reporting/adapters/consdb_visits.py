@@ -36,16 +36,14 @@ class ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapt
     """Caches the raw visit record (visit1 ⋈ visit1_quicklook) per night.
 
     Feeds the visit-map endpoints. Cached un-augmented: the rubin_nights
-    augmentation is pure local compute and runs in `VisitMapsService` but
-    not `StaticVisitMapsService`, so both map forms derive from one un-augmented
-    entry.
+    augmentation is pure local compute and runs in `VisitMapsService`
+    but not `StaticVisitMapsService`, so both map forms derive from one
+    un-augmented entry.
     """
 
     name = "consdb_visits"
 
-    def _fetch_run(
-        self, instrument: str, run_start: int, run_end: int
-    ) -> dict[int, list[dict]]:
+    def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
         sql = f"""
             SELECT v.*, q.*
             FROM cdb_{instrument}.visit1 v

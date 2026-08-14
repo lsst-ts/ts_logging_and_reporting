@@ -54,9 +54,7 @@ class RubinNightsDomeAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
         # get_dome_open_close's dayobs window is [start, end) at noon
         # UTC, so query to noon after run_end to cover the run.
         t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
-        t_end = Time(
-            get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1))
-        )
+        t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
         frame = get_dome_open_close(t_start, t_end, self._efd_client)
         if frame is None or frame.empty:
             return {}

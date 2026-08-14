@@ -189,9 +189,7 @@ def _get_visit_map_config(
     }
 
 
-def build_visit_maps_using_builder(
-    visits: pd.DataFrame, applet_mode=False, theme="DARK"
-) -> UIElement | None:
+def build_visit_maps_using_builder(visits: pd.DataFrame, applet_mode=False, theme="DARK") -> UIElement | None:
     """Build interactive visit maps using the VisitMapBuilder
     class and uranography.
 
@@ -246,9 +244,7 @@ def build_visit_maps_using_builder(
             visit_fill_colors=config["visit_fill_colors"],
             figure_kwargs=config["figure_kwargs"],
         )
-        .add_footprint_outlines(
-            footprint_regions, line_width=config["horizon_thickness"]
-        )
+        .add_footprint_outlines(footprint_regions, line_width=config["horizon_thickness"])
         .hide_horizon_sliders()
         .add_eq_sliders()
         .add_graticules()
@@ -261,9 +257,7 @@ def build_visit_maps_using_builder(
         .highlight_recent_visits()
         .add_body("sun", size=config["star_size"], color="yellow", alpha=1.0)
         .add_body("moon", size=config["star_size"], color="orange", alpha=0.8)
-        .add_horizon(
-            color=config["horizon_color"], line_width=config["horizon_thickness"]
-        )
+        .add_horizon(color=config["horizon_color"], line_width=config["horizon_thickness"])
         .add_horizon(zd=70, color="red", line_width=config["horizon_thickness"])
         .add_hovertext(visit_tooltips=tooltips)
         .add_play_controls()
@@ -276,9 +270,7 @@ def build_visit_maps_using_builder(
     return viewable
 
 
-def build_visit_maps_payload(
-    visits: pd.DataFrame, instrument: str, applet_mode: bool
-) -> dict | None:
+def build_visit_maps_payload(visits: pd.DataFrame, instrument: str, applet_mode: bool) -> dict | None:
     """Augment the visits and return the map as an embeddable document.
 
     Parameters
@@ -311,11 +303,7 @@ class VisitMapsService(WorkerPoolMixin, Service):
     pool_preload = ("lsst.ts.logging_and_reporting.services.visit_maps",)
 
     def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
-        self.consdb_adapter = (
-            consdb_adapter
-            if consdb_adapter is not None
-            else get_consdb_visits_adapter()
-        )
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
 
     def handle(
         self,
@@ -346,20 +334,14 @@ class VisitMapsService(WorkerPoolMixin, Service):
             f"visit maps for dayObsStart: {day_obs_start}, dayObsEnd: {day_obs_end}, "
             f"instrument: {instrument}, appletMode: {applet_mode}"
         )
-        return self.collate_response(
-            per_day, instrument=instrument, applet_mode=applet_mode
-        )
+        return self.collate_response(per_day, instrument=instrument, applet_mode=applet_mode)
 
-    def collate_response(
-        self, data: dict[int, list[dict]], *, instrument: str, applet_mode: bool
-    ) -> dict:
+    def collate_response(self, data: dict[int, list[dict]], *, instrument: str, applet_mode: bool) -> dict:
         rows = [record for dayobs in sorted(data) for record in data[dayobs]]
         visits = pd.DataFrame(rows)
         if visits.empty:
             return {"interactive": None}
-        document = self.run_in_worker(
-            build_visit_maps_payload, visits, instrument, applet_mode
-        )
+        document = self.run_in_worker(build_visit_maps_payload, visits, instrument, applet_mode)
         return {"interactive": document}
 
 
