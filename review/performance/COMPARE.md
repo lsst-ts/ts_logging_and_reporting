@@ -26,8 +26,9 @@ script. The table is generated output; everything after it is interpretation.
   within one scenario; `[DIFFERS AFTER]` that the two runs settled on different
   sizes for the same request; `[OTHER WINDOW]` that the two rows did not request
   the same nights, so their sizes are not comparable — e.g., `partial-rolling`,
-  which measures the shifted week against a baseline for the original one. See §8;
-  all of these flags are expected and explained by `capture-compare.md`
+  which measures the shifted week against a baseline for the original one. See
+  [§8](#8-return-values); all of these flags are expected and explained by
+  [`capture-compare.md`](../capture-compare.md)
 
 ---
 
@@ -220,7 +221,9 @@ Consequently:
   transfer, not by the backend.** `data-log hot-7day` at 35.872 s is ~35 s of
   moving 24.3 MB to Australia and ~0.2 s of server. Its "−3%" is not a weak cache
   result; it is a cache result invisible behind the link.
-- Nothing here is compressed. `REFACTOR_ODDITIES.md` §13 records that neither
+- Nothing here is compressed.
+  [`REFACTOR_ODDITIES.md` §13](../REFACTOR_ODDITIES.md#13-known-gaps-and-deferred-work)
+  records that neither
   `GZipMiddleware` nor nginx `gzip` is enabled, and measured ~4× on this payload
   class. That single change would move these three endpoints more than anything in
   the refactor did.
@@ -294,7 +297,8 @@ response writes — stop being negligible against it. In absolute terms `obs-sta
 cold burst went 2.699 s → 0.543 s and its wall time 4.803 s → 0.633 s.
 
 **The two map endpoints genuinely got worse under concurrency**, and this is
-discussed further in §6.
+discussed further in
+[§6(b)](#b-multi-night-visit-maps-bursts-are-152-slower-and-now-drop-requests).
 
 ### 4. rubin_nights client caching
 
@@ -319,7 +323,7 @@ discovery does not repeat on every fetch — where the pre-refactor path called
 
 The mixin is also used by the dome, context-feed and visit-overhead adapters, so
 the same saving is probably inside their totals, but only `obs-status` isolates it:
-`context-feed`'s payload changed between the runs (§8), and the `exposures` adapter
+`context-feed`'s payload changed between the runs ([§8](#8-return-values)), and the `exposures` adapter
 is too unstable to show this saving.
 
 ### 5. Per-day chunking is verified
@@ -347,7 +351,8 @@ where the per-day term dominates, agrees within ~5% on every endpoint except
 `exposures`.
 
 `exposures` is the apparent exception in both columns, and is handled in its
-own section (§6(c)).
+own section
+([§6(c)](#c-exposures-returns-a-bimodal-latency-distribution-for-an-unknown-reason)).
 
 Note that `partial-extension-7day` improving only −15% is **correct
 behaviour looking unimpressive**: widening a 1-day view to a week genuinely requires
@@ -363,9 +368,10 @@ cache behaviour — the reason its byte cell reads `[OTHER WINDOW]`.
 Three rows read as regressions in the table. One is an apparent transient or
 statistical effect, while the other two require further followup and testing.
 
-**(a) `data-log`'s apparent cold-path penalty is not real.** The table shows
-`cold-1day` at +52% and `cold-7day` at +9%, which read as a fixed ~3.5–4.0 s cost on
-the fetch path:
+#### (a) `data-log`'s apparent cold-path penalty is not real
+
+The table shows `cold-1day` at +52% and `cold-7day` at +9%, which read as a fixed
+~3.5–4.0 s cost on the fetch path:
 
 | scenario | before (s) | after (s) | delta |
 |---|---|---|---|
@@ -379,7 +385,7 @@ These findings could not be repeated. When retested 24 hours later, the cold-1da
 a p50 of 7.616s and the cold-7day a p50 of 36.257 - consistent with the original
 measurements.
 
-**(b) `multi-night-visit-maps` bursts are 1.5–2× slower and now drop requests.**
+#### (b) `multi-night-visit-maps` bursts are 1.5–2× slower and now drop requests
 
 This is a result of a mismatch between the code and the environment it executes in.
 In the baseline, the `/multi-night-visit-maps` endpoint uses a `ThreadPoolExecutor`
@@ -422,7 +428,8 @@ generation mechanism is explicitly and catastrophically not thread-safe, so it
 the same slowdown and dropped requests most likely because it is much less CPU
 heavy and therefore doesn't hit the pod limits.
 
-**(c) `exposures` returns a bimodal latency distribution for an unknown reason.**
+#### (c) `exposures` returns a bimodal latency distribution for an unknown reason
+
 The same request returns either ~5.4 s or ~9–16 s on `partial-rolling`,
 and either ~10.7 s or ~14.5 s on `partial-extension`, with nothing in between.
 That is what the table's `partial-extension-7day` row is really showing when
@@ -467,7 +474,8 @@ Failures are rare on both sides and concentrated in one place.
 
 The baseline's single failure was a 504 on `exposures cold-7day-burst` at the 60s
 gateway timeout. Every one of the refactored run's 29 was on a
-`multi-night-visit-maps` burst, from the queueing in §6(b).
+`multi-night-visit-maps` burst, from the queueing in
+[§6(b)](#b-multi-night-visit-maps-bursts-are-152-slower-and-now-drop-requests).
 
 ### 8. Return values
 
@@ -476,11 +484,13 @@ The byte flags in the table fall into three groups, all of which are expected.
 1. **Different window.** Tagged `[OTHER WINDOW]`: `partial-rolling` requests days
    2–8 against a baseline for days 1–7, so a different payload is the scenario
    working correctly.
-2. **Context Feed changes.** As explained in more detail in the `capture-compare.md`
-   document, the `/context-feed` endpoint has two known changes - the value of
+2. **Context Feed changes.** As explained in more detail in the
+   [`capture-compare.md` context-feed findings](../capture-compare.md#context-feed__1dayjson-context-feed__7dayjson),
+   the `/context-feed` endpoint has two known changes - the value of
    empty timestamp fields has changed, and some columns are dependant on cache state.
 3. **Serialisation noise.** The multi-night visit maps, whose Bokeh documents differ in
-   structure while carrying identical values (also noted in `capture-compare.md`).
+   structure while carrying identical values (also noted in
+   [`capture-compare.md`](../capture-compare.md#multi-night-visit-maps__json)).
 
 
 ---
@@ -497,7 +507,8 @@ The byte flags in the table fall into three groups, all of which are expected.
 - **This capture cannot see the best of it.** Six endpoints' hot latency is pinned
   at the 0.17 s Australia → SLAC RTT, and `data-log`, `context-feed` and `exposures`
   are dominated by a ~0.75 MB/s per-connection ceiling on uncompressed payloads.
-  Enabling gzip (`REFACTOR_ODDITIES.md` §13, measured at 4.4×) would do more for
+  Enabling gzip ([`REFACTOR_ODDITIES.md` §13](../REFACTOR_ODDITIES.md#13-known-gaps-and-deferred-work),
+  measured at 4.4×) would do more for
   those three than anything in the refactor did.
 - **~1.0 s per request on Rubin Nights backed adapters is not the cache.** 
   It is a fixed startup cost removed from the request path.
@@ -515,10 +526,12 @@ The byte flags in the table fall into three groups, all of which are expected.
 2. **Format `context-feed`'s `config` column explicitly** rather than letting
    pandas' inferred dtype decide, so a night's rendering does not depend on which
    other nights shared its query.
-3. **Account for `exposures`' bimodal latency** (§6(c)) — the widest row in the table
-   at 10.706–17.904 s, and confined to the one endpoint that fetches its adapters
-   concurrently. Examine whether this is an intrinsic issue with the
-   adapters involved, or if there is a more serious issue with `fetch_concurrently`
-4. **Resolve multi-night-visit-maps parallelization.** Whether through changing
+3. **Account for `exposures`' bimodal latency**
+   ([§6(c)](#c-exposures-returns-a-bimodal-latency-distribution-for-an-unknown-reason))
+   Examine whether this is an intrinsic issue with the adapters involved, the
+   execution environment or if there is a more serious issue with `fetch_concurrently`
+4. **Resolve multi-night-visit-maps parallelization**
+   ([§6(b)](#b-multi-night-visit-maps-bursts-are-152-slower-and-now-drop-requests)).
+   Whether through changing
    resource allocation, partial caching, or decreasing process-count, this
    is the stand-out slow endpoint that needs further improvement.
