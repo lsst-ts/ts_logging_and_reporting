@@ -28,11 +28,13 @@ mixins. `RestClient` is the general JSON client; `SqlClient` adds ConsDB's
 SQL query endpoint on top.
 """
 
+import functools
 import logging
 import time
 from typing import Any
 
 import requests
+import urllib3
 
 from lsst.ts.logging_and_reporting.utils.auth import (
     AUTH_SOURCES,
@@ -70,9 +72,28 @@ class RestClient:
     SLOW_REQUEST_SECONDS = 10.0
     """Upstream call duration that is logged as a warning."""
 
+    POOL_MAXSIZE = 20
+    """Connections kept open per upstream host."""
+
     def __init__(self, redis: Any, server_url: str | None = None):
         super().__init__(redis)
         self._server_url = server_url
+
+    @functools.cached_property
+    def _session(self) -> requests.Session:
+        """This client's pooled session.
+
+        Built lazily because `WorkerPoolMixin.pool_preload` imports
+        adapter modules into the forkserver, and a socket opened before
+        the fork would be shared by every worker. ``read=0`` keeps a
+        request that reached the server from being retried.
+        """
+        retry = urllib3.Retry(total=2, connect=2, read=0, status=0, backoff_factor=0.1)
+        adapter = requests.adapters.HTTPAdapter(pool_maxsize=self.POOL_MAXSIZE, max_retries=retry)
+        session = requests.Session()
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
 
     @property
     def server(self) -> str:
@@ -111,7 +132,7 @@ class RestClient:
         """
         started = time.monotonic()
         try:
-            response = requests.get(
+            response = self._session.get(
                 url,
                 params={key: value for key, value in (params or {}).items() if value is not None},
                 headers=self._request_headers(),
@@ -146,7 +167,7 @@ class RestClient:
         """
         started = time.monotonic()
         try:
-            response = requests.post(
+            response = self._session.post(
                 url,
                 json=json_body,
                 headers=self._request_headers(),

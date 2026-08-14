@@ -41,24 +41,24 @@ class TestFetchFromSource:
             make_message("2025-01-02T02:00:00"),
             make_message("2025-01-02T13:00:00"),
         ]
-        with patch("requests.get", return_value=mock_response(payload)):
+        with patch("requests.Session.get", return_value=mock_response(payload)):
             result = adapter._fetch_from_source([20250101, 20250102])
         assert len(result[20250101]) == 2
         assert len(result[20250102]) == 1
 
     def test_every_requested_dayobs_present_even_when_empty(self, adapter):
-        with patch("requests.get", return_value=mock_response([])):
+        with patch("requests.Session.get", return_value=mock_response([])):
             result = adapter._fetch_from_source([20250101, 20250102])
         assert result == {20250101: [], 20250102: []}
 
     def test_out_of_range_messages_dropped(self, adapter):
         payload = [make_message("2025-01-05T22:00:00")]
-        with patch("requests.get", return_value=mock_response(payload)):
+        with patch("requests.Session.get", return_value=mock_response(payload)):
             result = adapter._fetch_from_source([20250101])
         assert result == {20250101: []}
 
     def test_one_request_per_contiguous_run_with_noon_window(self, adapter):
-        with patch("requests.get", return_value=mock_response([])) as mock_get:
+        with patch("requests.Session.get", return_value=mock_response([])) as mock_get:
             adapter._fetch_from_source([20250101, 20250102, 20250105])
         assert mock_get.call_count == 2
         windows = [
@@ -71,7 +71,7 @@ class TestFetchFromSource:
         ]
 
     def test_request_url_and_fixed_params(self, adapter):
-        with patch("requests.get", return_value=mock_response([])) as mock_get:
+        with patch("requests.Session.get", return_value=mock_response([])) as mock_get:
             adapter._fetch_from_source([20250101])
         assert mock_get.call_args.args[0] == f"{SERVER}/narrativelog/messages"
         params = mock_get.call_args.kwargs["params"]
@@ -87,7 +87,7 @@ class TestFetchFromSource:
             [make_message("2025-01-01T20:00:00"), make_message("2025-01-01T21:00:00")],
             [make_message("2025-01-01T22:00:00")],
         ]
-        with patch("requests.get", side_effect=[mock_response(page) for page in pages]) as mock_get:
+        with patch("requests.Session.get", side_effect=[mock_response(page) for page in pages]) as mock_get:
             result = adapter._fetch_from_source([20250101])
         assert len(result[20250101]) == 3
         offsets = [call.kwargs["params"]["offset"] for call in mock_get.call_args_list]
@@ -98,7 +98,7 @@ class TestFetchFromSource:
         adapter = NarrativelogCachedAdapter(fake_redis, server_url=SERVER, page_limit=2)
         adapter.MAX_RECORDS = 4
         full_page = [make_message("2025-01-01T20:00:00"), make_message("2025-01-01T21:00:00")]
-        with patch("requests.get", return_value=mock_response(full_page)) as mock_get:
+        with patch("requests.Session.get", return_value=mock_response(full_page)) as mock_get:
             result = adapter._fetch_from_source([20250101])
         assert len(result[20250101]) == 4
         assert mock_get.call_count == 2
@@ -106,12 +106,12 @@ class TestFetchFromSource:
     def test_http_error_propagates(self, adapter):
         response = mock_response([])
         response.raise_for_status.side_effect = requests.HTTPError("502 Bad Gateway")
-        with patch("requests.get", return_value=response):
+        with patch("requests.Session.get", return_value=response):
             with pytest.raises(requests.HTTPError):
                 adapter._fetch_from_source([20250101])
 
     def test_auth_header_uses_service_token(self, adapter):
-        with patch("requests.get", return_value=mock_response([])) as mock_get:
+        with patch("requests.Session.get", return_value=mock_response([])) as mock_get:
             adapter._fetch_from_source([20250101])
         headers = mock_get.call_args.kwargs["headers"]
         assert headers["Authorization"] == "Bearer test-token"
@@ -119,7 +119,7 @@ class TestFetchFromSource:
 
 class TestInstrumentDerivation:
     def fetched_instrument(self, adapter, message):
-        with patch("requests.get", return_value=mock_response([message])):
+        with patch("requests.Session.get", return_value=mock_response([message])):
             result = adapter._fetch_from_source([20250101])
         return result[20250101][0]["instrument"]
 
@@ -147,6 +147,6 @@ class TestInstrumentDerivation:
 class TestTtl:
     def test_mutable_ttl_for_historical_dayobs(self, adapter, fake_redis):
         payload = [make_message("2020-01-01T22:00:00")]
-        with patch("requests.get", return_value=mock_response(payload)):
+        with patch("requests.Session.get", return_value=mock_response(payload)):
             adapter.fetch(20200101, 20200101)
         assert fake_redis.ttls["adapter:narrativelog:20200101"] == MUTABLE_TTL_REDIS
