@@ -47,7 +47,7 @@ def stringify_special_floats(val):
         - "-Infinity" if the value is negative infinity
         - The original value otherwise
     """
-    if isinstance(val, float):
+    if isinstance(val, (float, np.floating)):
         if np.isnan(val):
             return "NaN"
         elif np.isposinf(val):
@@ -84,8 +84,7 @@ def make_json_safe(obj):
     if isinstance(obj, dict):
         return {k: make_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        result = [make_json_safe(v) for v in obj]
-        return tuple(result) if isinstance(obj, tuple) else result
+        return [make_json_safe(v) for v in obj]
 
     # Check for Astropy Time BEFORE NumPy array check
     obj_type_name = type(obj).__name__
@@ -105,8 +104,6 @@ def make_json_safe(obj):
         return None
 
     if isinstance(obj, pd.Timestamp):
-        if pd.isnull(obj):
-            return None
         return obj.isoformat()
 
     if isinstance(obj, np.datetime64):
@@ -115,6 +112,8 @@ def make_json_safe(obj):
         return pd.Timestamp(obj).isoformat()
 
     if isinstance(obj, (pd.Timedelta, np.timedelta64)):
+        if pd.isnull(obj):
+            return None
         return float(pd.Timedelta(obj).total_seconds())
 
     if isinstance(obj, np.bool_):
