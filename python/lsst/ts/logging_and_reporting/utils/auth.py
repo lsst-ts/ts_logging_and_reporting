@@ -20,9 +20,12 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Authentication tokens, headers, and server/host resolution."""
 
+import logging
 import os
 
 from fastapi import HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 AUTH_SOURCES = {
     "rsp": {
@@ -79,6 +82,7 @@ class Server:
             case Server.base:
                 return Server.base
             case _:
+                logger.critical(f"Unset or invalid {env_var_name}: {current!r}")
                 raise ValueError(f"Unset or invalid {env_var_name}: {current}")
 
 
@@ -280,6 +284,7 @@ def get_jira_hostname():
     """
     hostname = os.getenv("JIRA_API_HOSTNAME")
     if not hostname:
+        logger.critical("Jira hostname is unset (JIRA_API_HOSTNAME not configured)")
         raise HTTPException(
             status_code=500,
             detail="Jira hostname not configured",
