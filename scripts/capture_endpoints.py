@@ -114,8 +114,8 @@ DEFAULT_TIMEOUT = 300  # seconds; visit-map endpoints can be slow
 DEFAULT_DELAY = 1.0  # seconds between calls
 
 # Known-good keys, discovered from the science_program values of the
-# default test week's /data-log records during the pre-refactor baseline
-# run (review/BEFORE.json, 2026-07-29) and confirmed to resolve: 50 calls,
+# default test week's /data-log records during a pre-refactor baseline
+# run (2026-07-29) and confirmed to resolve: 50 calls,
 # no errors, a 2123-byte response. Hardcoded rather than rediscovered so
 # both sides of a comparison ask for exactly the same keys.
 #

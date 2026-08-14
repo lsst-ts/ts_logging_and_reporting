@@ -168,13 +168,13 @@ This comparison file also contains commentary and analysis of the results.
 
 ```
 git checkout <merge-base>          # pre-refactor
-python scripts/perf_test.py baseline --out review/performance/BEFORE.json
+python scripts/perf_test.py baseline --out review/performance/BASELINE.json
 
 git checkout experiemental/cache-refactor
-python scripts/perf_test.py after --out review/performance/AFTER.json
+python scripts/perf_test.py after --out review/performance/REFACTORED.json
 
-python scripts/perf_test.py compare review/performance/BEFORE.json \
-    review/performance/AFTER.json
+python scripts/perf_test.py compare review/performance/BASELINE.json \
+    review/performance/REFACTORED.json
 ```
 
 **Use the same `--day-start` and `--instrument` for both runs.** Both default to
@@ -1172,8 +1172,8 @@ review/BACKEND_REFACTOR_PLAN.md           the plan as it ended
 review/BACKEND_REFACTOR_PLAN_ORIGINAL.md  the plan as first written
 review/REFACTOR_ODDITIES.md               this document
 review/capture-compare.md                 endpoint output parity, before vs after
-review/performance/BEFORE.json            performance run, pre-refactor
-review/performance/AFTER.json             performance run, post-refactor
+review/performance/BASELINE.json          performance run, pre-refactor
+review/performance/REFACTORED.json        performance run, post-refactor
 review/performance/COMPARE.md             the two joined into a table
 ```
 
