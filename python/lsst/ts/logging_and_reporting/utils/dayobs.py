@@ -21,7 +21,8 @@
 """Dayobs and date conversion helpers.
 
 A dayobs is the noon-to-noon UTC observing day, in ``YYYYMMDD`` integer
-form.
+form. These helpers convert between dayobs, dates, and timestamps, and
+enumerate dayobs ranges.
 """
 
 import datetime as dt
@@ -30,12 +31,12 @@ import pandas as pd
 import pytz
 
 
-def current_dayobs_utc(now_utc: pd.Timestamp | dt.datetime) -> int:
+def dayobs_at(time_utc: pd.Timestamp | dt.datetime) -> int:
     """Compute the active dayobs for a UTC timestamp.
 
     Parameters
     ----------
-    now_utc : pandas.Timestamp or datetime.datetime
+    time_utc : pandas.Timestamp or datetime.datetime
         UTC timestamp to convert.
 
     Returns
@@ -49,7 +50,12 @@ def current_dayobs_utc(now_utc: pd.Timestamp | dt.datetime) -> int:
     and taking the date gives the correct dayobs for any time in that
     window.
     """
-    return int((now_utc - dt.timedelta(hours=12)).strftime("%Y%m%d"))
+    return int((time_utc - dt.timedelta(hours=12)).strftime("%Y%m%d"))
+
+
+def current_dayobs() -> int:
+    """The current astronomical dayobs (noon-to-noon UTC)."""
+    return dayobs_at(dt.datetime.now(dt.timezone.utc))
 
 
 def dayobs_int(dayobs: str) -> int:
@@ -85,3 +91,105 @@ def add_or_subtract_dayobs_days(dayobs: int, days: int) -> int:
     date = dt.datetime.strptime(str(dayobs), "%Y%m%d")
     new_date = date + dt.timedelta(days=days)
     return int(new_date.strftime("%Y%m%d"))
+
+
+def dayobs_to_unix_ms(dayobs: int, hour: int = 12) -> int:
+    """Convert a dayobs int to Unix time in milliseconds (UTC).
+
+    Parameters
+    ----------
+    dayobs : `int`
+        Observation day (YYYYMMDD).
+    hour : `int`
+        Hour to set, optional.
+
+    Returns
+    -------
+    `int`
+        Unix timestamp in milliseconds.
+    """
+    date = dt.datetime.strptime(str(dayobs), "%Y%m%d").replace(hour=hour, tzinfo=dt.timezone.utc)
+    return int(date.timestamp() * 1000)
+
+
+def almanac_to_unix_ms(almanac_time: str) -> int:
+    """Convert an almanac timestamp string to Unix time in milliseconds (UTC).
+
+    Parameters
+    ----------
+    almanac_time : `str`
+        Timestamp in format ``YYYY-MM-DD HH:MM:SS``.
+
+    Returns
+    -------
+    `int`
+        Unix timestamp in milliseconds.
+    """
+    date = dt.datetime.strptime(almanac_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
+    return int(date.timestamp() * 1000)
+
+
+def dayobs_int_to_date(dayobs: int) -> dt.date:
+    """Convert a YYYYMMDD dayobs integer to a `datetime.date`."""
+    return dt.datetime.strptime(str(dayobs), "%Y%m%d").date()
+
+
+def date_to_dayobs_int(date: dt.date) -> int:
+    """Convert a `datetime.date` to a YYYYMMDD dayobs integer."""
+    return int(date.strftime("%Y%m%d"))
+
+
+def dayobs_range(start_dayobs: int, end_dayobs: int) -> list[int]:
+    """Enumerate all dayobs in ``[start_dayobs, end_dayobs]`` inclusive.
+
+    Parameters
+    ----------
+    start_dayobs : `int`
+        First dayobs of the range, in YYYYMMDD form.
+    end_dayobs : `int`
+        Last dayobs of the range (inclusive), in YYYYMMDD form.
+
+    Returns
+    -------
+    `list` [`int`]
+        Every dayobs in the range, ascending.
+    """
+    start = dayobs_int_to_date(start_dayobs)
+    end = dayobs_int_to_date(end_dayobs)
+    days = []
+    while start <= end:
+        days.append(date_to_dayobs_int(start))
+        start += dt.timedelta(days=1)
+    return days
+
+
+def contiguous_runs(dayobs_list: list[int]) -> list[tuple[int, int]]:
+    """Group dayobs into contiguous ``(start, end)`` runs (inclusive).
+
+    Adjacency is calendar-aware (20250131 and 20250201 are adjacent).
+
+    Parameters
+    ----------
+    dayobs_list : `list` [`int`]
+        Dayobs in YYYYMMDD form, in any order.
+
+    Returns
+    -------
+    `list` [`tuple` [`int`, `int`]]
+        Inclusive ``(start_dayobs, end_dayobs)`` per run, ascending.
+        e.g. ``[20250101, 20250103, 20250104]`` →
+        ``[(20250101, 20250101), (20250103, 20250104)]``.
+    """
+    if not dayobs_list:
+        return []
+    dates = sorted(dayobs_int_to_date(d) for d in set(dayobs_list))
+    runs = []
+    run_start = run_end = dates[0]
+    for date in dates[1:]:
+        if date - run_end == dt.timedelta(days=1):
+            run_end = date
+        else:
+            runs.append((date_to_dayobs_int(run_start), date_to_dayobs_int(run_end)))
+            run_start = run_end = date
+    runs.append((date_to_dayobs_int(run_start), date_to_dayobs_int(run_end)))
+    return runs
