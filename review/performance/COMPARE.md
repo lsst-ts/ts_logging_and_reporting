@@ -425,8 +425,94 @@ request large unique ranges within the same 20 second period.
 The static visit maps use `WorkerPoolMixin` for a different reason: the png
 generation mechanism is explicitly and catastrophically not thread-safe, so it
 *must* be run either non-concurrently or on separate processes. It does not show
-the same slowdown and dropped requests most likely because it is much less CPU
-heavy and therefore doesn't hit the pod limits.
+the same slowdown and dropped requests, most likely because it is much less CPU
+heavy — though the re-capture below shows it was throttled as well, just never
+hard enough for the contention to surface as a failure.
+
+##### Does not reproduce at 4000mCPU — re-captured 2026-08-19
+
+The alpha deployment's limit was raised from 1000mCPU to 4000mCPU, the first of the
+two remediations above, and both visit map endpoints were re-captured. The
+re-capture ran with `--timeout 120` where the original burst scenarios used
+`--timeout 240`, so it is actually the stricter of the two tests.
+
+Columns are baseline / refactored at 1000mCPU / refactored at 4000mCPU, and change is
+against the baseline row of matching shape, as in the main table.
+
+`multi-night-visit-maps`, per-request p50 (s) for the burst scenarios:
+
+| Scenario | before | 1000mCPU | 4000mCPU | 1000 vs before | 4000 vs before |
+|---|---|---|---|---|---|
+| cold-7day-burst | 50.643 | 101.051 | 29.680 | +100% | **−41%** |
+| hot-1day-burst | 38.377 | 78.419 | 26.039 | +104% | **−32%** |
+| hot-7day-burst | 50.643 | 86.075 | 33.050 | +70% | **−35%** |
+| partial-rolling-7day-burst | 50.643 | 63.664 | 28.074 | +26% | **−45%** |
+
+The same rows by burst wall p50 (s) — the time for a whole round of ten to finish,
+which is what this section is really about:
+
+| Scenario | before | 1000mCPU | 4000mCPU | 1000 vs before | 4000 vs before |
+|---|---|---|---|---|---|
+| cold-7day-burst | 78.436 | 174.128 | 34.366 | +122% | **−56%** |
+| hot-1day-burst | 49.867 | 119.362 | 30.917 | +139% | **−38%** |
+| hot-7day-burst | 78.436 | 120.992 | 38.446 | +54% | **−51%** |
+| partial-rolling-7day-burst | 78.436 | 113.916 | 36.355 | +45% | **−54%** |
+
+**Neither half of the regression reproduces.** The bursts went from 1.5–2× slower than
+baseline to 32–45% faster per request and 38–56% faster in wall time, in line with
+the improvement in other endpoints.. The dropped requests went with them: 29
+failures in 400 burst requests became 0 in 400. The tail moved as far as the median —
+p95 from 145–169 s to 31–46 s, worst observed request from 188 s to 56 s, against a
+timeout half the size.
+
+**The multi-process pool now behaves as designed.** Ten concurrent 7-day requests
+complete in roughly the wall time of one sequential request: burst wall over the
+matching sequential p50 fell from 6.22 to 1.36 on `cold-7day` and from 4.46 to 1.59 on
+`hot-7day`. The diagnosis above holds in full: `WorkerPoolMixin` was never the
+problem, the 1000mCPU ceiling was.
+
+**This is a mitigation, not a fix, and the follow-up stands.** What the re-capture
+establishes is the conditional — given four cores, the endpoint is fast and drops
+nothing — not that the endpoint is now safe. Its behaviour is contingent on an
+allocation the deployment is not guaranteed to keep: nothing in the service asks for
+the CPU it needs or degrades gracefully without it, so the same pathological
+queueing returns in full whenever the limit is lowered, the pod is co-scheduled
+against noisy neighbours, or another environment runs it tighter. This should be
+evaluated further to decide if an increase in allocation is an appropriate fix.
+
+**The sequential rows are unchanged, and that is the finding that survives.** Every
+non-burst scenario lands within ±6% of baseline; `hot-7day` is 24.159 s against a
+24.682 s cold baseline. Caching still buys this endpoint nothing, because the Bokeh
+figure build dominates and is paid on every request regardless of cache state, and
+more CPU cannot help a single request that only uses one worker. This leaves
+[OSW-2811](https://rubinobs.atlassian.net/browse/OSW-2811) or any other optimization 
+of the visit map figure generation more important than before,
+not less: it is the only thing that moves the ~18–25 s a single user waits, it is now
+the endpoint's dominant cost with the contention out of the way, and by cutting the
+figure build it also shrinks the CPU demand that made the endpoint sensitive to its
+allocation in the first place.
+
+**`static-visit-map` was throttled too.** It was re-captured to test the claim above
+that it escaped the pod limit, and it did not: if 1000mCPU had been sufficient, the
+bump would have changed nothing, but every burst scenario roughly halved. p50 (s) and
+burst wall p50 (s):
+
+| Scenario | p50 before | 1000mCPU | 4000mCPU | wall before | 1000mCPU | 4000mCPU |
+|---|---|---|---|---|---|---|
+| cold-7day-burst | 10.401 | 11.444 | **5.042** | 17.547 | 13.136 | **5.643** |
+| hot-1day-burst | 9.844 | 7.747 | **3.320** | 15.593 | 10.242 | **4.526** |
+| hot-7day-burst | 10.401 | 9.125 | **4.374** | 17.547 | 12.317 | **4.949** |
+| partial-rolling-7day-burst | 10.401 | 8.765 | **4.431** | 17.547 | 11.859 | **4.891** |
+
+Wall over sequential p50 went from 2.72 to 1.28 on `cold-7day` and from 3.00 to 1.39
+on `hot-7day`: at 1000mCPU a round of ten cost about three sequential requests, and
+now costs about one and a third. So the reason the two endpoints diverged is
+magnitude, not presence. Static maps are cheap enough that throttling made them 2–3×
+slower than ideal rather than 6×, which kept them under the proxy timeout and left the
+contention invisible in the completed column while it was still real. 
+
+Both re-captures are single runs with no repeat. The effect sizes are far outside the
+run-to-run spread, but the small sequential movements are not individually meaningful.
 
 #### (c) `exposures` returns a bimodal latency distribution for an unknown reason
 
