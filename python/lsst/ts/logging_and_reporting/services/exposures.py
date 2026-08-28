@@ -97,12 +97,33 @@ EXPOSURE_COLUMNS = [
 
 
 def _compute_closed_hours(totals: dict[str, Any], current_dayobs: int, now_utc: pd.Timestamp) -> float:
-    """Closed dome hours for one aggregated per-night row.
+    """Compute closed dome hours for a single aggregated dome row.
 
-    For completed nights this is ``night_hours - open_hours``. For the
-    current night the meaning is "closed so far", so it is measured
-    against the twilight time elapsed since sunset:
-    ``max(0, elapsed_twilight_hours - open_hours)``.
+    Parameters
+    ----------
+    totals : dict
+        Per-night totals containing ``day_obs``, ``night_hours``,
+        ``open_hours``, ``sunset12``, and ``sunrise12``. ``day_obs`` is
+        required; there is no fallback to an index or Series name.
+    current_dayobs : int
+        Current dayobs in ``YYYYMMDD`` form.
+    now_utc : pandas.Timestamp
+        Current UTC timestamp used to detect an in-progress night.
+
+    Returns
+    -------
+    float
+        Closed hours for the night represented by ``totals``.
+
+    Notes
+    -----
+    For completed nights, closed hours are ``night_hours - open_hours``.
+    For the current night, the intended meaning is "closed so far", so
+    the value is computed against elapsed twilight time:
+    ``max(0, elapsed_twilight_hours - open_hours)``. This uses the
+    elapsed ``open_hours`` reported by Rubin Nights once the dome has
+    opened, but still returns elapsed twilight time before the first
+    opening when ``open_hours == 0``.
     """
     sunset12_utc = pd.to_datetime(totals["sunset12"], utc=True)
     sunrise12_utc = pd.to_datetime(totals["sunrise12"], utc=True)
@@ -157,11 +178,26 @@ def _aggregate_dome_hours(per_day: dict[int, list[dict]]) -> dict[int, dict]:
 
 
 def _twilight_windows_by_dayobs(almanac_info: list[dict]) -> dict[int, tuple[int, int]]:
-    """Map each visit dayobs to its 12-degree twilight window (Unix ms).
+    """Map each visit dayobs to its 12-degree twilight window.
 
-    The almanac labels a night's record with the dayobs of its *morning*
-    twilight boundary -- one day after the day_obs visits are tagged with
-    -- so each record maps back to ``dayobs - 1`` to match ``day_obs``.
+    Parameters
+    ----------
+    almanac_info : list[dict]
+        Almanac records keyed by the Rubin Nights dayobs convention.
+
+    Returns
+    -------
+    dict[int, tuple[int, int]]
+        Mapping from visit ``day_obs`` to ``(evening_twilight_ms,
+        morning_twilight_ms)`` in Unix milliseconds.
+
+    Notes
+    -----
+    The almanac service labels a night's record with the dayobs of its
+    *morning* twilight boundary -- one calendar day after the day_obs that
+    visits taken during that night are tagged with -- so each record is
+    mapped back to ``dayobs - 1`` (using calendar-safe dayobs arithmetic)
+    to match it against ``visits.day_obs``.
     """
     windows = {}
     for night in almanac_info:
@@ -174,9 +210,18 @@ def _twilight_windows_by_dayobs(almanac_info: list[dict]) -> dict[int, tuple[int
 
 
 def _obs_start_tai_to_utc_ms(obs_start: pd.Series) -> pd.Series:
-    """Convert TAI observation-start timestamps to Unix milliseconds (UTC).
+    """Convert TAI observation-start timestamps to Unix milliseconds.
 
-    Missing input values are returned as ``NaN``.
+    Parameters
+    ----------
+    obs_start : pandas.Series
+        Observation-start timestamps in TAI ISO-string form.
+
+    Returns
+    -------
+    pandas.Series
+        UTC Unix timestamps in milliseconds, preserving the input index.
+        Missing input values are returned as ``NaN``.
     """
     result = pd.Series(np.nan, index=obs_start.index, dtype="float64")
     valid = obs_start.notna()
@@ -187,21 +232,57 @@ def _obs_start_tai_to_utc_ms(obs_start: pd.Series) -> pd.Series:
 
 
 def _compute_filter_changed(visits_sorted: pd.DataFrame) -> pd.Series:
-    """Flag visits whose band differs from the immediately preceding visit."""
+    """Flag visits whose filter differs from the previous visit.
+
+    Parameters
+    ----------
+    visits_sorted : pandas.DataFrame
+        Visit table already sorted by ``obs_start``.
+
+    Returns
+    -------
+    pandas.Series
+        Boolean mask indicating whether each visit changed filter/band
+        relative to the immediately preceding visit.
+    """
     band_prev = visits_sorted["band"].shift(1)
+
     band_changed = (visits_sorted["band"] != band_prev) & ~(visits_sorted["band"].isna() & band_prev.isna())
+
     band_changed.iloc[0] = False
+
     return band_changed
 
 
-def _sum_on_sky_within_twilight(visits: pd.DataFrame, almanac_info: list[dict]) -> dict[str, float]:
-    """Summarize on-sky overhead and visit-gap hours within twilight.
+def _sum_on_sky_within_twilight(
+    visits: pd.DataFrame,
+    almanac_info: list[dict],
+) -> dict[str, float]:
+    """Summarize on-sky overhead and visit-gap time within twilight.
 
-    Returns four hour-valued sums, split by whether the band changed from
-    the previous visit. Only visits that can see sky and start within
-    their night's 12-degree twilight window are counted. ``overhead`` and
-    ``visit_gap`` are stored in seconds and converted to hours once, at
-    the end, to avoid compounding rounding error.
+    Parameters
+    ----------
+    visits : pandas.DataFrame
+        Visit records containing ``day_obs``, ``obs_start``,
+        ``can_see_sky``, ``band``, ``overhead``, and ``visit_gap``.
+    almanac_info : list[dict]
+        Almanac records covering the nights represented by ``visits``.
+
+    Returns
+    -------
+    dict[str, float]
+        Four hour-valued sums split by whether the filter changed from
+        the previous visit:
+        ``sum_overhead_with_filter_change``,
+        ``sum_overhead_without_filter_change``,
+        ``sum_visit_gap_with_filter_change``, and
+        ``sum_visit_gap_without_filter_change``.
+
+    Notes
+    -----
+    ``overhead`` and ``visit_gap`` are stored in seconds. The sums are
+    converted to hours once, at the end, to avoid compounding rounding
+    error across many per-row divisions.
     """
     visits_sorted = visits.sort_values("obs_start")
 
@@ -229,7 +310,8 @@ def _sum_on_sky_within_twilight(visits: pd.DataFrame, almanac_info: list[dict]) 
         "sum_visit_gap_with_filter_change": float(visit_gap[with_change_mask].sum()),
         "sum_visit_gap_without_filter_change": float(visit_gap[without_change_mask].sum()),
     }
-    return {key: round(total / SECONDS_IN_AN_HOUR, 2) for key, total in sums_sec.items()}
+
+    return {key: round(float(total / SECONDS_IN_AN_HOUR), 2) for key, total in sums_sec.items()}
 
 
 class ExposuresService(Service):
@@ -340,13 +422,36 @@ class ExposuresService(Service):
     def _time_accounting(
         self, overhead_result: dict | Exception, day_obs_start: int, day_obs_end: int
     ) -> dict:
-        """Twilight-windowed on-sky time accounting for the range.
+        """Compute twilight-windowed time-accounting sums for the range.
 
-        ``overhead_result`` is the overhead adapter's per-visit rows, or
-        the exception it raised (degraded to an error field). The twilight
-        windows come from the almanac adapter (fetched only when there are
-        overhead rows); the reduction runs over the whole range so the
-        filter-change split is correct across night boundaries.
+        Parameters
+        ----------
+        overhead_result : dict or Exception
+            The overhead adapter's per-visit rows keyed by dayobs, or the
+            exception it raised, which is degraded to an error field
+            rather than failing the whole response.
+        day_obs_start : int
+            Inclusive lower bound of the requested dayobs range.
+        day_obs_end : int
+            Inclusive upper bound of the requested dayobs range.
+
+        Returns
+        -------
+        dict
+            ``night_on_sky_time_accounting`` holding the four
+            overhead/visit_gap sums, in hours, for visits where
+            ``can_see_sky`` is true and ``obs_start`` falls within the
+            12-degree twilight interval, split by whether the
+            filter/band changed from the previous visit; and
+            ``time_accounting_error``, non-null if the computation
+            failed.
+
+        Notes
+        -----
+        The twilight windows come from the almanac adapter, fetched only
+        when there are overhead rows. The reduction runs over the whole
+        range at once so the filter-change split stays correct across
+        night boundaries.
         """
         night_time_on_sky_sums, time_accounting_error = None, None
         try:

@@ -525,21 +525,23 @@ same `ConsdbVisitsAdapter` entry ([§3](#3-logic-that-changed-because-of-caching
 
 ### `rubin_nights_service.py` (1210 lines) fanned out across services, adapters and utils
 
+
 | Function(s) | New home | Changed? |
 |---|---|---|
-| `decode_states`, `is_unknown`, `contains_daytime`, `contains_operational`, `contains_fault`, `contains_weather`, `contains_downtime`, `contains_idle`, `counts_as_fault_loss` | `services/obs_status.py` | Logic identical. Every docstring condensed from a full numpydoc block to one or two lines. |
-| `get_obs_status_intervals`, `build_ms_dayobs_intervals`, `build_ms_night_intervals`, `sum_interval_overlap`, `get_availability` | `services/obs_status.py` | Logic identical. Docstrings condensed; step-by-step inline comments removed. `build_ms_night_intervals` became a comprehension, and several intermediate locals were inlined into their `return` statements. |
-| `OBSERVATORY_STATES`, `COUNT_STATE_METRIC_MAP`, `OBS_STATUS_AVAILABLE_DAYOBS`, `MILLISECONDS_IN_AN_HOUR` | `services/obs_status.py` | Byte-identical. |
-| `get_obs_status` | `services/obs_status.py::ObsStatusService.handle` | Same sequence of decisions; the almanac fetch is now scheduled alongside the events rather than after them, and the error swallowing is gone ([§7](#7-error-handling-and-the-frontend-contract)). |
-| `_twilight_windows_by_dayobs`, `_obs_start_tai_to_utc_ms`, `_compute_filter_changed`, `_sum_on_sky_within_twilight` | `services/exposures.py` | Logic identical, docstrings condensed. |
-| `_compute_closed_hours` | `services/exposures.py` | **Signature changed** — see below. |
-| `dayobs_to_unix_ms`, `almanac_to_unix_ms` | `utils/dayobs.py` | Unchanged. |
+| `decode_states`, `is_unknown`, `contains_daytime`, `contains_operational`, `contains_fault`, `contains_weather`, `contains_downtime`, `contains_idle`, `counts_as_fault_loss` | `services/obs_status.py` | Verbatim. |
+| `get_obs_status_intervals`, `build_ms_dayobs_intervals`, `build_ms_night_intervals`, `get_availability` | `services/obs_status.py` | Verbatim, including the `OSW-2118` TODO above `get_obs_status_intervals`. |
+| `sum_interval_overlap` | `services/obs_status.py` | Verbatim except for one **added** docstring line — see below. |
+| `OBSERVATORY_STATES`, `COUNT_STATE_METRIC_MAP`, `OBS_STATUS_AVAILABLE_DAYOBS`, `MILLISECONDS_IN_AN_HOUR` | `services/obs_status.py` | Verbatim. |
+| `get_obs_status` | `services/obs_status.py::ObsStatusService.handle` | **Restructured** — a module function becomes a service method. Same sequence of decisions and the internal step comments are preserved, but: the almanac fetch is scheduled alongside the events rather than after them; the `auth_token` parameter is gone (adapters resolve their own); and the `except: return {}` error swallowing is gone, so failures now surface ([§7](#7-error-handling-and-the-frontend-contract)). The docstring documents the new signature. |
+| `_twilight_windows_by_dayobs`, `_obs_start_tai_to_utc_ms`, `_compute_filter_changed`, `_sum_on_sky_within_twilight` | `services/exposures.py` | Verbatim. |
+| `_compute_closed_hours` | `services/exposures.py` | **Signature changed** — see below. Docstring updated to match; everything else verbatim. |
+| `dayobs_to_unix_ms`, `almanac_to_unix_ms` | `utils/dayobs.py` | Verbatim apart from the `datetime` → `dt` alias the destination module uses, which forces `almanac_to_unix_ms`'s local `dt` to be renamed. |
 | `dayobs_to_noon_utc` | — | Deleted; callers use `get_utc_datetime_from_dayobs_str` with `astropy.Time`. |
 | `get_visits` | `adapters/consdb_visits.py::ConsdbVisitsAdapter` | Dissolved into a cached fetch — see [§3](#3-logic-that-changed-because-of-caching) and [§6](#6-data-source-changes). |
-| `get_open_close_dome` | `adapters/rubin_nights_dome.py::RubinNightsDomeAdapter` | Dissolved; the per-night reduction is `ExposuresService._aggregate_dome_hours`. |
-| `get_context_feed` | `adapters/rubin_nights_context.py::RubinNightsContextAdapter` | Dissolved; `timestampProcessEnd` is recomputed on read ([§3](#3-logic-that-changed-because-of-caching)). |
-| `get_obs_status_events` | `adapters/rubin_nights_obs_status.py::RubinNightsObsStatusAdapter` | Dissolved; the 12-hour lookback became a leading dayobs ([§3](#3-logic-that-changed-because-of-caching)). |
-| `get_time_accounting` | `adapters/visit_overhead.py::VisitOverheadAdapter` + `ExposuresService._time_accounting` | Split across the cache boundary ([§3](#3-logic-that-changed-because-of-caching)). |
+| `get_open_close_dome` | `adapters/rubin_nights_dome.py::RubinNightsDomeAdapter` | Turned into part of the `ExposuresService`; the per-night reduction is now `ExposuresService._aggregate_dome_hours`. |
+| `get_context_feed` | `adapters/rubin_nights_context.py::RubinNightsContextAdapter` | Turned into an adapter; `timestampProcessEnd` is recomputed by the service ([§3](#3-logic-that-changed-because-of-caching)). |
+| `get_obs_status_events` | `adapters/rubin_nights_obs_status.py::RubinNightsObsStatusAdapter` | Turned into an adapter; the 12-hour lookback became a leading dayobs ([§3](#3-logic-that-changed-because-of-caching)). |
+| `get_time_accounting` | `adapters/visit_overhead.py::VisitOverheadAdapter` + `ExposuresService._time_accounting` | Split across the cache boundary ([§3](#3-logic-that-changed-because-of-caching)). The augmentation and slew modelling become the adapter's fetch; the twilight reduction becomes the service method, whose docstring documents its own new signature. |
 
 **`_compute_closed_hours` changed shape.** It took a `pandas.Series` and resolved
 the day under test with `row.get("day_obs", row.name)` — tolerating the value
@@ -557,12 +559,13 @@ down.
 
 | From | To | Changed? |
 |---|---|---|
-| `jira.py::get_system_names` | `adapters/mixins.py::JiraApiMixin.get_system_names` | Body unchanged, now a `@staticmethod` on a mixin; docstring rewritten. |
+| `jira.py::get_system_names` | `adapters/mixins.py::JiraApiMixin.get_system_names` | Body unchanged, now a `@staticmethod` on a mixin; docstring update to reflect. |
 | `source_adapters.py::NarrativelogAdapter.add_instrument` | `adapters/narrativelog.py::NarrativelogCachedAdapter._add_instrument` | Per-message instead of per-list; see below. |
 | `utils.py::build_block_response` | `services/block_details.py::BlockDetailsService.collate_response` | Fixes a latent bug; see below. |
 | `web_app/main.py::_encode_png_payload` | `services/static_visit_map.py` | Verbatim. |
 | `web_app/services/almanac_service.py::_as_utc_datetime`, `_compute_elapsed_twilight_hours` | `services/almanac.py` | Verbatim. |
-| `scheduler_service.py::_add_dec_labels`, `_add_ra_labels`, `_add_graticules`, `_style_text`, `_style_axes`, `_style_figure`, `_compute_nvisits_bundle`, `build_static_visit_map` | `services/static_visit_map.py` | Verbatim. |
+| `scheduler_service.py::_add_dec_labels`, `_add_ra_labels`, `_add_graticules`, `_style_text`, `_style_axes`, `_style_figure`, `_compute_nvisits_bundle` | `services/static_visit_map.py` | Verbatim. |
+| `scheduler_service.py::build_static_visit_map` | `services/static_visit_map.py` | The render body is wrapped in `try`/`finally` so `plt.close(fig)` runs even when `savefig` raises — pyplot holds the figure until it is closed, so a failure previously leaked it for the life of the process. The docstring also gains a note that the function is not safe to call concurrently, because the render goes through pyplot's process-global active figure and axes. |
 | `scheduler_service.py::_prepare_visit_maps_data`, `_get_visit_map_config` | `services/visit_maps.py` | Verbatim. |
 | `scheduler_service.py::build_visit_maps_using_builder` | `services/visit_maps.py` | One change: `°` escapes in the Bokeh tooltip HTML became literal `°`. |
 | `exposure_log.py::ExposurelogAdapter.get_messages` (the `"none"` → `"unknown"` flag remap) | `adapters/exposurelog.py::ExposurelogCachedAdapter._fetch_run` | Same behaviour, different layer. |

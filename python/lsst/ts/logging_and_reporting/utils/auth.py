@@ -88,6 +88,18 @@ class Server:
 def retrieve_access_token(config: dict) -> str:
     """Return the service-account token named by ``config["env_var"]``.
 
+    Parameters
+    ----------
+    config : `dict`
+        Configuration for the authentication source. Must contain keys:
+        - ``"env_var"`` (`str`)
+        - ``"label"`` (`str`)
+
+    Returns
+    -------
+    `str`
+        The resolved authentication token.
+
     Raises
     ------
     HTTPException
