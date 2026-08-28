@@ -167,6 +167,27 @@ def read_expected_exposures(
     dayObsEnd: int,
     service=Depends(services.get_expected_exposures_service),
 ):
+    """Return the expected (simulated) visit count for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Inclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``sum_exposures``, the total nominal visit count summed over the
+        pre-night simulations for each dayobs in the range.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        404 when no matching simulation exists for a requested night,
+        502 if the simulation archive cannot be reached.
+    """
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -177,6 +198,28 @@ def read_data_log(
     instrument: str,
     service=Depends(services.get_data_log_service),
 ):
+    """Return the full ConsDB exposure record for each exposure.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used for the ConsDB exposure query.
+
+    Returns
+    -------
+    dict
+        ``data_log``, the exposure records for the range, JSON-safe.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        422 for an unrecognised instrument or malformed dayobs, 502 if
+        the ConsDB query fails.
+    """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
@@ -187,6 +230,29 @@ def read_jira_tickets(
     instrument: str,
     service=Depends(services.get_jira_tickets_service),
 ):
+    """Return OBS Jira tickets created or updated during the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select tickets by their system field.
+
+    Returns
+    -------
+    dict
+        ``issues``, the matching tickets with their summary, systems and
+        Jira URL.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        500 if the Jira hostname is not configured, 502 if the Jira
+        query fails.
+    """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
@@ -196,6 +262,27 @@ def read_almanac(
     dayObsEnd: int,
     service=Depends(services.get_almanac_service),
 ):
+    """Return almanac records for the nights in the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``almanac_info``, one record per night with sun and moon
+        rise/set times, twilight boundaries and elapsed twilight hours.
+
+    Notes
+    -----
+    Almanac records are labeled by the dayobs of their morning twilight
+    boundary, so the range yields records labeled ``dayObsStart + 1``
+    through ``dayObsEnd``.
+    """
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -206,6 +293,29 @@ def read_narrative_log(
     instrument: str,
     service=Depends(services.get_narrative_log_service),
 ):
+    """Return narrative log messages and time lost for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select messages by telescope.
+
+    Returns
+    -------
+    dict
+        ``narrative_log`` with the messages, plus
+        ``time_lost_to_weather`` and ``time_lost_to_faults`` summed over
+        them.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the narrative log query fails.
+    """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
@@ -216,6 +326,28 @@ def read_exposure_flags(
     instrument: str,
     service=Depends(services.get_exposure_flags_service),
 ):
+    """Return the exposure flag set on each flagged exposure.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select exposure log messages.
+
+    Returns
+    -------
+    dict
+        ``exposure_flags``, one ``obs_id``/``exposure_flag`` pair per
+        flagged exposure. Exposures with no flag are omitted.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the exposure log query fails.
+    """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
@@ -226,6 +358,28 @@ def read_exposure_entries(
     instrument: str,
     service=Depends(services.get_exposure_entries_service),
 ):
+    """Return exposure log entries for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select exposure log messages.
+
+    Returns
+    -------
+    dict
+        ``exposure_entries``, the messages for the range ordered by the
+        time they were added.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the exposure log query fails.
+    """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
@@ -235,6 +389,25 @@ def read_night_reports(
     dayObsEnd: int,
     service=Depends(services.get_night_report_service),
 ):
+    """Return night report records for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``reports``, the night reports for the range ordered by dayobs.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the night report query fails.
+    """
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -244,6 +417,26 @@ def read_context_feed(
     dayObsEnd: int,
     service=Depends(services.get_context_feed_service),
 ):
+    """Return the consolidated ScriptQueue context feed for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Inclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``data``, the feed records in time order, and ``cols``, the
+        column order the frontend renders them in.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the context feed query fails.
+    """
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
@@ -260,6 +453,37 @@ def read_obs_status(
     ),
     service=Depends(services.get_obs_status_service),
 ):
+    """Return observatory status events, intervals and derived metrics.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Inclusive upper bound of the requested dayobs range.
+    includeEntries : bool, optional
+        If True, include the raw status events in the response.
+    includeIntervals : bool, optional
+        If True, include the derived status intervals in the response.
+    nightOnlyMetrics : bool, optional
+        If False, time outside night hours contributes to the metrics.
+    metrics : list[str] or None, optional
+        Metrics to compute, given as repeated ``metric`` parameters.
+        Unrecognised names are logged and skipped.
+
+    Returns
+    -------
+    dict
+        Any of ``entries``, ``intervals`` and ``metrics`` according to
+        the flags above, plus ``availability`` describing how much of
+        the requested range predates the availability of obs-status
+        data.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the status event or almanac query fails.
+    """
     return service.handle_request(
         dayObsStart,
         dayObsEnd,
@@ -304,6 +528,28 @@ def read_block_details(
     keys: list[str] = Query(..., alias="key"),
     service=Depends(services.get_block_details_service),
 ):
+    """Retrieve BLOCK details from Zephyr/Jira for a list of keys.
+
+    Parameters
+    ----------
+    key : list[str]
+        List of BLOCK keys (e.g. ``BLOCK-704`` or ``BLOCK-T123_a``)
+        provided as repeated query parameters. ``BLOCK-Tnnn`` resolves
+        against Zephyr Scale and ``BLOCK-nnn`` against Jira.
+
+    Returns
+    -------
+    dict
+        A ``data`` field mapping each resolved BLOCK key to its
+        summary, URL, and source. Keys that resolve in neither source
+        are omitted.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        500 if both the Zephyr and Jira requests fail, or if the Jira
+        hostname is not configured.
+    """
     return service.handle_request(keys)
 
 
