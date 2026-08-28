@@ -96,13 +96,37 @@ def add_or_subtract_dayobs_days(dayobs: int, days: int) -> int:
 
 
 def dayobs_to_unix_ms(dayobs: int, hour: int = 12) -> int:
-    """Convert a dayobs int to Unix time in milliseconds (UTC)."""
+    """Convert a dayobs int to Unix time in milliseconds (UTC).
+
+    Parameters
+    ----------
+    dayobs : `int`
+        Observation day (YYYYMMDD).
+    hour : `int`
+        Hour to set, optional.
+
+    Returns
+    -------
+    `int`
+        Unix timestamp in milliseconds.
+    """
     date = dt.datetime.strptime(str(dayobs), "%Y%m%d").replace(hour=hour, tzinfo=dt.timezone.utc)
     return int(date.timestamp() * 1000)
 
 
 def almanac_to_unix_ms(almanac_time: str) -> int:
-    """Convert an almanac ``YYYY-MM-DD HH:MM:SS`` string to Unix ms (UTC)."""
+    """Convert an almanac timestamp string to Unix time in milliseconds (UTC).
+
+    Parameters
+    ----------
+    almanac_time : `str`
+        Timestamp in format ``YYYY-MM-DD HH:MM:SS``.
+
+    Returns
+    -------
+    `int`
+        Unix timestamp in milliseconds.
+    """
     date = dt.datetime.strptime(almanac_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
     return int(date.timestamp() * 1000)
 
