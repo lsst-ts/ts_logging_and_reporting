@@ -73,7 +73,7 @@ Note that the `before` capture was taken on 3 August and the `after` capture on
 
 The difference count is misleading: it is three lines describing thousands of
 records, nearly all differing in a single field. Pairing on
-`(time, name, script_salIndex)` — unique across every record on both sides — all
+`(time, name, script_salIndex)`—unique across every record on both sides—all
 but a handful pair up, and the record counts reconcile exactly:
 
 | | `before` | dropped | gained | `after` |
@@ -89,7 +89,7 @@ a literal string. `make_json_safe` now maps it to a real JSON `null`.
 
 A fix, but a frontend-visible type change: a truthiness check saw a truthy
 `"NaT"` before and gets `null` now. **This is the only change in the refactor
-that requires a corresponding change in the frontend** — everything else in this
+that requires a corresponding change in the frontend**—everything else in this
 document is either invisible to it, filtered out client-side, or a reordering it
 already re-sorts.
 
@@ -114,7 +114,7 @@ seconds before the noon rollover that ends the range.
 Image rows are *selected* on the EFD publish timestamp and then *re-indexed* onto
 `timestampAcquisitionStart`, and acquisition precedes publication by the exposure
 plus readout. An image acquired 19 seconds before noon is published after it, so
-the old query — which stopped dead at the boundary — never saw it, even though
+the old query—which stopped dead at the boundary—never saw it, even though
 the row belongs inside the range. The trailing margin on each run's query lets
 the run see events that belong to it but land late, and the bucketing still files
 them by their own dayobs, so nothing leaks into a neighbouring day.
@@ -135,7 +135,7 @@ Two further consequences of that one record, both in the 1-day file:
 The 7-day span gains nothing because its range already extends past both events.
 
 **4. Whole-number exposure times rendered without a decimal**, on 12 Image
-Acquired rows in the 7-day file only — every AuxTel image of `20260714`.
+Acquired rows in the 7-day file only—every AuxTel image of `20260714`.
 
 `rubin_nights` builds the string by interpolating the raw cell:
 
@@ -150,12 +150,12 @@ JSON encoder writes a float holding a whole number as a JSON integer, so pandas
 infers each column's dtype from the rows in *that one query*: all integer gives
 `int64` and renders without a decimal point, any fractional value gives `float64`
 and renders with one. `darkTime` is fractional throughout, stays `float64`, and
-is identical across the whole diff — only `exp` and `open` move, which is what
+is identical across the whole diff—only `exp` and `open` move, which is what
 makes this a per-column dtype effect rather than a change to the string builder.
 
 ### `data-log__1day__LSSTCam.json`, `data-log__7day__LSSTCam.json`
 
-Identical records, different order — same multiset both sides. The new order is
+Identical records, different order—same multiset both sides. The new order is
 deliberate.
 
 `DataLogService.collate_response` now sorts:
@@ -167,7 +167,7 @@ records = flatten_within_dayobs(data, "seq_num")
 which walks the dayobs buckets in ascending order and sorts each night's records
 by `seq_num`, giving `(day_obs, seq_num)`. Verified directly: both `after`
 payloads are exactly in that order and neither `before` payload is in any order
-at all — the 1-day payload is sorted by neither `seq_num` nor `(day_obs,
+at all—the 1-day payload is sorted by neither `seq_num` nor `(day_obs,
 seq_num)`, and nor is the 7-day.
 
 Before the refactor there was no ordering to speak of. Neither the old query nor
@@ -182,7 +182,7 @@ both return 2650 LSSTCam records for the 7-day span.
 
 ### `expected-exposures__1day.json`, `expected-exposures__7day.json`
 
-Both sides return **HTTP 500** — this endpoint fails in this environment before
+Both sides return **HTTP 500**: this endpoint fails in this environment before
 and after. Only the message changed:
 
 ```
@@ -193,7 +193,7 @@ That is the deliberate change to stop leaking exception detail to clients. The
 old response handed the caller a raw exception string; the new one is generic and
 the detail goes to `logger.exception` instead.
 
-The underlying failure has nothing to do with the refactor — the simulation
+The underlying failure has nothing to do with the refactor—the simulation
 archive needs credentials this environment does not have.
 
 **This endpoint's payload is therefore not covered by this comparison.** Both
@@ -212,14 +212,14 @@ traceback) is logged.
 
 The cause is a parameter-name mismatch. `ExposurelogAdapter.get_messages` sent
 `instrument=<name>`, but the Exposure Log `/messages` endpoint defines no such
-parameter — its filter is `instruments`, an array of instrument names.
+parameter—its filter is `instruments`, an array of instrument names.
 Unrecognised query parameters are ignored rather than rejected, so the
 request succeeded and returned every instrument's messages.
 
 Two further confirmations:
 
 - Pre-refactor, `instrument=LATISS` and `instrument=LSSTCam` return
-  **byte-identical payloads** for both endpoints on both spans — the parameter
+  **byte-identical payloads** for both endpoints on both spans—the parameter
   had no effect at all.
 - `/exposure-entries` records also carry an explicit `"instrument"` field, and in
   the LATISS response every one of them reads `"LSSTCam"`.
@@ -227,7 +227,7 @@ Two further confirmations:
 After the refactor LATISS correctly returns zero records. The LSSTCam files for both endpoints are `OK`,
 which is the other half of the check: the data itself did not move, only which
 instrument it is served under. It also says the test week holds no LATISS
-exposure-log records at all — otherwise the LSSTCam responses, which used to
+exposure-log records at all—otherwise the LSSTCam responses, which used to
 carry every instrument, would have shrunk too.
 
 ### `exposures__1day__LATISS.json`, `exposures__7day__LATISS.json`
@@ -235,7 +235,7 @@ carry every instrument, would have shrunk too.
 **The endpoint was broken for LATISS and now works.** Before:
 `HTTP 502 {"detail": "ConsDB query failed"}` on both spans. After: `HTTP 200`.
 
-All twelve reported differences are the same event — `body.detail: removed`,
+All twelve reported differences are the same event—`body.detail: removed`,
 `status: 502 -> 200`, and the ten keys of a successful payload appearing where an
 error body used to be.
 
@@ -257,11 +257,11 @@ failed query.
 
 ### `exposures__7day__LSSTCam.json`
 
-Same records, different order — and here the new order is a **fix**.
+Same records, different order—and here the new order is a **fix**.
 
 The old query ended `ORDER BY e.seq_num ASC`. But `seq_num` is a per-night
 sequence that restarts each dayobs, so ordering by it alone interleaves the
-nights — writing `(night, seq)`:
+nights—writing `(night, seq)`:
 
 ```
 before: (1,1) (3,1) (2,1) (1,2) (3,2) ...
@@ -271,13 +271,13 @@ after:  (1,1) (1,2) (1,3) (1,4) (1,5) ...
 `ExposuresService.collate_response` iterates dayobs in order and sorts each
 night's records by `seq_num`, giving `(day_obs, seq_num)`. 
 
-So the old ordering was intentional but wrong for multi-night ranges — the SQL
+So the old ordering was intentional but wrong for multi-night ranges—the SQL
 had no way to express that `seq_num` resets nightly. The 1-day file is `OK`
 because with a single night the two orderings are identical.
 
 ### `jira-tickets__7day__LATISS.json`
 
-Same tickets, different order — key sets identical, nothing gained or lost.
+Same tickets, different order—key sets identical, nothing gained or lost.
 
 `JiraTicketsService` deduplicates through a dict keyed on ticket key while
 iterating dayobs buckets in ascending order, so output order now follows

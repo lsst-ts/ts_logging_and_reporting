@@ -29,7 +29,7 @@ each record.
 ## 2. Level
 
 The `LOG_LEVEL` environmental variable sets the level for the application
-and uvicorn. `logging_configlog_level()` is a helper to ensure this is
+and uvicorn. `logging_config.log_level()` is a helper to ensure this is
 a useful value.
 
 `LOG_LEVEL` must match uvicorn's accepted set: `CRITICAL`, `ERROR`,
@@ -55,7 +55,7 @@ logged outside a traced unit of work shows `-` (`NO_TRACE_ID`) instead.
 
 ### What is a "traced unit of work"?
 
-A traced unit of work is either a request or a run of the RefreshWorker
+A traced unit of work is either a request or a run of the RefreshWorker.
 
 - `RequestLoggingMiddleware` sets one per request, so all Services,
   Adapters, and any other logging associated with that request shares
@@ -70,7 +70,7 @@ application uses, so both are bridged explicitly:
 
 | Boundary | How it crosses |
 |---|---|
-| `Service.fetch_concurrently` → thread | Submits `contextvars.copy_context().run` rather than the thunk itself — a copy per task, since one `Context` cannot be entered by two threads at once. |
+| `Service.fetch_concurrently` → thread | Submits `contextvars.copy_context().run` rather than the thunk itself—a copy per task, since one `Context` cannot be entered by two threads at once. |
 | `WorkerPoolMixin.run_in_worker` → process | Context does not survive pickling, so the `trace_id` is passed as a call argument and re-established inside the worker. |
 
 Anything else that hands work to a thread or a process has to do the
@@ -111,14 +111,14 @@ degradation is visible without anyone having enabled debug first:
 ### Request logging is middleware, and outermost
 
 Logging requests in one middleware rather than in each endpoint covers
-the requests that never reach a service — FastAPI's 422 for a bad
+the requests that never reach a service: FastAPI's 422 for a bad
 parameter, or a rejection from `DayobsValidationMiddleware`.
 
 `RequestLoggingMiddleware` is also what establishes the `trace_id` for a
 request ([§3](#3-trace_id)): it calls `set_trace_id` before `call_next`,
-so every record logged while serving the request — by the other
+so every record logged while serving the request—by the other
 middlewares, the service, its adapters, and any thread or worker they
-hand work to — carries the same `trace_id`. It is not merely the component that
+hand work to—carries the same `trace_id`. It is not merely the component that
 logs two lines; it is the one that makes every other line attributable.
 
 Both jobs want it outermost, and it is added last in `main.py` to get
@@ -126,7 +126,7 @@ there: its timing covers dayobs validation, CORS and cache-control rather
 than just the handler, and any record those middlewares emit is inside
 the traced region.
 
-`/health` is explicitly not logged by neither request line: the Kubernetes
+`/health` is explicitly not logged by either request line: the Kubernetes
 readiness and liveness probes hit it often enough to drown everything else.
 
 ---
