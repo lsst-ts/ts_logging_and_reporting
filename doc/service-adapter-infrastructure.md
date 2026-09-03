@@ -22,7 +22,7 @@ endpoint looks like.
 
 **Services** ([§3](#3-anatomy-of-a-service)) own collation and response
 shaping. A service holds one or more adapters, asks each for the range
-it needs, merges the results, and returns the JSON-serialisable payload
+it needs, merges the results, and returns the JSON-serializable payload
 the frontend consumes. Services never touch Redis and never issue an
 HTTP request to an upstream themselves.
 
@@ -292,8 +292,8 @@ Contracts that fall out of this, and that new adapters must respect:
   Partial data is never returned and never cached, so a cached entry is
   always a complete answer for its key. What the service layer does
   with that error is [§13](#13-failure-semantics).
-- **Values must be JSON-serialisable** — see
-  [§14](#14-serialisation-constraints-on-cached-values).
+- **Values must be JSON-serializable** — see
+  [§14](#14-serialization-constraints-on-cached-values).
 
 `LOCK_TTL` (30 s) exists only so a crashed lock holder cannot block a
 key forever; it must exceed the slowest expected upstream fetch. If a
@@ -617,7 +617,7 @@ converts numpy scalars, pandas timestamps and `NaT`, astropy `Time`
 objects, and non-finite floats into JSON-safe equivalents. Required for
 anything derived from a DataFrame before it is returned from
 `_fetch_from_source` — see
-[§14](#14-serialisation-constraints-on-cached-values).
+[§14](#14-serialization-constraints-on-cached-values).
 
 ---
 
@@ -661,7 +661,7 @@ keys.
 
 **5 · `CachedAdapter._fetch_cached([20250101, 20250102, 20250103])` →
 `dict[int, list[dict]]`** — probes
-`adapter:nightreport:20250101` (hit, deserialised and kept),
+`adapter:nightreport:20250101` (hit, deserialized and kept),
 `…:20250102` and `…:20250103` (miss). It wins the fetch lock
 `lock:adapter:nightreport:20250102` and `…:20250103` via `SET NX EX`,
 re-probes them, and calls `_fetch_from_source([20250102, 20250103])`.
@@ -702,7 +702,7 @@ requested set overwrites its seed; anything outside is dropped. Both
 dayobs are present, so the result is the two-key dict.
 
 **9 · Back in `_fetch_cached`** — each key is written with `_store`,
-which serialises with `json.dumps(..., allow_nan=False)` and applies
+which serializes with `json.dumps(..., allow_nan=False)` and applies
 `self._ttl(key)`. `_ttl` calls `_is_today(key)` — here
 `dayobs == current_dayobs()` — to choose `TODAY_TTL_REDIS` for tonight
 or `HISTORIC_TTL_REDIS` for a finished night. Both locks are released in
@@ -712,7 +712,7 @@ a `finally`, and the merged three-key dict returns up the stack.
 `{"reports": flatten_sorted(data, "day_obs")}`: one list, newest first.
 This is the format the frontend expects for this endpoint.
 
-**11 · Response** — FastAPI serialises the dict;
+**11 · Response** — FastAPI serializes the dict;
 `CacheControlMiddleware` inspects `dayObsStart`/`dayObsEnd`, and because
 the range does not include today's dayobs (and `/night-reports` is not a
 mutable path) it sets `Cache-Control: public, max-age=86400`.
@@ -741,7 +741,7 @@ Create `adapters/<source>.py`.
 3. **Implement the fetch method:** `_fetch_run(run_start, run_end)` for
    `DayobsCachedAdapter`, `_fetch_run(instrument, run_start, run_end)`
    for `InstrumentDayobsCachedAdapter`, or `_fetch_from_source(ids)`
-   for `IdCachedAdapter`. It must return JSON-serialisable data, and —
+   for `IdCachedAdapter`. It must return JSON-serializable data, and —
    for the ID base, which has no `_collate_runs` seeding — an entry for
    every requested key.
 4. **Add a `@functools.cache` factory** `get_<source>_adapter()` that
@@ -961,7 +961,7 @@ service and usually wrong for a multi-adapter one.
 
 ---
 
-## 14. Serialisation constraints on cached values
+## 14. Serialization constraints on cached values
 
 Cache entries are JSON documents. Whatever `_fetch_from_source` returns
 is passed to:
@@ -978,7 +978,7 @@ Three consequences:
   raises `ValueError` at store time instead — loudly, at the adapter
   that produced it.
 - **Only JSON types survive.** numpy scalars, pandas `Timestamp`/`NaT`,
-  astropy `Time`, and DataFrames are not serialisable. Any adapter whose
+  astropy `Time`, and DataFrames are not serializable. Any adapter whose
   `_fetch_run` goes through pandas or numpy must pass its rows through
   `make_json_safe` before returning them, as `VisitOverheadAdapter`
   does. `make_json_safe` converts numpy scalars to Python types,

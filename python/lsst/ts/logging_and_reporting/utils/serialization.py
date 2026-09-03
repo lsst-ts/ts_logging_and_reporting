@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Helpers for making values safe to JSON-serialise."""
+"""Helpers for making values safe to JSON-serialize."""
 
 import math
 

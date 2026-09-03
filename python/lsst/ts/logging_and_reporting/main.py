@@ -147,7 +147,7 @@ def read_exposures(
     Returns
     -------
     dict[str, Any]
-        JSON-serialisable response containing exposure records and
+        JSON-serializable response containing exposure records and
         totals, dome-open summaries, and twilight-windowed
         time-accounting metrics.
 

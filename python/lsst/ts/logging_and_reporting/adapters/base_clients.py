@@ -156,7 +156,7 @@ class RestClient:
         url : `str`
             Full URL of the API endpoint.
         json_body : `Any`
-            Request payload, serialised as the JSON request body.
+            Request payload, serialized as the JSON request body.
 
         Raises
         ------

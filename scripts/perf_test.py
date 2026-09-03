@@ -106,10 +106,10 @@ After mode, per dayobs endpoint:
     Prime the same request before each run (no flush), so every dayobs
     is cached. Steady state for today's data (the RefreshWorker keeps it
     warm) and for recently viewed ranges. Expect latency dominated by
-    collation/serialisation; for the visualisation endpoints this
+    collation/serialization; for the visualisation endpoints this
     measures the irreducible figure/PNG build cost. The pair separates
     the fixed part of that cost from the per-dayobs part: if hot-1day
-    and hot-7day are close, the work is fixed (build and serialise) and
+    and hot-7day are close, the work is fixed (build and serialize) and
     caching prepared per-day frames would not help.
 ``partial-rolling-7day``
     FLUSHDB, prime days 1-7, measure days 2-8 (one missing day).
@@ -136,7 +136,7 @@ scenario. Per-request p50/p95 describe the typical user in the crowd;
 ``burst_wall_p50`` is the median time for a whole round to complete
 (governed by the slowest request), so wall time near the single-request
 latency means genuine parallelism, while wall time near burst_size x
-single latency means requests are being serialised somewhere.
+single latency means requests are being serialized somewhere.
 
 ``cold-7day-burst``
     All requests miss the same keys at once — exposes cache-stampede

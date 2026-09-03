@@ -290,8 +290,8 @@ DayobsCachedAdapter (ABC)
 │     a fetch for that entry is in flight; see the cache loop above.
 │
 ├── _store(dayobs: int, data: Any) -> None
-│     Serialises data as JSON and writes to Redis with _ttl(dayobs). All adapter
-│     implementations must return JSON-serialisable data from _fetch_from_source.
+│     Serializes data as JSON and writes to Redis with _ttl(dayobs). All adapter
+│     implementations must return JSON-serializable data from _fetch_from_source.
 │
 ├── _is_today(dayobs: int) -> bool
 │     Whether the key covers the current dayobs. The one point at which TTL
@@ -890,7 +890,7 @@ HTTP layer without touching the adapter or service code.
   server-side per endpoint (the frontend just calls two different endpoints), never sent by the
   client.
 - Therefore `ConsdbVisitsAdapter` caches **one raw (un-augmented) entry per
-  `{instrument}:{dayobs}`** — the actual external cost, and the smaller/cleaner-to-serialise frame.
+  `{instrument}:{dayobs}`** — the actual external cost, and the smaller/cleaner-to-serialize frame.
   Augmentation moves to the consumers: `StaticVisitMapService` renders the raw frame directly;
   `VisitMapsService` runs `augment_visits(raw, instrument=…)` then `consdb_to_opsim` before building
   the figure (same "cache the IO, compute the derived on read" rule used for the almanac). When
@@ -1147,7 +1147,7 @@ already cached, so each endpoint is measured in three states:
   overhead should be negligible next to upstream fetch time).
 - **Hot** — every dayobs in the range is cached. No upstream contact at all. This is the
   steady state for today's data (kept warm by the `RefreshWorker`) and for any recently
-  requested historical range. Latency should be dominated by collation and serialisation.
+  requested historical range. Latency should be dominated by collation and serialization.
 - **Partial** — some dayobs cached, some not. This is the *most common real state*, and comes
   in two shapes worth measuring separately:
   - **Rolling window** — the user viewed days 1–7 yesterday and asks for days 2–8 today:

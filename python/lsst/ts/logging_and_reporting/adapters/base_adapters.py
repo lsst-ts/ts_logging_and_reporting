@@ -251,10 +251,10 @@ class CachedAdapter:
         return True, json.loads(raw)
 
     def _store(self, key, data: Any) -> None:
-        """Serialise ``data`` as JSON and write it with the key's TTL.
+        """Serialize ``data`` as JSON and write it with the key's TTL.
 
         ``_fetch_from_source`` implementations must therefore return
-        JSON-serialisable data. ``allow_nan=False`` rejects NaN/Infinity
+        JSON-serializable data. ``allow_nan=False`` rejects NaN/Infinity
         instead of writing spec-invalid JSON; ``ensure_ascii=False`` and
         compact separators keep the cached bytes smaller.
         """
@@ -424,7 +424,7 @@ class DayobsCachedAdapter(CachedAdapter, ABC):
         Returns
         -------
         `dict` [`int`, `Any`]
-            The run's JSON-serialisable data keyed by dayobs.
+            The run's JSON-serializable data keyed by dayobs.
         """
         raise NotImplementedError
 
@@ -551,7 +551,7 @@ class InstrumentDayobsCachedAdapter(CachedAdapter, ABC):
         Returns
         -------
         `dict` [`int`, `Any`]
-            The run's JSON-serialisable data keyed by dayobs.
+            The run's JSON-serializable data keyed by dayobs.
         """
         raise NotImplementedError
 
@@ -601,7 +601,7 @@ class IdCachedAdapter(CachedAdapter, ABC):
         Returns
         -------
         `dict` [`str`, `Any`]
-            JSON-serialisable data with an entry for every requested
+            JSON-serializable data with an entry for every requested
             ID. An ID with no data must map to an explicit value
             (``None``, or an empty container) rather than be omitted;
             the cache loop raises `KeyError` naming the adapter
