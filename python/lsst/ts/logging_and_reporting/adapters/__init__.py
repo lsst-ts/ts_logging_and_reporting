@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """Singleton getters for the cached upstream-source adapters."""
 
 from .almanac import get_almanac_adapter

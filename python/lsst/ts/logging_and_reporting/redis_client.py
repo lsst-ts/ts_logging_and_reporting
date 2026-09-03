@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """Shared Redis client for the adapter cache layer.
 
 One client (holding one connection pool) is created at application
