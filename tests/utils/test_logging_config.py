@@ -19,7 +19,7 @@ from lsst.ts.logging_and_reporting.utils.logging_config import (
 
 @pytest.fixture(autouse=True)
 def clear_trace_id():
-    """Keep one test's trace ID out of the next one's context."""
+    """Keep one test's trace_id out of the next one's context."""
     yield
     set_trace_id(NO_TRACE_ID)
 

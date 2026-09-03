@@ -1,7 +1,7 @@
 # Logging
 
 This document describes how the backend logs: how the logger is
-configured, how trace_id correlates responses and what each layer
+configured, how `trace_id` correlates responses and what each layer
 logs at what level.
 
 
@@ -39,9 +39,9 @@ server startup, and default to `INFO`
 
 ---
 
-## 3. Trace IDs
+## 3. `trace_id`
 
-Records include a trace_id are formatted as:
+Records include a `trace_id` and are formatted as:
 
 ```
 LEVEL [logger name] [trace_id] message
@@ -71,10 +71,10 @@ application uses, so both are bridged explicitly:
 | Boundary | How it crosses |
 |---|---|
 | `Service.fetch_concurrently` → thread | Submits `contextvars.copy_context().run` rather than the thunk itself — a copy per task, since one `Context` cannot be entered by two threads at once. |
-| `WorkerPoolMixin.run_in_worker` → process | Context does not survive pickling, so the ID is passed as a call argument and re-established inside the worker. |
+| `WorkerPoolMixin.run_in_worker` → process | Context does not survive pickling, so the `trace_id` is passed as a call argument and re-established inside the worker. |
 
 Anything else that hands work to a thread or a process has to do the
-same, or its records will be attributed to no trace_id.
+same, or its records will be attributed to no `trace_id`.
 
 ---
 
@@ -114,11 +114,11 @@ Logging requests in one middleware rather than in each endpoint covers
 the requests that never reach a service — FastAPI's 422 for a bad
 parameter, or a rejection from `DayobsValidationMiddleware`.
 
-`RequestLoggingMiddleware` is also what establishes the trace ID for a
-request ([§3](#3-trace-ids)): it calls `set_trace_id` before `call_next`,
+`RequestLoggingMiddleware` is also what establishes the `trace_id` for a
+request ([§3](#3-trace_id)): it calls `set_trace_id` before `call_next`,
 so every record logged while serving the request — by the other
 middlewares, the service, its adapters, and any thread or worker they
-hand work to — carries the same ID. It is not merely the component that
+hand work to — carries the same `trace_id`. It is not merely the component that
 logs two lines; it is the one that makes every other line attributable.
 
 Both jobs want it outermost, and it is added last in `main.py` to get
@@ -152,7 +152,7 @@ failures that `logger.exception` reports at error.
 ## 6. Reading the logs
 
 Filter one request or one refresh cycle out of an interleaved log by its
-trace ID. The arrival line gives you both the ID and the query:
+`trace_id`. The arrival line gives you both the `trace_id` and the query:
 
 ```
 INFO [.....middleware.request_logging] [4f2a91c3] Fetching /exposures with dayObsStart=20250101&dayObsEnd=20250108&instrument=lsstcam

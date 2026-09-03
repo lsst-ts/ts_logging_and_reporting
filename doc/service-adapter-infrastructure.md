@@ -44,7 +44,7 @@ The consequences worth internalising:
 
 Three middlewares sit in front of the routes:
 `RequestLoggingMiddleware` logs each request, times it, and tags
-everything it logs with a trace ID (see `doc/logging.md`),
+everything it logs with a `trace_id` (see `doc/logging.md`),
 `DayobsValidationMiddleware`
 rejects malformed or inverted dayobs ranges before they reach a service,
 and `CacheControlMiddleware` sets the response's `Cache-Control` header
@@ -176,7 +176,7 @@ and return value must pickle.
 Two things the mixin carries across that boundary for you: each worker
 calls `configure_logging()` as it starts, since it never runs an
 entrypoint and would otherwise log nothing, and the calling request's
-trace ID is pickled over with the call. Both are covered in
+`trace_id` is pickled over with the call. Both are covered in
 `doc/logging.md`.
 
 Pools are started and stopped by the application's lifespan hook, which

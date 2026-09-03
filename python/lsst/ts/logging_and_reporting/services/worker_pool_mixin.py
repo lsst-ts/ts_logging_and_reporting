@@ -79,7 +79,7 @@ def start_worker(name: str) -> None:
 
 
 def _call_with_trace_id(trace_id: str, func: Callable[..., Any], args: tuple) -> Any:
-    """Run ``func(*args)`` under the calling request's trace ID.
+    """Run ``func(*args)`` under the calling request's ``trace_id``.
 
     Context does not cross a process boundary, so the ID is pickled over
     as an argument and re-established here; without it everything a
