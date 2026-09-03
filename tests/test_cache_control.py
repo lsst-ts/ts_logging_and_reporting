@@ -26,7 +26,11 @@ import pytest
 from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 
-from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
+from lsst.ts.logging_and_reporting.cache_ttl import (
+    HISTORIC_TTL_CLIENT,
+    MUTABLE_TTL_CLIENT,
+    TODAY_TTL_CLIENT,
+)
 from lsst.ts.logging_and_reporting.middleware.cache_control import (
     _MUTABLE_PATHS,
     CacheControlMiddleware,
@@ -93,7 +97,7 @@ def _cache_header(response):
 )
 def test_historical_range_gets_long_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsStart": 20250101, "dayObsEnd": 20250131})
-    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
 
 
 @patch(
@@ -105,7 +109,7 @@ def test_range_including_today_gets_short_ttl(mock_today, client):
         "/some-endpoint",
         params={"dayObsStart": 20251201, "dayObsEnd": 20260201},
     )
-    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
 
 
 @patch(
@@ -114,7 +118,7 @@ def test_range_including_today_gets_short_ttl(mock_today, client):
 )
 def test_single_dayobs_today_gets_short_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObs": MOCK_TODAY})
-    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
 
 
 @patch(
@@ -123,7 +127,7 @@ def test_single_dayobs_today_gets_short_ttl(mock_today, client):
 )
 def test_single_dayobs_historical_gets_long_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObs": 20250601})
-    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
 
 
 # -- no dayobs params → no header --
@@ -144,7 +148,7 @@ def test_no_dayobs_params_no_cache_header(client):
 )
 def test_mutable_paths_get_mutable_ttl_for_historical_range(mock_today, path, client):
     resp = client.get(path, params={"dayObsStart": 20250101, "dayObsEnd": 20250131})
-    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL}"
+    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL_CLIENT}"
 
 
 @pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
@@ -154,13 +158,13 @@ def test_mutable_paths_get_mutable_ttl_for_historical_range(mock_today, path, cl
 )
 def test_mutable_paths_get_today_ttl_when_range_includes_today(mock_today, path, client):
     resp = client.get(path, params={"dayObsStart": 20251201, "dayObsEnd": 20260201})
-    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
 
 
 @pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
 def test_mutable_paths_without_dayobs(path, client):
     resp = client.get(path)
-    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL}"
+    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL_CLIENT}"
 
 
 # -- edge cases --
@@ -177,7 +181,7 @@ def test_invalid_dayobs_no_cache_header(client):
 )
 def test_only_start_param(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsStart": 20250601})
-    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
 
 
 @patch(
@@ -186,7 +190,7 @@ def test_only_start_param(mock_today, client):
 )
 def test_only_end_param(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsEnd": MOCK_TODAY})
-    assert _cache_header(resp) == f"public, max-age={TODAY_TTL}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
 
 
 # -- error responses --
@@ -219,7 +223,7 @@ def test_status_399_not_treated_as_error(mock_today, client):
         "/error/399",
         params={"dayObsStart": 20250101, "dayObsEnd": 20250131},
     )
-    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
 
 
 @patch(

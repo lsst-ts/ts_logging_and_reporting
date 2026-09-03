@@ -25,7 +25,11 @@ import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL, MUTABLE_TTL, TODAY_TTL
+from lsst.ts.logging_and_reporting.cache_ttl import (
+    HISTORIC_TTL_CLIENT,
+    MUTABLE_TTL_CLIENT,
+    TODAY_TTL_CLIENT,
+)
 from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
 logger = logging.getLogger(__name__)
@@ -49,17 +53,18 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     Endpoints that accept dayobs query parameters receive a
     ``Cache-Control: max-age=<N>`` header.  The value of ``max-age`` is:
 
-    - `TODAY_TTL` if the response includes today's astronomical
+    - `TODAY_TTL_CLIENT` if the response includes today's astronomical
       dayobs, so proxy and browser caches never serve data more stale
       than one ``RefreshWorker`` cycle.
-    - `MUTABLE_TTL` for historical requests to the mutable endpoints
-      (``/exposure-flags``, ``/block-details``, ``/exposure-entries``,
-      ``/narrative-log``), whose data can change on any dayobs.
-    - `HISTORIC_TTL` for other fully historical requests, whose data
-      will not change.
+    - `MUTABLE_TTL_CLIENT` for historical requests to the mutable
+      endpoints (``/exposure-flags``, ``/block-details``,
+      ``/exposure-entries``, ``/narrative-log``), whose data can change
+      on any dayobs.
+    - `HISTORIC_TTL_CLIENT` for other fully historical requests, whose
+      data will not change.
 
     Endpoints without dayobs parameters are left untouched, except
-    mutable endpoints, which still get `MUTABLE_TTL`.
+    mutable endpoints, which still get `MUTABLE_TTL_CLIENT`.
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
@@ -85,7 +90,7 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
 
         if not (start_raw or end_raw):
             if mutable:
-                response.headers["Cache-Control"] = f"public, max-age={MUTABLE_TTL}"
+                response.headers["Cache-Control"] = f"public, max-age={MUTABLE_TTL_CLIENT}"
             return response
 
         try:
@@ -100,11 +105,11 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         end = end if end is not None else start
 
         if start <= current_dayobs() <= end:
-            max_age = TODAY_TTL
+            max_age = TODAY_TTL_CLIENT
         elif mutable:
-            max_age = MUTABLE_TTL
+            max_age = MUTABLE_TTL_CLIENT
         else:
-            max_age = HISTORIC_TTL
+            max_age = HISTORIC_TTL_CLIENT
 
         response.headers["Cache-Control"] = f"public, max-age={max_age}"
         return response

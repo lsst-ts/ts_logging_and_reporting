@@ -47,7 +47,7 @@ from lsst.ts.logging_and_reporting.utils.logging_config import (
 )
 
 from .adapters.base_adapters import DayobsCachedAdapter, InstrumentDayobsCachedAdapter
-from .cache_ttl import TODAY_TTL
+from .cache_ttl import TODAY_TTL_CLIENT
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,14 @@ class RefreshWorker:
         accepted — they have no sense of "today"
     interval_seconds : `int`, optional
         Seconds between the start of consecutive refresh cycles. Defaults
-        to `TODAY_TTL` — the cache-control ``max-age`` served for today's
-        data — so clients are never staler than one refresh cycle.
+        to `TODAY_TTL_CLIENT` — the cache-control ``max-age`` served for
+        today's data — so clients are never staler than one refresh cycle.
     """
 
     def __init__(
         self,
         adapters: list[DayobsCachedAdapter | InstrumentDayobsCachedAdapter],
-        interval_seconds: int = TODAY_TTL,
+        interval_seconds: int = TODAY_TTL_CLIENT,
     ):
         self._adapters = list(adapters)
         self._interval = interval_seconds

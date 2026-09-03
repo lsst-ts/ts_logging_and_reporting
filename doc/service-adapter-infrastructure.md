@@ -380,14 +380,14 @@ copy can be flushed by hand.
 
 | Kind | Client (`max-age`) | Redis |
 |---|---|---|
-| Historic | `HISTORIC_TTL` 1 day | `HISTORIC_TTL_REDIS` 30 days |
-| Today | `TODAY_TTL` 5 min | `TODAY_TTL_REDIS` 15 min |
-| Mutable (past dayobs) | `MUTABLE_TTL` 5 min | `MUTABLE_TTL_REDIS` 30 min |
+| Historic | `HISTORIC_TTL_CLIENT` 1 day | `HISTORIC_TTL_REDIS` 30 days |
+| Today | `TODAY_TTL_CLIENT` 5 min | `TODAY_TTL_REDIS` 15 min |
+| Mutable (past dayobs) | `MUTABLE_TTL_CLIENT` 5 min | `MUTABLE_TTL_REDIS` 30 min |
 
 All six constants live in `cache_ttl.py`; change them there and nowhere
 else.
 
-`TODAY_TTL` doubles as the `RefreshWorker`'s default interval, so a
+`TODAY_TTL_CLIENT` doubles as the `RefreshWorker`'s default interval, so a
 client is never served data staler than one refresh cycle.
 `TODAY_TTL_REDIS` must comfortably exceed that interval so today's entry
 cannot expire between cycles.
@@ -857,7 +857,7 @@ triggers an upstream fetch.
 `RefreshWorker.run()` executes `_refresh_cycle` immediately on startup — so
 a deploy or restart warms the cache at once rather than after one idle
 interval — and then repeats it every `interval_seconds` (default
-`TODAY_TTL`, 5 minutes). Each subsequent cycle starts one interval after
+`TODAY_TTL_CLIENT`, 5 minutes). Each subsequent cycle starts one interval after
 the *previous cycle started*: the elapsed run time is deducted from the
 wait, and a cycle that overruns its interval is followed immediately by
 the next.

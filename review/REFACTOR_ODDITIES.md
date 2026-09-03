@@ -854,11 +854,12 @@ of what they now do for the first two-thirds of the branch.
 It arrived on `develop` separately (OSW-2415) and was relocated from
 `web_app/middleware/` to `middleware/` and reworked:
 
-- Two TTL tiers became three: `TODAY_TTL`, `MUTABLE_TTL`, `HISTORIC_TTL`, all
-  centralised in `cache_ttl.py` rather than defined inline.
+- Two TTL tiers became three: `TODAY_TTL_CLIENT`, `MUTABLE_TTL_CLIENT`,
+  `HISTORIC_TTL_CLIENT`, all centralised in `cache_ttl.py` rather than defined
+  inline.
 - Error responses get `Cache-Control: no-store`. Previously a 500 could be cached
   by the proxy and the browser for the full historic max-age.
-- Mutable endpoints get `MUTABLE_TTL` even when the request carries no dayobs
+- Mutable endpoints get `MUTABLE_TTL_CLIENT` even when the request carries no dayobs
   parameters, which is what covers `/block-details` (keyed by BLOCK id, not by
   date).
 - `_today_dayobs()` was replaced by the shared `utils.dayobs.current_dayobs`.
@@ -996,7 +997,7 @@ The two stack: a response built from a nearly-expired Redis entry can then sit i
 browser cache for its full `max-age`. Only the Redis copy can be flushed by hand,
 which is why the client TTLs are kept short relative to their Redis counterparts.
 
-`TODAY_TTL` doubles as the refresh worker's default interval, so a client is never
+`TODAY_TTL_CLIENT` doubles as the refresh worker's default interval, so a client is never
 served data staler than one refresh cycle. `TODAY_TTL_REDIS` must comfortably
 exceed it so today's entry cannot expire between cycles.
 
