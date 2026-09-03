@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """Transport clients for adapters backed by REST APIs.
 
 A client provides the request machinery (auth, timeouts, JSON GET/POST,

@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """Mixins shared across adapter families.
 
 Each concrete adapter is composed from a cache base (`*CachedAdapter`),

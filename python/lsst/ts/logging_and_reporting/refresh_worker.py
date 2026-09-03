@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """Background worker that keeps today's cache entries warm.
 
 The worker's fetch-then- overwrite cycle

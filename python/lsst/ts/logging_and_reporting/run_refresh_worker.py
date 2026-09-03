@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """Entrypoint for the cache refresh worker process.
 
 Runs one `RefreshWorker`, writing to the same Redis cache the API

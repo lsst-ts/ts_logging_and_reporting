@@ -19,7 +19,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 """Cached adapter for locally computed almanac (sun/moon) data."""
 
 import datetime as dt
