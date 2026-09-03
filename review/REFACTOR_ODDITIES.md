@@ -458,7 +458,7 @@ The 696-line grab-bag split by concern:
 | `utils/auth.py` | tokens, headers, `AUTH_SOURCES`, `Server` |
 | `utils/serialization.py` | `make_json_safe`, `stringify_special_floats` |
 | `utils/collation.py` | `flatten_sorted`, `flatten_within_dayobs` |
-| `utils/logging_config.py` | `configure_logging`, `log_level`, trace-ID context and filter |
+| `utils/logging_config.py` | `configure_logging`, `log_level`, `trace_id` context and filter |
 
 `utils/__init__.py` was a transitional re-export shim during the migration so that
 remaining `import utils as ut` callers kept resolving. It is now empty — a bare
@@ -1048,7 +1048,7 @@ keeping is now `logger.debug`.
 
 ### Configuration is shared, because three kinds of process need it
 
-`utils/logging_config.py` holds the format, the level lookup and the trace-ID
+`utils/logging_config.py` holds the format, the level lookup and the `trace_id`
 machinery, and `configure_logging()` is called by `main.py`, by
 `run_refresh_worker.py` — and by each map-render worker as it starts.
 
@@ -1070,7 +1070,7 @@ rejects outright, and a level name uvicorn does not know raises `KeyError` and
 takes the server down at startup. A value that was set but not understood is
 warned about once logging is up, so the fallback is not silent.
 
-### Every record carries a trace ID
+### Every record carries a `trace_id`
 
 The format is `LEVEL [logger] [trace_id] message`. The ID is attached by a filter
 on the root handler rather than passed at each call site, so every existing
@@ -1650,6 +1650,6 @@ These were specified up front and shipped as described:
     What was built instead is logging, which the plan barely specified beyond
     "configure `logging.basicConfig` from `LOG_LEVEL`" ([§10](#10-logging),
     `doc/logging.md`). Per-request timings, per-upstream-call durations with a slow
-    threshold, cache hit/miss lines and trace IDs across both concurrency
+    threshold, cache hit/miss lines and `trace_id` across both concurrency
     boundaries all now exist. They answer the same questions ad hoc, one log file 
     grep at a time, rather than as time series.

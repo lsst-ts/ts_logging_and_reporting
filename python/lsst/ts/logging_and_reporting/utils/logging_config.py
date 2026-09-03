@@ -51,7 +51,7 @@ def set_trace_id(trace_id: str) -> None:
 
 
 def current_trace_id() -> str:
-    """The trace ID in scope, or `NO_TRACE_ID` outside a traced unit."""
+    """The ``trace_id`` in scope, or `NO_TRACE_ID` outside a traced unit."""
     return _trace_id.get()
 
 
