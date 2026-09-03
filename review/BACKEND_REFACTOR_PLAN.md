@@ -151,9 +151,9 @@ The remaining three replace logic that is currently either scattered across endp
    `middleware/dayobs_validation.py` entry below.
 3. `CacheControlMiddleware` — **already implemented and committed** (with tests in
    `tests/test_cache_control.py`); adds `Cache-Control` headers from the shared
-   `cache_ttl.py` constants: `TODAY_TTL` if the response includes today's dayobs,
-   `MUTABLE_TTL` for historical requests to the mutable endpoints (`/exposure-flags`,
-   `/exposure-entries`, `/narrative-log`, `/block-details`), `HISTORIC_TTL` for other fully
+   `cache_ttl.py` constants: `TODAY_TTL_CLIENT` if the response includes today's dayobs,
+   `MUTABLE_TTL_CLIENT` for historical requests to the mutable endpoints (`/exposure-flags`,
+   `/exposure-entries`, `/narrative-log`, `/block-details`), `HISTORIC_TTL_CLIENT` for other fully
    historical responses.
 4. `PublicAccessMiddleware` — for the public-facing release, enforces `dayObsStart == dayObsEnd`
    on dayobs-driven endpoints
@@ -491,13 +491,13 @@ Request: GET /exposure-entries?dayObsStart=20250101&dayObsEnd=20250108&instrumen
        - Returns {20250101: ..., ..., 20250107: ...}
   6. handle filters to the requested instrument (the cache holds all
      instruments per dayobs) and returns collate_response(filtered)
-  7. CacheControlMiddleware adds "Cache-Control: public, max-age=<TODAY_TTL>"
-     (today is in the requested range; a historical range would get MUTABLE_TTL
-     since /exposure-entries is a mutable path, HISTORIC_TTL on other endpoints)
+  7. CacheControlMiddleware adds "Cache-Control: public, max-age=<TODAY_TTL_CLIENT>"
+     (today is in the requested range; a historical range would get MUTABLE_TTL_CLIENT
+     since /exposure-entries is a mutable path, HISTORIC_TTL_CLIENT on other endpoints)
 
 Request: GET /block-details?key=BLOCK-42&key=BLOCK-99&key=BLOCK-T123_a
   1–2. Same middleware/Depends flow as above (DayobsValidationMiddleware skips —
-       no dayobs params; CacheControlMiddleware applies MUTABLE_TTL)
+       no dayobs params; CacheControlMiddleware applies MUTABLE_TTL_CLIENT)
   3. Endpoint calls block_details_service.handle_request(keys)
   4. handle deduplicates and splits keys by pattern:
        Jira:   ["BLOCK-42", "BLOCK-99"]
@@ -604,10 +604,10 @@ HTTP layer without touching the adapter or service code.
    `tests/test_cache_control.py` (commits `42b301f`, `50a4f1b`, `1ca2ed8`). As built, it
    inspects the `dayObs`, `dayObsStart`, and `dayObsEnd` query parameters and sets
    `Cache-Control: public, max-age=<N>` from the `cache_ttl.py` constants —
-   `TODAY_TTL` (300 s, matching the `RefreshWorker` interval) if today's dayobs is in the
-   requested range, `HISTORIC_TTL` (86400 s) for fully historical requests. Mutable-data
+   `TODAY_TTL_CLIENT` (300 s, matching the `RefreshWorker` interval) if today's dayobs is in the
+   requested range, `HISTORIC_TTL_CLIENT` (86400 s) for fully historical requests. Mutable-data
    endpoints (`/exposure-flags`, `/block-details`, `/exposure-entries`, `/narrative-log`)
-   receive `MUTABLE_TTL` on historical ranges instead of the historic value.
+   receive `MUTABLE_TTL_CLIENT` on historical ranges instead of the historic value.
 
 2. ✅ **Done (dev stack)** — the frontend repo's `docker/nginx.conf` configures the proxy
    cache: `proxy_cache_path`, `Cache-Control` pass-through, full-URL cache key,
@@ -630,8 +630,8 @@ HTTP layer without touching the adapter or service code.
 | File | Description |
 |---|---|
 | `middleware/__init__.py` | ✅ Exists — exports middleware classes |
-| `cache_ttl.py` | ✅ All cache lifetimes in one place: `HISTORIC_TTL`/`HISTORIC_TTL_REDIS`, `TODAY_TTL`/`TODAY_TTL_REDIS`, `MUTABLE_TTL`/`MUTABLE_TTL_REDIS` — client `max-age` and Redis TTL per data kind; the `RefreshWorker` default interval is `TODAY_TTL` |
-| `middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers from the `cache_ttl` constants based on whether today's dayobs is in the requested range (mutable-data endpoints get `MUTABLE_TTL` on historical ranges) |
+| `cache_ttl.py` | ✅ All cache lifetimes in one place: `HISTORIC_TTL_CLIENT`/`HISTORIC_TTL_REDIS`, `TODAY_TTL_CLIENT`/`TODAY_TTL_REDIS`, `MUTABLE_TTL_CLIENT`/`MUTABLE_TTL_REDIS` — client `max-age` and Redis TTL per data kind; the `RefreshWorker` default interval is `TODAY_TTL_CLIENT` |
+| `middleware/cache_control.py` | ✅ Exists — `CacheControlMiddleware`, sets `Cache-Control` headers from the `cache_ttl` constants based on whether today's dayobs is in the requested range (mutable-data endpoints get `MUTABLE_TTL_CLIENT` on historical ranges) |
 | `middleware/error_handling.py` | ❌ Dropped (2026-07-30) — `Service.handle_request` already covers this for every service-backed endpoint, and the `BaseLogrepError` hierarchy it was meant to use was deleted as dead code (chunk-8 Stage 2); see "Middleware for cross-cutting concerns" above |
 | `middleware/dayobs_validation.py` | ✅ `DayobsValidationMiddleware` — validates dayobs query params and enforces `dayObsStart <= dayObsEnd`; skips requests that don't match a registered route (so it never shadows a 404/405), and non-numeric values are left for FastAPI's own type coercion |
 | `middleware/public_access.py` | `PublicAccessMiddleware` — enforces `dayObsStart == dayObsEnd`; disabled in the internal deployment |

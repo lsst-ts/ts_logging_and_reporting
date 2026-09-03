@@ -42,13 +42,13 @@ only the Redis copy can be flushed centrally.
 
 SECONDS_PER_DAY = 86400
 
-HISTORIC_TTL = SECONDS_PER_DAY
+HISTORIC_TTL_CLIENT = SECONDS_PER_DAY
 """Client max-age for immutable, fully historical responses."""
 
 HISTORIC_TTL_REDIS = 30 * SECONDS_PER_DAY
 """Redis TTL for immutable historical entries."""
 
-TODAY_TTL = 300
+TODAY_TTL_CLIENT = 300
 """Client max-age for responses covering today's dayobs.
 
 Also the RefreshWorker's default interval, so clients are never
@@ -62,7 +62,7 @@ Must comfortably exceed the RefreshWorker interval so today's entry
 cannot expire between refresh cycles.
 """
 
-MUTABLE_TTL = 300
+MUTABLE_TTL_CLIENT = 300
 """Client max-age for mutable data on past dayobs."""
 
 MUTABLE_TTL_REDIS = 1800
