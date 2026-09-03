@@ -46,7 +46,7 @@ to the final merge to develop)
 The commit history presented for review was not the history in which this work was
 developed. The work was built incrementally on `experiemental/cache-refactor` over
 several weeks, in an order driven by what was learnable next rather than by what is
-readable. That branch is retained as the real record — use it for `git blame` and
+readable. That branch is retained as the real record—use it for `git blame` and
 for any archaeology about why something is the way it is. It stays current for the
 whole of this review: anything changed in response to a review comment lands there
 too, so it continues to match the code in front of you.
@@ -96,9 +96,9 @@ depend on each other, and a cleanup branch that takes the joins:
                                                       └──────────┘
 ```
 
-Eight slices are fully parallel — nothing in
+Eight slices are fully parallel: nothing in
 one is needed by another, so they can be reviewed in any order or at the same
-time. The only edges that are not fan-out are the ones a where a shared adapter
+time. The only edges that are not fan-out are the ones where a shared adapter
 forces a particular resolution order.
 
 | Shared adapter | Consumers |
@@ -110,7 +110,7 @@ forces a particular resolution order.
 
 So `almanac` fans out to two children, and `exposures` is the only slice with two
 parents; `cleanup` merges the ten remaining heads. Branches follow the existing
-`tickets/OSW-1297/topic>` convention — the
+`tickets/OSW-1297/topic>` convention—the
 short names above are the topic halves. Slices are PR'd against the **epic
 branch**, not `develop`, with one final PR from the epic to `develop`; the
 merges are `--no-ff` so this shape stays visible in the history afterwards.
@@ -118,7 +118,7 @@ merges are `--no-ff` so this shape stays visible in the history afterwards.
 Read `foundation` and `base-classes` first regardless of which slice you are 
 reviewing: everything downstream is written against the cache base classes and
 the `Service` contract those two establish. They are also reviewed first, on their
-own — the per-endpoint slices become available once those two are approved.
+own—the per-endpoint slices become available once those two are approved.
 
 ### Do not run the tests on the branch you are reviewing
 
@@ -143,7 +143,7 @@ Those five are red for exactly one commit.
 
 **Run manual and automated testing against the tip of the original
 `experiemental/cache-refactor` branch**, even while reviewing a part-way slice. A
-red test on a slice tells you very little — it is more likely to be one of the two
+red test on a slice tells you very little—it is more likely to be one of the two
 documented cases above than a real defect. Per-slice, the new tests do give a clean
 signal:
 
@@ -178,8 +178,8 @@ python scripts/perf_test.py compare review/performance/BASELINE.json \
 ```
 
 **Use the same `--day-start` and `--instrument` for both runs.** Both default to
-a fixed, well-populated historical week, so the safe move is to pass neither —
-the captures in `review/performance/` were taken on the defaults. `compare`
+a fixed, well-populated historical week, so the safe move is to pass neither—the
+captures in `review/performance/` were taken on the defaults. `compare`
 warns on mismatched ranges but cannot correct for them.
 
 **Point at uvicorn directly (port 8080), never at nginx**, or the proxy cache
@@ -194,8 +194,8 @@ change needs re-measuring.
 
 ### Verifying the endpoint outputs are unchanged
 
-Performance is only half the claim. The other half — that the refactor did not
-change *what* the API returns — is what `scripts/capture_endpoints.py` exists to
+Performance is only half the claim. The other half—that the refactor did not
+change *what* the API returns—is what `scripts/capture_endpoints.py` exists to
 demonstrate, and `review/capture-compare.md` holds the result along with 
 analysis and commentary.
 
@@ -277,7 +277,7 @@ header was the *last* of them:
 3. **the environment variable named by the source's config**
 4. the request's `Authorization` header
 
-Step 3 has to be populated for the application to work at all — it is how the
+Step 3 has to be populated for the application to work at all: it is how the
 deployment supplies credentials, and it is the only source available to any code
 path without a request in scope. So in every real deployment step 3 returned a
 token and step 4 was never reached. The header fallback could only ever fire on a
@@ -300,7 +300,7 @@ drive the removed branches are gone with them.
 this service, so a token that will not resolve is a misconfigured deployment rather
 than a bad request, and saying `401` invited exactly the wrong diagnosis. The
 response detail is the generic `"Server configuration error"`; the variable that is
-actually unset is named in the log instead — the same
+actually unset is named in the log instead—the same
 log-the-cause-return-a-generic-detail rule the service layer follows
 ([§7](#7-error-handling-and-the-frontend-contract)).
 
@@ -314,7 +314,7 @@ log-the-cause-return-a-generic-detail rule the service layer follows
   (`ACCESS_TOKEN`, `JIRA_API_TOKEN`, `ZEPHYR_API_TOKEN`) for both the API container
   and the refresh-worker container.
 - **Upstream audit logs attribute every query to the service account.** This is not
-  new — see above; they already did.
+  new (see above); they already did.
 - `utils/auth.py::get_access_token`, the FastAPI dependency factory that
   implemented the old model, has been removed along with the tests that only
   existed to exercise it.
@@ -327,14 +327,14 @@ These changes share one cause. A cache entry is keyed by dayobs and is reused
 across every request that touches that night, so **anything whose value depends on
 the requested range cannot be stored in it.** Each endpoint that had such a value
 had to resolve it differently, and none of these changes are clearly visible as an
-intentional behavioural edit in the diff — they look like incidental refactoring.
+intentional behavioural edit in the diff—they look like incidental refactoring.
 
-### `/context-feed` — `timestampProcessEnd` is recomputed on read
+### `/context-feed`—`timestampProcessEnd` is recomputed on read
 
 `get_consolidated_messages` synthesises "Task Change" rows whose
 `timestampProcessEnd` is bounded by the query window it was given. Cached per
 night, each entry would bake in an end timestamp derived from that night's fetch
-window rather than from the range the user actually asked for — so a 7-day request
+window rather than from the range the user actually asked for—so a 7-day request
 assembled from 7 single-night entries would show 7 truncated task changes instead
 of one continuous sequence.
 
@@ -345,10 +345,10 @@ each task-change row's `timestampProcessEnd` becomes the
 record for the last one. The wire format is unchanged; the values are now
 correct for the requested range rather than for the cache granularity.
 
-### `/obs-status` — the carry-in event is fetched a whole day earlier
+### `/obs-status`—the carry-in event is fetched a whole day earlier
 
 Observatory status is a sequence of state *changes*, so interpreting a range
-requires knowing the state it started in — the last event before the range begins.
+requires knowing the state it started in—the last event before the range begins.
 
 The old code queried twelve hours earlier than the requested start and kept the
 final event before the boundary:
@@ -374,7 +374,7 @@ entries = [data[carry_in_day][-1]] if data[carry_in_day] else []
 Same intent, wider lookback. A night whose last preceding state change was more
 than 24 hours earlier still has no carry-in event, exactly as before.
 
-### `/jira-tickets` — `isNew` moved from the adapter to the service
+### `/jira-tickets`—`isNew` moved from the adapter to the service
 
 `isNew` is true when a ticket was created inside the requested window. That is a
 property of the request, not of the ticket, so caching it would poison the entry
@@ -382,7 +382,7 @@ for every other range.
 
 The adapter now emits a `created_utc` field instead; `JiraTicketsService` computes
 `isNew` from it and `pop`s `created_utc` before responding. The wire format is
-unchanged — `created_utc` never reaches the frontend.
+unchanged—`created_utc` never reaches the frontend.
 
 The adapter also buckets a ticket into *both* the dayobs it was created in and the
 dayobs it was last updated in (matching the upstream JQL, which is an `OR` over the
@@ -391,7 +391,7 @@ deduplicates by key at collation, keeping the first occurrence in dayobs order.
 
 ### `/exposures` and `/data-log` share one cache entry
 
-`ConsdbExposuresAdapter` caches `SELECT e.*, q.*` — the full exposure record joined
+`ConsdbExposuresAdapter` caches `SELECT e.*, q.*`—the full exposure record joined
 to quicklook and, where available, to the transformed EFD. `DataLogService` returns
 it whole; `ExposuresService` projects the curated `EXPOSURE_COLUMNS` list on read.
 
@@ -405,7 +405,7 @@ both endpoints instead of two of each. Neither endpoint's response shape changed
 `rubin_nights` augmentation that the old `get_visits(..., augment=True)` applied is
 pure local computation, so it now runs on read in `VisitMapsService` rather than
 before the cache write. Both `/multi-night-visit-maps` and `/static-visit-map`
-therefore derive from a single cache entry — the old code called `get_visits` with
+therefore derive from a single cache entry—the old code called `get_visits` with
 `augment=True` for one and `augment=False` for the other, which would have needed
 two entries.
 
@@ -424,8 +424,8 @@ The split follows that seam. `VisitOverheadAdapter` caches per-visit `overhead` 
 `visit_gap` rows per instrument and night; `ExposuresService._time_accounting`
 performs the twilight-windowed reduction over the whole assembled range. The
 adapter reads its visits from `ConsdbExposuresAdapter` rather than issuing its own
-ConsDB query, so a refresh cycle warms it from the freshly-refreshed exposures —
-which is why the refresh worker registers the two adapters in that order.
+ConsDB query, so a refresh cycle warms it from the freshly-refreshed exposures—which
+is why the refresh worker registers the two adapters in that order.
 
 ---
 
@@ -461,8 +461,8 @@ The 696-line grab-bag split by concern:
 | `utils/logging_config.py` | `configure_logging`, `log_level`, `trace_id` context and filter |
 
 `utils/__init__.py` was a transitional re-export shim during the migration so that
-remaining `import utils as ut` callers kept resolving. It is now empty — a bare
-package marker — so import from the concern module directly.
+remaining `import utils as ut` callers kept resolving. It is now empty—a bare
+package marker—so import from the concern module directly.
 
 `current_dayobs_utc` was renamed `dayobs_at` (taking a UTC timestamp), and a
 zero-argument `current_dayobs()` was added for the common case.
@@ -474,14 +474,14 @@ file each rather than one file per upstream. `scheduler_service.py` became
 `services/visit_maps.py`, `services/static_visit_map.py`, and
 `adapters/expected_exposures.py`.
 
-Tests follow the same shape — `tests/adapters/`, `tests/services/`, `tests/utils/`,
-one module per unit — with the base classes, middleware, worker and endpoint
+Tests follow the same shape—`tests/adapters/`, `tests/services/`, `tests/utils/`,
+one module per unit—with the base classes, middleware, worker and endpoint
 contracts at the root of `tests/`.
 
 `tests/test_api_endpoints.py` (2275 lines) was replaced by
 `tests/test_endpoint_contracts.py` (317 lines). The old file tested endpoint
 behaviour end to end with heavy mocking; the new one tests only what an endpoint
-function is actually responsible for — parameter parsing, forwarding to
+function is actually responsible for—parameter parsing, forwarding to
 `service.handle_request`, pass-through of the result, and status mapping. Response
 payloads are covered in `tests/services`, upstream parsing and caching in
 `tests/adapters`.
@@ -530,21 +530,21 @@ same `ConsdbVisitsAdapter` entry ([§3](#3-logic-that-changed-because-of-caching
 |---|---|---|
 | `decode_states`, `is_unknown`, `contains_daytime`, `contains_operational`, `contains_fault`, `contains_weather`, `contains_downtime`, `contains_idle`, `counts_as_fault_loss` | `services/obs_status.py` | Verbatim. |
 | `get_obs_status_intervals`, `build_ms_dayobs_intervals`, `build_ms_night_intervals`, `get_availability` | `services/obs_status.py` | Verbatim, including the `OSW-2118` TODO above `get_obs_status_intervals`. |
-| `sum_interval_overlap` | `services/obs_status.py` | Verbatim except for one **added** docstring line — see below. |
+| `sum_interval_overlap` | `services/obs_status.py` | Verbatim except for one **added** docstring line (see below). |
 | `OBSERVATORY_STATES`, `COUNT_STATE_METRIC_MAP`, `OBS_STATUS_AVAILABLE_DAYOBS`, `MILLISECONDS_IN_AN_HOUR` | `services/obs_status.py` | Verbatim. |
-| `get_obs_status` | `services/obs_status.py::ObsStatusService.handle` | **Restructured** — a module function becomes a service method. Same sequence of decisions and the internal step comments are preserved, but: the almanac fetch is scheduled alongside the events rather than after them; the `auth_token` parameter is gone (adapters resolve their own); and the `except: return {}` error swallowing is gone, so failures now surface ([§7](#7-error-handling-and-the-frontend-contract)). The docstring documents the new signature. |
+| `get_obs_status` | `services/obs_status.py::ObsStatusService.handle` | **Restructured**—a module function becomes a service method. Same sequence of decisions and the internal step comments are preserved, but: the almanac fetch is scheduled alongside the events rather than after them; the `auth_token` parameter is gone (adapters resolve their own); and the `except: return {}` error swallowing is gone, so failures now surface ([§7](#7-error-handling-and-the-frontend-contract)). The docstring documents the new signature. |
 | `_twilight_windows_by_dayobs`, `_obs_start_tai_to_utc_ms`, `_compute_filter_changed`, `_sum_on_sky_within_twilight` | `services/exposures.py` | Verbatim. |
-| `_compute_closed_hours` | `services/exposures.py` | **Signature changed** — see below. Docstring updated to match; everything else verbatim. |
+| `_compute_closed_hours` | `services/exposures.py` | **Signature changed** (see below). Docstring updated to match; everything else verbatim. |
 | `dayobs_to_unix_ms`, `almanac_to_unix_ms` | `utils/dayobs.py` | Verbatim apart from the `datetime` → `dt` alias the destination module uses, which forces `almanac_to_unix_ms`'s local `dt` to be renamed. |
 | `dayobs_to_noon_utc` | — | Deleted; callers use `get_utc_datetime_from_dayobs_str` with `astropy.Time`. |
-| `get_visits` | `adapters/consdb_visits.py::ConsdbVisitsAdapter` | Dissolved into a cached fetch — see [§3](#3-logic-that-changed-because-of-caching) and [§6](#6-data-source-changes). |
+| `get_visits` | `adapters/consdb_visits.py::ConsdbVisitsAdapter` | Dissolved into a cached fetch (see [§3](#3-logic-that-changed-because-of-caching) and [§6](#6-data-source-changes)). |
 | `get_open_close_dome` | `adapters/rubin_nights_dome.py::RubinNightsDomeAdapter` | Turned into part of the `ExposuresService`; the per-night reduction is now `ExposuresService._aggregate_dome_hours`. |
 | `get_context_feed` | `adapters/rubin_nights_context.py::RubinNightsContextAdapter` | Turned into an adapter; `timestampProcessEnd` is recomputed by the service ([§3](#3-logic-that-changed-because-of-caching)). |
 | `get_obs_status_events` | `adapters/rubin_nights_obs_status.py::RubinNightsObsStatusAdapter` | Turned into an adapter; the 12-hour lookback became a leading dayobs ([§3](#3-logic-that-changed-because-of-caching)). |
 | `get_time_accounting` | `adapters/visit_overhead.py::VisitOverheadAdapter` + `ExposuresService._time_accounting` | Split across the cache boundary ([§3](#3-logic-that-changed-because-of-caching)). The augmentation and slew modelling become the adapter's fetch; the twilight reduction becomes the service method, whose docstring documents its own new signature. |
 
 **`_compute_closed_hours` changed shape.** It took a `pandas.Series` and resolved
-the day under test with `row.get("day_obs", row.name)` — tolerating the value
+the day under test with `row.get("day_obs", row.name)`—tolerating the value
 arriving either as a column or as the index name, depending on whether the caller
 passed a raw or a grouped frame. It now takes a plain `dict` and requires an
 explicit `day_obs` key, which the new `_aggregate_dome_hours` supplies. Same
@@ -565,7 +565,7 @@ down.
 | `web_app/main.py::_encode_png_payload` | `services/static_visit_map.py` | Verbatim. |
 | `web_app/services/almanac_service.py::_as_utc_datetime`, `_compute_elapsed_twilight_hours` | `services/almanac.py` | Verbatim. |
 | `scheduler_service.py::_add_dec_labels`, `_add_ra_labels`, `_add_graticules`, `_style_text`, `_style_axes`, `_style_figure`, `_compute_nvisits_bundle` | `services/static_visit_map.py` | Verbatim. |
-| `scheduler_service.py::build_static_visit_map` | `services/static_visit_map.py` | The render body is wrapped in `try`/`finally` so `plt.close(fig)` runs even when `savefig` raises — pyplot holds the figure until it is closed, so a failure previously leaked it for the life of the process. The docstring also gains a note that the function is not safe to call concurrently, because the render goes through pyplot's process-global active figure and axes. |
+| `scheduler_service.py::build_static_visit_map` | `services/static_visit_map.py` | The render body is wrapped in `try`/`finally` so `plt.close(fig)` runs even when `savefig` raises—pyplot holds the figure until it is closed, so a failure previously leaked it for the life of the process. The docstring also gains a note that the function is not safe to call concurrently, because the render goes through pyplot's process-global active figure and axes. |
 | `scheduler_service.py::_prepare_visit_maps_data`, `_get_visit_map_config` | `services/visit_maps.py` | Verbatim. |
 | `scheduler_service.py::build_visit_maps_using_builder` | `services/visit_maps.py` | One change: `°` escapes in the Bokeh tooltip HTML became literal `°`. |
 | `exposure_log.py::ExposurelogAdapter.get_messages` (the `"none"` → `"unknown"` flag remap) | `adapters/exposurelog.py::ExposurelogCachedAdapter._fetch_run` | Same behaviour, different layer. |
@@ -578,7 +578,7 @@ polarity flip. They are now `filter_tickets_by_instrument(tickets, instrument,
 exclude=False)`.
 
 Both old docstrings claimed the function "adds a `'url'` field to the ticket". It
-never did — the URL is set by the adapter when the record is built. The new
+never did—the URL is set by the adapter when the record is built. The new
 docstring drops the claim.
 
 ### `_add_instrument` lost a warning and gained a corrected constant
@@ -601,7 +601,7 @@ ZEPHYR_BLOCK_BASE_URL = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/projects
 JIRA_BLOCK_BASE_URL = f"https://{os.environ.get('JIRA_API_HOSTNAME')}/browse/"
 ```
 
-Evaluated at import. If `JIRA_API_HOSTNAME` was unset — or set after import — every
+Evaluated at import. If `JIRA_API_HOSTNAME` was unset—or set after import—every
 BLOCK URL served for the life of the process was `https://None/browse/BLOCK-42`,
 silently.
 
@@ -626,7 +626,7 @@ Two differences worth knowing:
   `help_dict` of human-readable annotations (`"Morning Nautical Twilight":
   "(-12 degrees)"`, `"Moon Illumination": "(% illuminated)"`). The old
   `get_almanac` discarded the second element and never surfaced it, so no endpoint
-  ever returned it — but if anything downstream was reconstructing those
+  ever returned it—but if anything downstream was reconstructing those
   annotations from a copy of this table, the source of truth is now gone. The
   discarded `dataframe`, `events`, and `as_records` accessors were likewise unused.
 
@@ -638,8 +638,8 @@ Two differences worth knowing:
 
 `ConsdbExposuresAdapter` issues SQL directly to `/consdb/query` via `SqlClient`.
 
-The old `/data-log` path issued two queries — `ConsdbAdapter.get_exposures` and
-`ConsdbAdapter.get_transformed_efd_data` — and merged them with
+The old `/data-log` path issued two queries—`ConsdbAdapter.get_exposures` and
+`ConsdbAdapter.get_transformed_efd_data`—and merged them with
 `pd.merge(..., on="exposure_id", how="left")` in Python. That is now a single SQL
 `LEFT JOIN`.
 
@@ -678,7 +678,7 @@ the `get_clients()` bundle once per process. `VisitOverheadAdapter` uses
 `rubin_nights.augment_visits` and `rubin_nights.rubin_scheduler_addons`. The visit
 map services use `augment_visits` on read.
 
-`rubin_nights.dayobs_utils` is no longer used at all — dayobs conversion is local
+`rubin_nights.dayobs_utils` is no longer used at all—dayobs conversion is local
 to `utils/dayobs.py`.
 
 ### Zephyr dropped the `ts-planning-tool` dependency
@@ -715,7 +715,7 @@ deployment fault rather than a bug in a request, so it is logged at `CRITICAL`
 
 ### Exception detail no longer reaches the client
 
-Old responses were `HTTPException(status_code=500, detail=str(e))` — raw Python
+Old responses were `HTTPException(status_code=500, detail=str(e))`—raw Python
 exception text on the wire, potentially in some cases including the SQL that failed. The detail
 is now generic and names only the service (`"Internal error in ExposuresService"`).
 The full exception, with traceback, still goes to `logger.exception` and is recorded
@@ -727,7 +727,7 @@ The frontend never surfaced `detail` to users, so no user-visible message change
 
 `get_context_feed` returned `[]` and `get_obs_status` returned `{}` on any
 exception. A failed upstream call was indistinguishable from a genuinely empty
-night — the frontend rendered "no data" for both. Both now propagate to a 500 or
+night—the frontend rendered "no data" for both. Both now propagate to a 500 or
 502.
 
 ### New 422s
@@ -746,7 +746,7 @@ Any endpoint whose adapter cannot resolve its service-account token now fails wi
 `401 <label> authentication token could not be retrieved by any method.`
 
 The 401 made sense when the token could have come from the caller's own
-`Authorization` header — it read as "your credentials are missing". Nothing about
+`Authorization` header—it read as "your credentials are missing". Nothing about
 the request can influence it any more, so it is a deployment fault and is reported
 as one. See [§2](#2-the-authentication-path-changed) for the full change.
 
@@ -763,7 +763,7 @@ refactor.
 ### `/context-feed` returns a fixed column list
 
 `cols` was whatever `get_consolidated_messages` happened to return for that call.
-It is now the module constant `CONTEXT_FEED_COLS` — the same twelve display columns
+It is now the module constant `CONTEXT_FEED_COLS`—the same twelve display columns
 the adapter filters the frame down to before caching. If the upstream shortlist
 changes, this list must be changed with it.
 
@@ -773,7 +773,7 @@ The only JavaScript change this refactor includes. A missing timestamp used to
 reach the frontend as the literal string `"NaT"`: the old serialization ran only
 `stringify_special_floats`, which handles float NaN and Inf but not `pd.NaT`, so
 the value survived to FastAPI's `jsonable_encoder`, whose fallback for an unknown
-type is `str(obj)` — and `str(pd.NaT)` is `"NaT"`. The table rendered that string
+type is `str(obj)`—and `str(pd.NaT)` is `"NaT"`. The table rendered that string
 as-is.
 
 `make_json_safe` now maps `NaT` to a real JSON `null`, so the cell has nothing to
@@ -782,8 +782,8 @@ change meaning too, since `"NaT"` was truthy and `null` is not.
 
 ### `/data-log` and `/exposures` record order is now guaranteed
 
-The two endpoints read the same cache entry, and both now sort it the same way —
-nights ascending, and within a night by `seq_num` — through the shared
+The two endpoints read the same cache entry, and both now sort it the same way—nights
+ascending, and within a night by `seq_num`—through the shared
 `flatten_within_dayobs` helper in `utils/collation.py`:
 
 ```python
@@ -795,7 +795,7 @@ This is worth calling out because neither the old nor the new ConsDB query has a
 within-night order used to be whatever Postgres returned. In practice that
 probably always *looked* time-ordered: `exposure` is append-only, rows go in in
 time order, and a plain sequential scan tends to return them in physical order.
-That was a property of the query plan, not a contract — and the plan changed. The
+That was a property of the query plan, not a contract—and the plan changed. The
 old query was a single-table scan; the new one is
 `exposure LEFT JOIN visit1_quicklook` plus, where available, a transformed-EFD
 join, and a hash or merge join can emit rows in an order unrelated to the driving
@@ -806,7 +806,7 @@ would no longer have produced reliably. The frontend sorts this data by `seq_num
 itself, so no user-visible behaviour depended on it either way.
 
 `flatten_within_dayobs` is separate from `flatten_sorted` because `seq_num` only
-counts within a night — one global sort across the assembled range would
+counts within a night—one global sort across the assembled range would
 interleave nights.
 
 ### The dayObs range convention is inconsistent, and this refactor makes it visible
@@ -880,7 +880,7 @@ for more information.
 
 ### Two planned middlewares were not built
 
-`ErrorHandlingMiddleware` was dropped — `Service.handle_request` covers the same
+`ErrorHandlingMiddleware` was dropped—`Service.handle_request` covers the same
 ground, and the `BaseLogrepError` hierarchy it was specified to serialize has been
 deleted. `PublicAccessMiddleware` is deferred with the public-facing release.
 
@@ -895,14 +895,14 @@ with its own console-script entrypoint (`run_refresh_worker`), its own
 `docker/refresh_worker.sh`, and its own service in the dev compose stack.
 
 **Exactly one instance must run per deployment.** Duplicate refreshes are harmless
-in themselves — fetch-then-overwrite is idempotent — but they waste upstream calls.
+in themselves—fetch-then-overwrite is idempotent—but they waste upstream calls.
 Nothing in the code enforces this; it is a property of the deployment (one
 container in compose, a single-replica deployment in Kubernetes). See
 [§14](#14-divergence-from-the-original-refactor-plan), item 11, for what was
 originally specified instead.
 
 Which adapters it warms is `REFRESH_ADAPTERS` in `adapters/__init__.py`, beside
-`__all__` — having both lists in one file means adding an adapter puts the
+`__all__`—having both lists in one file means adding an adapter puts the
 second one in front of you. Registration order matters: `visit_overhead` is
 listed after `consdb_exposures` because it reads that adapter's cache.
 
@@ -916,8 +916,8 @@ pools are started and stopped by the application's lifespan hook, from the
 `WORKER_POOL_SERVICES` registry in `services/__init__.py`.
 
 Two unrelated problems forced this, and neither is fixable with a thread. The
-renders are CPU-bound Python, so under the GIL a threadpool gives no throughput —
-FastAPI already ran these handlers in one. Separately, `build_static_visit_map` goes through
+renders are CPU-bound Python, so under the GIL a threadpool gives no throughput—FastAPI
+already ran these handlers in one. Separately, `build_static_visit_map` goes through
 pyplot's process-global active figure and axes, which healpy and maf both depend
 on: concurrent renders in one process overwrote each other, and during performance
 testing 92–98 of 100 runs returned an image that did not match the single-threaded
@@ -930,20 +930,20 @@ Four operational consequences:
   singleton that reads its preload list once, when it starts, so setting that list
   per pool would silently preload only whichever service built its pool first.
   `preload_worker_modules` combines the lists and registers them before any pool is
-  built. The consequence is that every worker carries both services' modules — but
+  built. The consequence is that every worker carries both services' modules—but
   they are copy-on-write shared from the one forkserver, so the memory cost
   per-process is low.
 - **Process count and memory.** Each service's pool is `pool_workers` processes,
   each holding the plotting stacks and one render's working set. Neither
   service overrides the mixin's defaults, so that is currently **4 workers per pool,
-  8 worker processes in total** — both numbers are class attributes on
+  8 worker processes in total**—both numbers are class attributes on
   `WorkerPoolMixin`, tunable per service without touching the mixin. The pools are
   `forkserver`-backed with the service module preloaded, so the imports are paid
   once, but the per-render allocations are not shared. Size the container for
   `pool_workers` concurrent renders per map endpoint, and note that an OOM kill now
   costs one worker rather than the API process.
 - **These endpoints now shed load.** Each service admits `pool_workers + pool_queue`
-  requests — **24** on the current defaults — and refuses the rest with an immediate
+  requests—**24** on the current defaults—and refuses the rest with an immediate
   **503** rather than queueing them, since queued requests would occupy the
   threadpool workers every other endpoint needs. A render that outruns
   `pool_timeout` (default 180 s) gets a **504**. All of these were previously a slow
@@ -959,7 +959,7 @@ Four operational consequences:
 
 | Variable | Effect |
 |---|---|
-| `ND_CACHING_DISABLE_REDIS` | Replaces the Redis client with `DisabledRedis` — every read misses, every write is dropped, every lock is won. The refresh worker logs a warning and exits immediately, since it would have nothing to warm. |
+| `ND_CACHING_DISABLE_REDIS` | Replaces the Redis client with `DisabledRedis`—every read misses, every write is dropped, every lock is won. The refresh worker logs a warning and exits immediately, since it would have nothing to warm. |
 | `ND_CACHING_DISABLE_NGINX` | *(frontend repo)* Makes nginx bypass the proxy cache so all requests hit the backend directly. `docker/nginx.conf` became `nginx.conf.template` to support this. |
 | `LOG_LEVEL` | Sets the level for the application, uvicorn and the map-render workers. Unset, blank or unrecognised falls back to `INFO` ([§10](#10-logging)). |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB` | Redis connection. Default to `localhost:6379` db 0; the dev compose stack sets `REDIS_HOST=redis`. |
@@ -977,7 +977,7 @@ or from the caller's `Authorization` header. That chain is gone
 ([§2](#2-the-authentication-path-changed)): the variable is now the only source,
 and an unset envvar fails the request with a 500 and `CRITICAL` logged warning.
 
-Both containers need them — the API and the refresh worker. None of them are
+Both containers need them—the API and the refresh worker. None of them are
 checked at startup; validating them there is potential deferred work
 ([§13](#required-environment-variables-are-not-checked-at-startup)).
 
@@ -1050,7 +1050,7 @@ keeping is now `logger.debug`.
 
 `utils/logging_config.py` holds the format, the level lookup and the `trace_id`
 machinery, and `configure_logging()` is called by `main.py`, by
-`run_refresh_worker.py` — and by each map-render worker as it starts.
+`run_refresh_worker.py`—and by each map-render worker as it starts.
 
 That third caller is the reason the configuration is a module rather than two
 `basicConfig` calls in the entrypoints. Pool workers are forked from the
@@ -1082,7 +1082,7 @@ cycle. The `ContextVar` crosses neither concurrency boundary this application
 uses by default, so both are bridged explicitly:
 
 - `Service.fetch_concurrently` submits `contextvars.copy_context().run` rather
-  than the thunk itself — a copy per task, since one `Context` cannot be entered
+  than the thunk itself—a copy per task, since one `Context` cannot be entered
   by two threads at once.
 - `WorkerPoolMixin.run_in_worker` pickles the current ID across as an argument and
   re-establishes it inside the worker.
@@ -1090,8 +1090,8 @@ uses by default, so both are bridged explicitly:
 ### Request logging moved into middleware
 
 Thirteen endpoints each logged their own near-identical arrival line, there was no
-completion line anywhere, poor error recognition and requests that never reached a service — FastAPI's
-422 for a bad parameter, a rejection from the dayobs validation middleware — were
+completion line anywhere, poor error recognition and requests that never reached a service—FastAPI's
+422 for a bad parameter, a rejection from the dayobs validation middleware—were
 not logged at all.
 
 `RequestLoggingMiddleware` logs arrival at info with the query string, and
@@ -1111,7 +1111,7 @@ internal workings.
 
 Each cycle logs its duration and a success/failure count across adapters, names
 the adapter on a per-adapter failure, and warns when a cycle consumes more than
-half its interval — the signal that the worker may be about to fall behind.
+half its interval—the signal that the worker may be about to fall behind.
 
 ### Misconfiguration logs at CRITICAL
 
@@ -1131,7 +1131,7 @@ running at:
 
 ## 11. Deletions
 
-### Superseded — replaced by adapter/service equivalents
+### Superseded—replaced by adapter/service equivalents
 
 `web_app/main.py`, all ten `web_app/services/*.py`, `almanac.py`, `consdb.py`,
 `exposure_log.py`, `jira.py`, `source_adapters.py`.
@@ -1144,7 +1144,7 @@ Deleting `source_adapters.py` also removed the notebook-era `SourceAdapter` surf
 that nothing in the API used: `day_table`, `analytics`, `check_endpoints`,
 `keep_fields`, `get_status`, `urls`, `protected_get`, `protected_post`.
 
-### Dead before this refactor — deleted because it was in the way
+### Dead before this refactor—deleted because it was in the way
 
 | Item | Evidence |
 |---|---|
@@ -1159,9 +1159,9 @@ that nothing in the API used: `day_table`, `analytics`, `check_endpoints`,
 
 ### `exceptions.py` was deleted entirely
 
-`BaseLogrepError` and its seven subclasses — `StatusError`, `ConsdbQueryError`,
+`BaseLogrepError` and its seven subclasses—`StatusError`, `ConsdbQueryError`,
 `ConsdbQueryWarning`, `NoRecordsWarning`, `UnknownTelescopeWarning`,
-`NotAvailWarning`, `ExcludeInstWarning` — are gone. Errors are now standard
+`NotAvailWarning`, `ExcludeInstWarning`—are gone. Errors are now standard
 `requests` exceptions at the adapter layer and `fastapi.HTTPException` at the
 service layer.
 
@@ -1188,7 +1188,7 @@ immediately before the epic merges.
 The same commit removes the **`/flush-redis` endpoint** (`main.py`), which issues
 a `FLUSHDB` against the cache database on request. It exists so `perf_test.py
 after --use-endpoint-flush` can reach the Redis of a backend it cannot run
-`redis-cli` against — a remote deployment, or one whose Redis is published only
+`redis-cli` against—a remote deployment, or one whose Redis is published only
 inside a container network. It is unauthenticated and destroys the whole cache,
 so it must not reach production; it is the one piece of the harness that lives in
 the application rather than in `scripts/`, which makes it the easiest to forget.
@@ -1203,13 +1203,13 @@ every endpoint that returns floats or timestamps.
 
 - **`make_json_safe` always returns a list for tuple input.** It previously
   preserved tuples. JSON has no tuple type, so a stored tuple always came back as a
-  list on a cache hit anyway — the distinction was never preserved end to end.
+  list on a cache hit anyway—the distinction was never preserved end to end.
 - **`make_json_safe` dropped a dead `pd.isnull()` check** inside the `pd.Timestamp`
   branch. `pd.Timestamp("NaT") is pd.NaT`, so a null Timestamp is always caught by
   the earlier identity check.
 - **`make_json_safe` guards `np.timedelta64` the way it already guarded
   `np.datetime64`.** `np.timedelta64("NaT")` now returns `None` instead of a raw
-  `NaN` float — which, post-`allow_nan=False`, would have raised at cache write.
+  `NaN` float—which, post-`allow_nan=False`, would have raised at cache write.
 - **`stringify_special_floats` matches `np.floating`, not just builtin `float`.**
   `np.float64` subclasses `float` and was always caught; `np.float32` and friends
   were not, so NaN and Inf in non-float64 columns passed through unstringified.
@@ -1225,8 +1225,8 @@ tickets created.
 ### Zephyr is still not parallel
 
 `ZephyrAdapter._fetch_from_source` issues one GET per test-case key in a `for`
-loop. This is not a regression — the old `get_test_cases` was `async` but `await`ed
-inside a loop, which is equally sequential — but the `IdCachedAdapter` batch
+loop. This is not a regression—the old `get_test_cases` was `async` but `await`ed
+inside a loop, which is equally sequential—but the `IdCachedAdapter` batch
 contract now makes it *look* like it should be batched, and the cost is more
 visible now that everything around it is cached.
 
@@ -1262,7 +1262,7 @@ twilight-windowed time accounting. It is the only three-way join in the refactor
 Four things argue for the split:
 
 - **They do not share parameters.** `RubinNightsDomeAdapter.fetch` takes only a
-  dayobs range — dome state is observatory-wide — but `/exposures` makes
+  dayobs range—dome state is observatory-wide—but `/exposures` makes
   `instrument` a required query parameter, so switching instrument in the UI
   refetches dome hours that cannot have changed.
 - **The degrade-to-an-error-field handling exists only because they are joined.**
@@ -1277,7 +1277,7 @@ Four things argue for the split:
   response in the API and the one outlier in `review/performance/COMPARE.md`. The
   dome summary and the four time-accounting sums are a few hundred bytes each and
   are what the night-summary panels render from, so they currently wait on the
-  exposure records — including on a fully hot cache, where the remaining cost is
+  exposure records—including on a fully hot cache, where the remaining cost is
   almost entirely transferring a payload those panels do not use.
 - **The almanac fetch would leave the critical path.** `_time_accounting` fetches
   the almanac serially *after* the overhead rows return, inside the slowest request
@@ -1301,10 +1301,10 @@ goes for `JIRA_API_TOKEN`, `ZEPHYR_API_TOKEN`, `JIRA_API_HOSTNAME` and
 Both containers fail badly at this, in different ways. `/health` returns
 `{"status": "ok"}` unconditionally and backs the Kubernetes readiness probe, so a
 misconfigured API pod is marked Ready, takes traffic, and 500s every data request
-while the deployment reports healthy — nothing rolls back. The refresh worker is
+while the deployment reports healthy; nothing rolls back. The refresh worker is
 worse: `_refresh_cycle` catches per-adapter failures so the loop cannot die, so a
 worker with no credentials stays up, logs a token error per adapter per cycle
-forever, and warms nothing — and because the process is alive, Kubernetes sees a
+forever, and warms nothing—and because the process is alive, Kubernetes sees a
 healthy worker.
 
 **The AWS credentials belong in the same check.** `/expected-exposures` reads the
@@ -1312,17 +1312,17 @@ simulation archive through `rubin_sim.sim_archive.fetch_sim_stats_for_night`,
 which pulls from S3; without those credentials the endpoint fails while every
 other endpoint works, which is a slow thing to diagnose. They are the only
 credentials in the set not read through `utils/auth.py`, so they appear nowhere in
-this repository's configuration surface — not in `AUTH_SOURCES`, not in the
+this repository's configuration surface—not in `AUTH_SOURCES`, not in the
 environment-variable appendix of the infrastructure doc. 
 
 One thing blocks the API half: the entrypoint's `reload=True` means a startup abort
 does not reliably exit the container non-zero. That flag wants removing on its own
-merits — see the next item — but it has to go before fail-fast can actually fail.
+merits (see the next item), but it has to go before fail-fast can actually fail.
 
 ### The uvicorn entrypoint runs with `reload=True`
 
 `run_logging_and_reporting` passes `reload=True` to `uvicorn.run`. This predates
-the refactor and was carried through unchanged, so it is not a decision taken here — but
+the refactor and was carried through unchanged, so it is not a decision taken here—but
 `docker/startup.sh` invokes that same console script, which makes it what every
 deployment runs, and the refactor made two of its costs worse.
 
@@ -1340,7 +1340,7 @@ Three reasons to drop it:
   event the watcher fires, which re-runs `lifespan`: both map-render worker pools
   are torn down and rebuilt, the forkserver and its preloaded modules go with them
   ([§9](#the-map-endpoints-render-in-worker-processes)), and every once-per-process
-  cache is discarded — the `functools.cache` service singletons, the
+  cache is discarded—the `functools.cache` service singletons, the
   `RubinNightsClientsMixin` client bundle, the almanac's `EarthLocation` observer.
   Before the refactor a reload cost an import; now it costs eight worker processes
   and every warm client in the API process. The refresh worker is a separate
@@ -1364,16 +1364,16 @@ still repeated on every request.
 transforms. `build_visit_maps_payload` concatenates all days and then augments the
 whole frame, which forces row work into range shape. Preparing per day and caching
 that fits `InstrumentDayobsCachedAdapter` as it stands and helps rolling windows too.
-Confirm first that the `NIGHT_STACKERS` entries are row-independent — a stacker
+Confirm first that the `NIGHT_STACKERS` entries are row-independent—a stacker
 computing night-relative quantities would make a per-day frame differ from a slice of
-the 7-day one — and note it costs a second entry per night, since the prepared frame
+the 7-day one—and note it costs a second entry per night, since the prepared frame
 is useless to `/static-visit-map`.
 
 **The document is also larger than it needs to be, which is a separate axis from
 caching.** Measured on a captured 7-day LSSTCam document, 2.72 MB of compact
 JSON: 38% of it is 108 copies of just two JavaScript functions, because
 `uranography` attaches a `CustomJSTransform` per glyph rather than sharing one
-instance — a single-visit map would carry nearly the same megabyte. Most of the
+instance—a single-visit map would carry nearly the same megabyte. Most of the
 remainder is sphere coordinates written as decimal text at 18.2 bytes per value
 against 8 packed, because the patch geometry is ragged and reaches Bokeh as
 Python lists, so its binary array encoding never engages.
@@ -1383,7 +1383,7 @@ here: sharing one transform per distinct function would remove close to a
 megabyte, and handing the coordinates over as numpy arrays would roughly halve
 what is left. Neither is available to this repository without patching those
 packages. Gzip is the cheap alternative that needs no upstream change and
-compounds with them — 4.4× on this content
+compounds with them—4.4× on this content
 ([§13](#nothing-compresses-the-responses)). None of the three touch render time;
 they reduce transfer and cache footprint only.
 
@@ -1410,10 +1410,10 @@ simply not in the cached entry or query range.
 
 It is not introduced by the refactor. Endpoint captures show the old code
 producing the same truncated values whenever a request's range ended on a
-boundary, and the correct ones whenever it did not — a wide request happened to
+boundary, and the correct ones whenever it did not—a wide request happened to
 issue one wide query and see past it. What changed is that every night is now
 potentially fetched as though it were a single-night request. A shorter TTL
-would not help — the window is defined by the dayobs rather than by wall-clock,
+would not help—the window is defined by the dayobs rather than by wall-clock,
 so re-fetching re-issues the identical query.
 
 Mitigated, not fixed. `RubinNightsContextAdapter._fetch_run` queries
@@ -1422,12 +1422,12 @@ discard anything belonging to a day the run does not own. Only the trailing edge
 needs it: image rows can be published after their index but never before it, and
 `logevent_script` is a snapshot topic, so any later message still carries the
 script's start-side timestamps. The margin is a judgement call rather than a
-bound — nothing makes a fixed value sufficient for an arbitrarily long script.
+bound—nothing makes a fixed value sufficient for an arbitrarily long script.
 
 One symptom is left untouched by the margin:
 `make_config_col_for_image` interpolates raw DataFrame cells, so a whole-number
 exposure time renders as `2` or `2.0` depending on the dtype pandas inferred for
-whichever rows shared that query — which leaves adjacent nights disagreeing
+whichever rows shared that query—which leaves adjacent nights disagreeing
 inside a single response.
 
 The durable fix is upstream: a publish-lag margin applied where the lag is
@@ -1437,12 +1437,12 @@ instead of by whatever the window happened to contain.
 ### Nothing compresses the responses
 
 There is no `GZipMiddleware` in `main.py`, and no `gzip` directive in the
-frontend's `docker/nginx.conf.template` — nginx defaults to `gzip off` — so every
+frontend's `docker/nginx.conf.template`—nginx defaults to `gzip off`—so every
 response goes out uncompressed, including the largest ones.
 
 The visit maps are the extreme case. A captured 7-day LSSTCam
 `/multi-night-visit-maps` document is 2.72 MB of compact JSON and **0.61 MB
-gzipped, a 4.4× improvement** — it is largely repeated JavaScript source and coordinates
+gzipped, a 4.4× improvement**—it is largely repeated JavaScript source and coordinates
 written as decimal text, which is close to ideal compressor input. See
 [§13](#visit-map-rendering-is-not-cached) for the breakdown and for the
 structural reductions that are available alongside this one.
@@ -1522,7 +1522,7 @@ These were specified up front and shipped as described:
 - Each `Service` subclass declares its own typed signature; the base class does not
   take `**kwargs`.
 - Partial cache hits: a 7-day request only fetches the days not already cached.
-- Adapters are synchronous, for the reason the plan gave — the scientific Python
+- Adapters are synchronous, for the reason the plan gave—the scientific Python
   stack underneath cannot be made async.
 
 ### Class model
@@ -1566,8 +1566,8 @@ These were specified up front and shipped as described:
     a code property: each cycle would acquire or renew a lease (`SET NX EX`, TTL
     2 × interval), only the leaseholder would refresh, a dead leader's lease would
     expire within about a cycle, and `stop()` would release it early. With the
-    worker as its own single-replica deployment, that machinery was dropped —
-    `RefreshWorker.__init__` does not take a Redis client at all. **Single execution
+    worker as its own single-replica deployment, that machinery was
+    dropped—`RefreshWorker.__init__` does not take a Redis client at all. **Single execution
     is now an assumption about the deployment rather than something the code
     enforces.** Whoever writes the deployment ticket should know that scaling the
     refresh-worker deployment past one replica will not fail loudly; it will just
@@ -1604,7 +1604,7 @@ These were specified up front and shipped as described:
     are now three, each with a separate client and Redis value.
 21. **The `utils.py` split and the `web_app` flatten are not in the plan at all.**
     Neither was anticipated; both fell out of the legacy layer shrinking to nothing.
-22. **Service modules dropped their `_service` suffix** — `services/almanac.py`,
+22. **Service modules dropped their `_service` suffix**—`services/almanac.py`,
     not `web_app/services/almanac_service.py`.
 
 ### Scope
@@ -1615,7 +1615,7 @@ These were specified up front and shipped as described:
     on whether upstream APIs support service accounts.
 
     The resolution went one step further than the plan's Option A described. Option
-    A was written as a change to *request-time threading* — "each adapter is
+    A was written as a change to *request-time threading*—"each adapter is
     configured at startup with a service account token … no token is passed at
     request time … requires no changes to adapter method signatures". It said
     nothing about the resolution chain underneath, because the plan's author did
@@ -1628,13 +1628,13 @@ These were specified up front and shipped as described:
     `run_in_threadpool` at the call sites. The handlers themselves are now sync
     `def` and FastAPI's threadpool does the work.
 25. **The map renders got a process pool the plan did not anticipate.** The plan
-    put the blocking map work in "FastAPI's worker pool" — that is, its threadpool,
+    put the blocking map work in "FastAPI's worker pool"—that is, its threadpool,
     which does not escape the GIL. The renders now run in a forkserver-backed
     `multiprocessing.Pool` per service, preloaded during `lifespan`
     ([§9](#the-map-endpoints-render-in-worker-processes)). Nothing in the plan
     covers `services/worker_pool_mixin.py`, the preload, or the pool's saturation
     behaviour.
-26. **`/mock-exposures` was listed as an endpoint to keep** — one of three
+26. **`/mock-exposures` was listed as an endpoint to keep**—one of three
     deliberately outside the pattern. It was deleted instead.
 27. **Three adapters the plan described as "moved" were rewrites.**
     `ZephyrAdapter` (which the plan had wrapping `ZephyrInterface`),

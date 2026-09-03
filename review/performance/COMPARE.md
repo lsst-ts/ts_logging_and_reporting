@@ -1,4 +1,4 @@
-# Backend caching refactor — before/after performance
+# Backend caching refactor—before/after performance
 
 | | baseline | refactored |
 |---|---|---|
@@ -17,7 +17,7 @@ script. The table is generated output; everything after it is interpretation.
 - **completed** is successful requests over attempted. **p50 is taken over
   successful requests only**, so a row that did not complete cleanly has a
   percentile over a smaller sample.
-- **wall p50** is the median time for a whole burst round of ten to finish — what a
+- **wall p50** is the median time for a whole burst round of ten to finish—what a
   user waits when ten people load the same night at once. Burst rows only.
 - **change** is against the baseline row of the same shape (matching range length,
   burst against burst). Every (day_range, burst) after row therefore shares one
@@ -25,7 +25,7 @@ script. The table is generated output; everything after it is interpretation.
 - **bytes** is the modal decompressed response size. `[DIFFERS]` means sizes varied
   within one scenario; `[DIFFERS AFTER]` that the two runs settled on different
   sizes for the same request; `[OTHER WINDOW]` that the two rows did not request
-  the same nights, so their sizes are not comparable — e.g., `partial-rolling`,
+  the same nights, so their sizes are not comparable—e.g., `partial-rolling`,
   which measures the shifted week against a baseline for the original one. See
   [§8](#8-return-values); all of these flags are expected and explained by
   [`capture-compare.md`](../capture-compare.md)
@@ -178,7 +178,7 @@ centisecond, regardless of endpoint or payload:
 
 Six endpoints spanning four orders of magnitude in payload agree to within 11 ms.
 That is round-trip time, not server time. **For these six endpoints the hot
-server-side latency is not measured by this capture at all** — only bounded, at
+server-side latency is not measured by this capture at all**—only bounded, at
 under ~10 ms. Their headline improvements (−71% to −95%) are real but floored: the
 true speedup is **larger** than the table can show.
 
@@ -197,7 +197,7 @@ sit on one byte-proportional cost, stable across ranges:
 | data-log 7d | 24.32 | 35.872 | 35.698 | 1.47 |
 
 **The per-byte cost falls as payloads shrink, which is not how a server-side
-bottleneck behaves.** Payloads around 0.1 MB move at 10–12 MB/s — narrative-log's
+bottleneck behaves.** Payloads around 0.1 MB move at 10–12 MB/s: narrative-log's
 125 KB costs 12 ms above the floor, obs-status' 69 KB costs 6 ms, two independent
 measurements agreeing within 10%. Payloads of 4–24 MB move at 0.68–0.78 MB/s, a
 15× difference in cost per byte. Serializing JSON does not get 15× cheaper per
@@ -232,7 +232,7 @@ Consequently:
 ### 2. Headline: what a user with a warm cache now sees
 
 The baseline has no server-side cache, so every baseline request is cold by
-construction. Comparing it against the refactored steady state — `hot-7day`, which
+construction. Comparing it against the refactored steady state—`hot-7day`, which
 the RefreshWorker maintains for current data and which any recently viewed range
 also sits in:
 
@@ -255,16 +255,16 @@ Both ends of this table have important caveats. The top is floored by the
 (`data-log`, `context-feed`) or by render cost that was never inside the cache's
 scope (the two map endpoints). The defensible statement is that **the cache
 reliably removes the upstream fetch, and what remains is whatever else the endpoint
-does** — bytes on the wire, or the map figure build.
+does**—bytes on the wire, or the map figure build.
 
-`exposure-entries` returned 23 bytes — an empty result — in every request of
+`exposure-entries` returned 23 bytes—an empty result—in every request of
 both captures. For this endpoint, the numbers are a valid measurement of
 request plumbing and cache round-trip and say nothing about behaviour on
 a populated range.
 
 ### 3. Concurrency
 
-Burst p50 divided by the sequential p50 of the same cache state and range — the
+Burst p50 divided by the sequential p50 of the same cache state and range—the
 factor by which ten simultaneous requests for the same data cost more than one.
 
 
@@ -284,7 +284,7 @@ factor by which ten simultaneous requests for the same data cost more than one.
 
 The single-flight lock does what it was built to do: on every data endpoint the
 marginal cost of the 2nd through 10th concurrent request for the same key falls to
-near zero. `almanac` is the clearest case — its cold burst went 10.767 s → 3.718 s,
+near zero. `almanac` is the clearest case—its cold burst went 10.767 s → 3.718 s,
 and a whole round of ten now completes in 3.8 s wall against a 3.677 s single
 request.
 
@@ -292,8 +292,8 @@ Two entries need care rather than celebration.
 
 **`obs-status` cold at 2.65× and `narrative-log` at 1.87–1.96× are denominator
 artefacts.** Both divide by a sequential time already at or close to the RTT floor, so the
-costs a burst still pays regardless — ten TCP connections, ten TLS handshakes, ten
-response writes — stop being negligible against it. In absolute terms `obs-status`'s
+costs a burst still pays regardless—ten TCP connections, ten TLS handshakes, ten
+response writes—stop being negligible against it. In absolute terms `obs-status`'s
 cold burst went 2.699 s → 0.543 s and its wall time 4.803 s → 0.633 s.
 
 **The two map endpoints genuinely got worse under concurrency**, and this is
@@ -317,7 +317,7 @@ A flat ~1.0 s, independent of cache state and of range length, is a fixed
 per-request cost that was removed rather than a cache effect. The most likely 
 candidate is `RubinNightsClientsMixin` (`adapters/mixins.py:162`), which holds 
 `_clients` and `_efd_client` as `functools.cached_property` built once so credential
-discovery does not repeat on every fetch — where the pre-refactor path called
+discovery does not repeat on every fetch—where the pre-refactor path called
 `get_clients()` inside the request.
 
 
@@ -330,7 +330,7 @@ is too unstable to show this saving.
 
 The design's central claim is that request cost tracks *missing* days rather than requested
 days. Predicting each partial scenario from the cold 7-day cost, net of the hot
-floor — `hot-7day + missing × (cold-7day − hot-7day) / 7`:
+floor—`hot-7day + missing × (cold-7day − hot-7day) / 7`:
 
 | Endpoint | 2 missing (fragmented) | 6 missing (extension) |
 |---|---|---|
@@ -344,8 +344,8 @@ floor — `hot-7day + missing × (cold-7day − hot-7day) / 7`:
 | data-log | −3.6% | −8.8% |
 | exposures | **+70.6%** | **+26.7%** |
 
-`almanac` is the clean case — pure computation, no upstream variability, a small
-payload, so neither the RTT floor nor the transfer ceiling distorts it — and it
+`almanac` is the clean case—pure computation, no upstream variability, a small
+payload, so neither the RTT floor nor the transfer ceiling distorts it—and it
 lands within 1% of the predicted value at both points. The six-day column,
 where the per-day term dominates, agrees within ~5% on every endpoint except
 `exposures`.
@@ -361,7 +361,7 @@ cache does not pretend otherwise.
 
 **`partial-rolling-7day` is excluded from this test.** It requests days 2–8, so both
 its payload and its upstream cost differ from the baseline for reasons unrelated to
-cache behaviour — the reason its byte cell reads `[OTHER WINDOW]`.
+cache behaviour—the reason its byte cell reads `[OTHER WINDOW]`.
 
 ### 6. Regressions
 
@@ -426,10 +426,10 @@ The static visit maps use `WorkerPoolMixin` for a different reason: the png
 generation mechanism is explicitly and catastrophically not thread-safe, so it
 *must* be run either non-concurrently or on separate processes. It does not show
 the same slowdown and dropped requests, most likely because it is much less CPU
-heavy — though the re-capture below shows it was throttled as well, just never
+heavy—though the re-capture below shows it was throttled as well, just never
 hard enough for the contention to surface as a failure.
 
-##### Does not reproduce at 4000mCPU — re-captured 2026-08-19
+##### Does not reproduce at 4000mCPU—re-captured 2026-08-19
 
 The alpha deployment's limit was raised from 1000mCPU to 4000mCPU, the first of the
 two remediations above, and both visit map endpoints were re-captured. The
@@ -448,7 +448,7 @@ against the baseline row of matching shape, as in the main table.
 | hot-7day-burst | 50.643 | 86.075 | 33.050 | +70% | **−35%** |
 | partial-rolling-7day-burst | 50.643 | 63.664 | 28.074 | +26% | **−45%** |
 
-The same rows by burst wall p50 (s) — the time for a whole round of ten to finish,
+The same rows by burst wall p50 (s)—the time for a whole round of ten to finish,
 which is what this section is really about:
 
 | Scenario | before | 1000mCPU | 4000mCPU | 1000 vs before | 4000 vs before |
@@ -460,9 +460,9 @@ which is what this section is really about:
 
 **Neither half of the regression reproduces.** The bursts went from 1.5–2× slower than
 baseline to 32–45% faster per request and 38–56% faster in wall time, in line with
-the improvement in other endpoints.. The dropped requests went with them: 29
-failures in 400 burst requests became 0 in 400. The tail moved as far as the median —
-p95 from 145–169 s to 31–46 s, worst observed request from 188 s to 56 s, against a
+the improvement in other endpoints. The dropped requests went with them: 29
+failures in 400 burst requests became 0 in 400. The tail moved as far as the median: p95
+from 145–169 s to 31–46 s, worst observed request from 188 s to 56 s, against a
 timeout half the size.
 
 **The multi-process pool now behaves as designed.** Ten concurrent 7-day requests
@@ -472,8 +472,8 @@ matching sequential p50 fell from 6.22 to 1.36 on `cold-7day` and from 4.46 to 1
 problem, the 1000mCPU ceiling was.
 
 **This is a mitigation, not a fix, and the follow-up stands.** What the re-capture
-establishes is the conditional — given four cores, the endpoint is fast and drops
-nothing — not that the endpoint is now safe. Its behaviour is contingent on an
+establishes is the conditional—given four cores, the endpoint is fast and drops
+nothing—not that the endpoint is now safe. Its behaviour is contingent on an
 allocation the deployment is not guaranteed to keep: nothing in the service asks for
 the CPU it needs or degrades gracefully without it, so the same pathological
 queueing returns in full whenever the limit is lowered, the pod is co-scheduled
@@ -519,15 +519,15 @@ run-to-run spread, but the small sequential movements are not individually meani
 The same request returns either ~5.4 s or ~9–16 s on `partial-rolling`,
 and either ~10.7 s or ~14.5 s on `partial-extension`, with nothing in between.
 That is what the table's `partial-extension-7day` row is really showing when
-it reads 14.565 s against `cold-7day`'s 12.908 s — six missing days apparently
+it reads 14.565 s against `cold-7day`'s 12.908 s—six missing days apparently
 costing more than seven.
 
 It is confined to this endpoint. `data-log` issues the same ConsDB query through the
 same `ConsdbExposuresAdapter` and is flat to 0.4 s across 20 runs; `static-visit-map`
 and `context-feed` are flat to 0.15 s; and `exposures` itself is flat at 3.02–3.12 s
 when served entirely from cache. Further testing shows that pre-warming just the
-ConsDB branch — requesting `/data-log` for the missing day first, which fills
-the shared cache entry but not the `rubin_nights` backed caches — removes it: the
+ConsDB branch—requesting `/data-log` for the missing day first, which fills
+the shared cache entry but not the `rubin_nights` backed caches—removes it: the
 slow mode goes from 2/12 runs to 0/12, and the spread tightens from 0.95 s to
 0.17 s.
 
@@ -544,9 +544,9 @@ towards an environment/resource allocation issue.
 
 **The practical consequence matters more than the cause.** A captured p50 for these
 rows reflects the mix of fast and slow draws in that particular capture, not a stable
-value — which is why this row moves between captures that agree everywhere else. Read
+value—which is why this row moves between captures that agree everywhere else. Read
 it as a distribution, not a number. Everything else about this endpoint is
-strong — −81% hot, −18% cold, 5.2× in steady state, and a burst that went
+strong—−81% hot, −18% cold, 5.2× in steady state, and a burst that went
 37.613 s → 15.680 s.
 
 ### 7. Error rates
@@ -585,7 +585,7 @@ The byte flags in the table fall into three groups, all of which are expected.
 
 - **The cache works, and it works everywhere.** Every endpoint's upstream fetch cost
   is effectively removed on a hit, and cost tracks missing days rather than
-  requested days — verified to within 1% on `almanac` and within ~5% on the six-day
+  requested days—verified to within 1% on `almanac` and within ~5% on the six-day
   partial for every endpoint except `exposures`.
 - **Concurrent cost collapsed on all nine data endpoints.** Ten simultaneous
   requests for the same key cost 1.0–1.3× a single one, against 1.3–3.6× before,
@@ -602,7 +602,7 @@ The byte flags in the table fall into three groups, all of which are expected.
   - `multi-night-visit-maps` bursts lose 2–18% of requests to gateway timeouts,
     due to resource contention and starvation
   - `exposures` return time is bimodal
-- **Error rates are low on both sides** — 1 failure in 4,200 baseline requests, 29
+- **Error rates are low on both sides**—1 failure in 4,200 baseline requests, 29
   in 5,800 after, all of them the visit map queueing mentioned above.
 
 ## Follow-ups, in order
