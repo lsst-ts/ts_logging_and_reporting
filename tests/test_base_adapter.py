@@ -861,7 +861,7 @@ class TestConcurrentPartialOverlap:
         request_b.start()
 
         # B gets through the keys it won while A is still upstream,
-        # rather than serialising behind A's in-flight key.
+        # rather than serializing behind A's in-flight key.
         deadline = time.monotonic() + 5
         while (20250104, 20250105) not in adapter.calls and time.monotonic() < deadline:
             time.sleep(0.005)

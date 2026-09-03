@@ -200,7 +200,7 @@ sit on one byte-proportional cost, stable across ranges:
 bottleneck behaves.** Payloads around 0.1 MB move at 10–12 MB/s — narrative-log's
 125 KB costs 12 ms above the floor, obs-status' 69 KB costs 6 ms, two independent
 measurements agreeing within 10%. Payloads of 4–24 MB move at 0.68–0.78 MB/s, a
-15× difference in cost per byte. Serialising JSON does not get 15× cheaper per
+15× difference in cost per byte. Serializing JSON does not get 15× cheaper per
 byte on smaller documents; if anything it amortises the other way. A connection
 limited to ~0.13 MB in flight at 0.17 s RTT does exactly this: anything fitting
 in one window is effectively free, anything larger is capped at window ÷ RTT.
@@ -574,7 +574,7 @@ The byte flags in the table fall into three groups, all of which are expected.
    [`capture-compare.md` context-feed findings](../capture-compare.md#context-feed__1dayjson-context-feed__7dayjson),
    the `/context-feed` endpoint has two known changes - the value of
    empty timestamp fields has changed, and some columns are dependant on cache state.
-3. **Serialisation noise.** The multi-night visit maps, whose Bokeh documents differ in
+3. **Serialization noise.** The multi-night visit maps, whose Bokeh documents differ in
    structure while carrying identical values (also noted in
    [`capture-compare.md`](../capture-compare.md#multi-night-visit-maps__json)).
 

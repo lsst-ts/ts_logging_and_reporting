@@ -33,7 +33,7 @@ to the final merge to develop)
 9. [Caching, configuration and operations](#9-caching-configuration-and-operations)
 10. [Logging](#10-logging)
 11. [Deletions](#11-deletions)
-12. [Serialisation fixes made in passing](#12-serialisation-fixes-made-in-passing)
+12. [Serialization fixes made in passing](#12-serialization-fixes-made-in-passing)
 13. [Known gaps and deferred work](#13-known-gaps-and-deferred-work)
 14. [Divergence from the original refactor plan](#14-divergence-from-the-original-refactor-plan)
 
@@ -770,7 +770,7 @@ changes, this list must be changed with it.
 ### The frontend needs one change: missing times render as `--`
 
 The only JavaScript change this refactor includes. A missing timestamp used to
-reach the frontend as the literal string `"NaT"`: the old serialisation ran only
+reach the frontend as the literal string `"NaT"`: the old serialization ran only
 `stringify_special_floats`, which handles float NaN and Inf but not `pd.NaT`, so
 the value survived to FastAPI's `jsonable_encoder`, whose fallback for an unknown
 type is `str(obj)` — and `str(pd.NaT)` is `"NaT"`. The table rendered that string
@@ -880,7 +880,7 @@ for more information.
 ### Two planned middlewares were not built
 
 `ErrorHandlingMiddleware` was dropped — `Service.handle_request` covers the same
-ground, and the `BaseLogrepError` hierarchy it was specified to serialise has been
+ground, and the `BaseLogrepError` hierarchy it was specified to serialize has been
 deleted. `PublicAccessMiddleware` is deferred with the public-facing release.
 
 ---
@@ -1194,7 +1194,7 @@ the application rather than in `scripts/`, which makes it the easiest to forget.
 
 ---
 
-## 12. Serialisation fixes made in passing
+## 12. Serialization fixes made in passing
 
 `utils/serialization.py` acquired four small behavioural fixes while being moved.
 They are behavioural, they are easy to miss inside a file move, and they affect
@@ -1351,7 +1351,7 @@ The fix is to guard the flag behind an environment variable.
 
 Only the data fetch is cached
 ([§3](#visit-maps-cache-the-un-augmented-visit-record)); augmentation, the Bokeh build
-and `json_item` serialisation of a ~3.3 MB document run on every request. A fully hot
+and `json_item` serialization of a ~3.3 MB document run on every request. A fully hot
 7-day `/multi-night-visit-maps` still takes **18.0 s** (from 36.9 s cold), where
 `/static-visit-map` hot is 4.5 s and every non-map endpoint is under a second. The
 renders now run in worker processes ([§9](#the-map-endpoints-render-in-worker-processes))
@@ -1578,7 +1578,7 @@ These were specified up front and shipped as described:
 
 13. **`ErrorHandlingMiddleware` was never built.** `Service.handle_request` covers
     the same ground, and the `BaseLogrepError` hierarchy the plan specified it
-    should serialise has been deleted.
+    should serialize has been deleted.
 14. **`PublicAccessMiddleware` was never built.** Deferred with the public-facing
     release.
 15. **`RequestLoggingMiddleware` is not in the plan.** The plan specified four

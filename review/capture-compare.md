@@ -81,7 +81,7 @@ but a handful pair up, and the record counts reconcile exactly:
 | 1-day | 7198 | 6 | 1 | 7193 |
 | 7-day | 9319 | 6 | 0 | 9313 |
 
-**1. Timestamps that serialised as the string `"NaT"` are now correctly `null`.**
+**1. Timestamps that serialized as the string `"NaT"` are now correctly `null`.**
 This is the overwhelming majority of the changed fields, across all five
 timestamp columns. The old path ran only `stringify_special_floats`, which
 handles float NaN/Inf but not `pd.NaT`, so a null timestamp reached the client as
@@ -104,7 +104,7 @@ which the service never requests, so they are dropped.
 
 **Not a user-visible loss.** `ContextFeed.jsx` filters every row against
 `selectedTimeRange`, which defaults to `fullTimeRange`, derived directly from the
-dayobs in the URL. These records were fetched, serialised, sent and then
+dayobs in the URL. These records were fetched, serialized, sent and then
 discarded client-side. They have never been displayed.
 
 **3. The 1-day span gains a record, and it is the dayobs-boundary mitigation working.**
