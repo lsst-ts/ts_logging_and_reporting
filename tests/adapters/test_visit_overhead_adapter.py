@@ -1,0 +1,262 @@
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+
+from lsst.ts.logging_and_reporting.adapters.visit_overhead import (
+    MAX_SCATTER,
+    VisitOverheadAdapter,
+)
+from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS, TODAY_TTL_REDIS
+from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
+
+ADAPTER = "lsst.ts.logging_and_reporting.adapters.visit_overhead"
+
+
+class StubExposuresAdapter:
+    """Stands in for the composed ConsDB exposures adapter."""
+
+    def __init__(self, per_day):
+        self.per_day = per_day
+        self.calls = []
+
+    def fetch(self, instrument, start_dayobs, end_dayobs):
+        self.calls.append((instrument, start_dayobs, end_dayobs))
+        return {d: self.per_day.get(d, []) for d in range(start_dayobs, end_dayobs + 1)}
+
+
+@pytest.fixture
+def make_adapter(fake_redis):
+    def _make(per_day):
+        adapter = VisitOverheadAdapter(fake_redis, StubExposuresAdapter(per_day))
+        # Bypass get_clients / EFD credentials; the slew query is patched.
+        adapter.__dict__["_efd_client"] = object()
+        return adapter
+
+    return _make
+
+
+def exposure(day_obs, seq_num, band="r", visit_gap=7200.0, can_see_sky=True, obs_start_mjd=None):
+    if obs_start_mjd is None:
+        obs_start_mjd = 60000.0 + seq_num
+    return {
+        "day_obs": day_obs,
+        "seq_num": seq_num,
+        "obs_start": f"2025-01-01T0{seq_num}:00:00",
+        "s_ra": 10.0,
+        "s_dec": -30.0,
+        "sky_rotation": 0.0,
+        "obs_start_mjd": obs_start_mjd,
+        "obs_end_mjd": obs_start_mjd + 30.0 / 86400,
+        "band": band,
+        "can_see_sky": can_see_sky,
+        "visit_gap": visit_gap,
+    }
+
+
+def consecutive_nights(start_dayobs, end_dayobs):
+    """Two visits per night, each night starting half a day after the last."""
+    per_day = {}
+    for i, dayobs in enumerate(range(start_dayobs, end_dayobs + 1)):
+        start = 60000.0 + 0.5 * i
+        per_day[dayobs] = [
+            exposure(dayobs, 1, obs_start_mjd=start),
+            exposure(dayobs, 2, obs_start_mjd=start + 0.001),
+        ]
+    return per_day
+
+
+def stub_augment(exposures_df, instrument, skip_rs_columns=True):
+    # augment_visits passes the visit columns through unchanged here.
+    return exposures_df.copy()
+
+
+def stub_augment_with_gaps(exposures_df, instrument, skip_rs_columns=True):
+    # Mirrors augment_visits: visit_gap is measured from the preceding
+    # row, and the first row of the frame gets 0.
+    out = exposures_df.sort_values("obs_start_mjd").copy()
+    prev_end = out["obs_end_mjd"].shift(1)
+    out["visit_gap"] = ((out["obs_start_mjd"] - prev_end) * 86400).fillna(0.0)
+    return out
+
+
+def stub_slew(slew_values):
+    """add_model_slew_times replacement that sets slew_model per row."""
+
+    def _slew(visits, efd, model_settle, dome_crawl=False):
+        out = visits.copy()
+        out["slew_model"] = slew_values[: len(out)]
+        return out, None
+
+    return _slew
+
+
+class TestFetch:
+    def test_partitions_overhead_rows_by_dayobs(self, make_adapter):
+        adapter = make_adapter(
+            {20250101: [exposure(20250101, 1), exposure(20250101, 2)], 20250102: [exposure(20250102, 1)]}
+        )
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0, 10.0, 10.0])),
+        ):
+            result = adapter.fetch("lsstcam", 20250101, 20250102)
+        assert {d: len(rows) for d, rows in result.items()} == {20250101: 2, 20250102: 1}
+        # Only the reduction columns are cached.
+        assert set(result[20250102][0]) == {
+            "day_obs",
+            "obs_start",
+            "can_see_sky",
+            "band",
+            "overhead",
+            "visit_gap",
+        }
+
+    def test_overhead_is_capped_slew_against_visit_gap(self, make_adapter):
+        # slew + MAX_SCATTER = 10 + 120 = 130 < visit_gap 7200 -> overhead 130.
+        adapter = make_adapter({20250101: [exposure(20250101, 1, visit_gap=7200.0)]})
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0])),
+        ):
+            record = adapter.fetch("lsstcam", 20250101, 20250101)[20250101][0]
+        assert record["overhead"] == pytest.approx(10.0 + MAX_SCATTER)
+
+    def test_overhead_taken_from_visit_gap_when_smaller(self, make_adapter):
+        # visit_gap 50 < slew + MAX_SCATTER (130) -> overhead 50.
+        adapter = make_adapter({20250101: [exposure(20250101, 1, visit_gap=50.0)]})
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0])),
+        ):
+            record = adapter.fetch("lsstcam", 20250101, 20250101)[20250101][0]
+        assert record["overhead"] == pytest.approx(50.0)
+
+    def test_first_visit_of_each_night_has_no_overhead(self, make_adapter):
+        # Night two starts ~12h after night one ends; modelled together,
+        # its first visit would pick up that gap as overhead.
+        adapter = make_adapter(consecutive_nights(20250101, 20250102))
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 4)),
+        ):
+            result = adapter.fetch("lsstcam", 20250101, 20250102)
+        for dayobs in (20250101, 20250102):
+            first, second = result[dayobs]
+            assert first["overhead"] == 0.0
+            # 0.001 days between starts less the 30s exposure -> 56.4s gap.
+            assert second["overhead"] == pytest.approx(56.4)
+
+    def test_nights_fetched_together_match_nights_fetched_apart(self, make_adapter):
+        adapter = make_adapter(consecutive_nights(20250101, 20250102))
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 4)),
+        ):
+            # _fetch_run directly, so neither result is served from cache.
+            together = adapter._fetch_run("lsstcam", 20250101, 20250102)
+            apart = {
+                **adapter._fetch_run("lsstcam", 20250101, 20250101),
+                **adapter._fetch_run("lsstcam", 20250102, 20250102),
+            }
+        assert together == apart
+
+    def test_empty_night_between_nights_yields_empty_list(self, make_adapter):
+        per_day = consecutive_nights(20250101, 20250103)
+        per_day[20250102] = []
+        adapter = make_adapter(per_day)
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 4)),
+        ):
+            result = adapter.fetch("lsstcam", 20250101, 20250103)
+        assert result[20250102] == []
+        assert [len(result[d]) for d in (20250101, 20250103)] == [2, 2]
+        assert result[20250103][0]["overhead"] == 0.0
+
+    def test_augments_per_night_and_slew_models_once(self, make_adapter):
+        adapter = make_adapter(consecutive_nights(20250101, 20250103))
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps) as augment,
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 6)) as slew,
+        ):
+            adapter.fetch("lsstcam", 20250101, 20250103)
+        # Each augment call sees one night's visits only.
+        assert [set(c.args[0]["day_obs"]) for c in augment.call_args_list] == [
+            {20250101},
+            {20250102},
+            {20250103},
+        ]
+        # The slew model (and its EFD query) runs once over the whole run.
+        assert slew.call_count == 1
+        assert len(slew.call_args.args[0]) == 6
+
+    def test_nan_slew_treated_as_zero(self, make_adapter):
+        # slew NaN -> 0 + MAX_SCATTER = 120, capped against visit_gap 7200.
+        adapter = make_adapter({20250101: [exposure(20250101, 1, visit_gap=7200.0)]})
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([np.nan])),
+        ):
+            record = adapter.fetch("lsstcam", 20250101, 20250101)[20250101][0]
+        assert record["overhead"] == pytest.approx(MAX_SCATTER)
+
+    def test_empty_exposures_yields_empty_lists(self, make_adapter):
+        adapter = make_adapter({})
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([])),
+        ):
+            result = adapter.fetch("lsstcam", 20250101, 20250102)
+        assert result == {20250101: [], 20250102: []}
+
+    def test_reads_exposures_from_the_composed_adapter(self, make_adapter):
+        adapter = make_adapter({20250101: [exposure(20250101, 1)]})
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0])),
+        ):
+            adapter.fetch("lsstcam", 20250101, 20250101)
+        assert adapter._exposures_adapter.calls == [("lsstcam", 20250101, 20250101)]
+
+
+class TestTtl:
+    def test_historic_ttl_for_past_dayobs(self, make_adapter, fake_redis):
+        adapter = make_adapter({})
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([])),
+        ):
+            adapter.fetch("lsstcam", 20200101, 20200101)
+        assert fake_redis.ttls["adapter:visit_overhead:lsstcam:20200101"] == HISTORIC_TTL_REDIS
+
+    def test_today_ttl_for_today(self, make_adapter, fake_redis):
+        today = current_dayobs()
+        adapter = make_adapter({})
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([])),
+        ):
+            adapter.fetch("lsstcam", today, today)
+        assert fake_redis.ttls[f"adapter:visit_overhead:lsstcam:{today}"] == TODAY_TTL_REDIS
