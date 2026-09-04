@@ -103,6 +103,11 @@ FORWARDING = [
         (20250730, 20250731),
     ),
     (
+        web_services.get_context_feed_service,
+        "/context-feed?dayObsStart=20240101&dayObsEnd=20240102",
+        (20240101, 20240102),
+    ),
+    (
         web_services.get_block_details_service,
         "/block-details?key=BLOCK-1",
         (["BLOCK-1"],),
@@ -116,6 +121,7 @@ FORWARDING_IDS = [
     "exposure-flags",
     "exposure-entries",
     "night-reports",
+    "context-feed",
     "block-details",
 ]
 
