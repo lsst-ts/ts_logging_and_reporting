@@ -408,3 +408,30 @@ def read_block_details(
         hostname is not configured.
     """
     return service.handle_request(keys)
+
+
+@app.get("/static-visit-map")
+def read_static_visit_map(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_static_visit_map_service),
+):
+    """Generate a static visit map for a date range and instrument.
+
+    Parameters
+    ----------
+    dayObsStart : `int`
+        Start date in YYYYMMDD format.
+    dayObsEnd : `int`
+        End date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name, such as ``lsstCam`` or ``latiss``.
+
+    Returns
+    -------
+    result : `dict`
+        Dictionary containing the base64-encoded PNG image for the static
+        visit map.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)

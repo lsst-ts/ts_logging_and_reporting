@@ -113,6 +113,11 @@ FORWARDING = [
         (20240101, 20240104, "latiss", False),
     ),
     (
+        web_services.get_static_visit_map_service,
+        "/static-visit-map?dayObsStart=20240101&dayObsEnd=20240102&instrument=lsstCam",
+        (20240101, 20240102, "lsstCam"),
+    ),
+    (
         web_services.get_block_details_service,
         "/block-details?key=BLOCK-1",
         (["BLOCK-1"],),
@@ -128,6 +133,7 @@ FORWARDING_IDS = [
     "night-reports",
     "context-feed",
     "multi-night-visit-maps",
+    "static-visit-map",
     "block-details",
 ]
 
