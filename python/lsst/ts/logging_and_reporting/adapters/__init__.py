@@ -20,6 +20,8 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Singleton getters for the cached upstream-source adapters."""
 
+from .jira_block import get_jira_block_adapter
+from .zephyr import get_zephyr_adapter
 
 # Adapters the refresh worker keeps warm, in the order it refreshes
 # them. The order is load-bearing: visit_overhead reads what
@@ -29,4 +31,6 @@ REFRESH_ADAPTERS = ()
 
 __all__ = [
     "REFRESH_ADAPTERS",
+    "get_jira_block_adapter",
+    "get_zephyr_adapter",
 ]
