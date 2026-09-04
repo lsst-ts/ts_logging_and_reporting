@@ -23,6 +23,7 @@
 from .almanac import get_almanac_adapter
 from .consdb_exposures import get_consdb_exposures_adapter
 from .rubin_nights_dome import get_rubin_nights_dome_adapter
+from .visit_overhead import get_visit_overhead_adapter
 
 # Adapters the refresh worker keeps warm, in the order it refreshes
 # them. The order is load-bearing: visit_overhead reads what
@@ -30,6 +31,7 @@ from .rubin_nights_dome import get_rubin_nights_dome_adapter
 # list to match `__all__`.
 REFRESH_ADAPTERS = (
     get_consdb_exposures_adapter,
+    get_visit_overhead_adapter,
     get_rubin_nights_dome_adapter,
 )
 
@@ -38,4 +40,5 @@ __all__ = [
     "get_almanac_adapter",
     "get_consdb_exposures_adapter",
     "get_rubin_nights_dome_adapter",
+    "get_visit_overhead_adapter",
 ]
