@@ -22,6 +22,7 @@
 
 from .exposure_entries import get_exposure_entries_service
 from .exposure_flags import get_exposure_flags_service
+from .jira import get_jira_tickets_service
 from .narrativelog import get_narrative_log_service
 from .nightreport import get_night_report_service
 
@@ -33,6 +34,7 @@ __all__ = [
     "WORKER_POOL_SERVICES",
     "get_exposure_entries_service",
     "get_exposure_flags_service",
+    "get_jira_tickets_service",
     "get_narrative_log_service",
     "get_night_report_service",
 ]
