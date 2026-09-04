@@ -71,9 +71,17 @@ def _clear_overrides():
 
 
 # (service getter, request URL, args the endpoint should forward to handle).
-FORWARDING = []
+FORWARDING = [
+    (
+        web_services.get_almanac_service,
+        "/almanac?dayObsStart=20240101&dayObsEnd=20240102",
+        (20240101, 20240102),
+    ),
+]
 
-FORWARDING_IDS = []
+FORWARDING_IDS = [
+    "almanac",
+]
 
 
 @pytest.mark.parametrize(("getter", "url", "expected"), FORWARDING, ids=FORWARDING_IDS)
