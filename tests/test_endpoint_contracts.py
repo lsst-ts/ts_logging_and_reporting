@@ -71,9 +71,17 @@ def _clear_overrides():
 
 
 # (service getter, request URL, args the endpoint should forward to handle).
-FORWARDING = []
+FORWARDING = [
+    (
+        web_services.get_context_feed_service,
+        "/context-feed?dayObsStart=20240101&dayObsEnd=20240102",
+        (20240101, 20240102),
+    ),
+]
 
-FORWARDING_IDS = []
+FORWARDING_IDS = [
+    "context-feed",
+]
 
 
 @pytest.mark.parametrize(("getter", "url", "expected"), FORWARDING, ids=FORWARDING_IDS)
