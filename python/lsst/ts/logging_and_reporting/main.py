@@ -126,6 +126,41 @@ def flush_redis():
     return JSONResponse(status_code=200, content={"status": "ok"})
 
 
+@app.get("/exposures")
+def read_exposures(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_exposures_service),
+) -> dict[str, Any]:
+    """Return exposures and derived night-summary metrics.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used for the ConsDB exposure query.
+
+    Returns
+    -------
+    dict[str, Any]
+        JSON-serializable response containing exposure records and
+        totals, dome-open summaries, and twilight-windowed
+        time-accounting metrics.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        422 for an unrecognised instrument or malformed dayobs, 502 if
+        the ConsDB exposure query fails. Dome-open and time-accounting
+        sub-query failures are reported in the response payload instead.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
+
+
 @app.get("/almanac")
 def read_almanac(
     dayObsStart: int,
