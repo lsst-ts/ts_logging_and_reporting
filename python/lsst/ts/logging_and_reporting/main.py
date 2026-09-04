@@ -154,3 +154,35 @@ def read_almanac(
     through ``dayObsEnd``.
     """
     return service.handle_request(dayObsStart, dayObsEnd)
+
+
+@app.get("/data-log")
+def read_data_log(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_data_log_service),
+):
+    """Return the full ConsDB exposure record for each exposure.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used for the ConsDB exposure query.
+
+    Returns
+    -------
+    dict
+        ``data_log``, the exposure records for the range, JSON-safe.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        422 for an unrecognised instrument or malformed dayobs, 502 if
+        the ConsDB query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)

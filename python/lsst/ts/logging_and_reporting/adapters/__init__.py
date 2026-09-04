@@ -21,14 +21,16 @@
 """Singleton getters for the cached upstream-source adapters."""
 
 from .almanac import get_almanac_adapter
+from .consdb_exposures import get_consdb_exposures_adapter
 
 # Adapters the refresh worker keeps warm, in the order it refreshes
 # them. The order is load-bearing: visit_overhead reads what
 # consdb_exposures cached, so it has to run after it. Do not sort this
 # list to match `__all__`.
-REFRESH_ADAPTERS = ()
+REFRESH_ADAPTERS = (get_consdb_exposures_adapter,)
 
 __all__ = [
     "REFRESH_ADAPTERS",
     "get_almanac_adapter",
+    "get_consdb_exposures_adapter",
 ]
