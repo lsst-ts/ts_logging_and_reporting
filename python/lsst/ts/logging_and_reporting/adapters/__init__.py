@@ -20,13 +20,15 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Singleton getters for the cached upstream-source adapters."""
 
+from .expected_exposures import get_expected_exposures_adapter
 
 # Adapters the refresh worker keeps warm, in the order it refreshes
 # them. The order is load-bearing: visit_overhead reads what
 # consdb_exposures cached, so it has to run after it. Do not sort this
 # list to match `__all__`.
-REFRESH_ADAPTERS = ()
+REFRESH_ADAPTERS = (get_expected_exposures_adapter,)
 
 __all__ = [
     "REFRESH_ADAPTERS",
+    "get_expected_exposures_adapter",
 ]
