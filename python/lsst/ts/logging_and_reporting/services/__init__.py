@@ -28,10 +28,11 @@ from .exposure_flags import get_exposure_flags_service
 from .jira import get_jira_tickets_service
 from .narrativelog import get_narrative_log_service
 from .nightreport import get_night_report_service
+from .visit_maps import get_visit_maps_service
 
 # Services owning a `WorkerPoolMixin` pool, started and stopped with the
 # application. Add a service here when it gains a worker pool.
-WORKER_POOL_SERVICES = ()
+WORKER_POOL_SERVICES = (get_visit_maps_service,)
 
 __all__ = [
     "WORKER_POOL_SERVICES",
@@ -43,4 +44,5 @@ __all__ = [
     "get_jira_tickets_service",
     "get_narrative_log_service",
     "get_night_report_service",
+    "get_visit_maps_service",
 ]
