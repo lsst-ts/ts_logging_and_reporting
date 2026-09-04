@@ -124,3 +124,32 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/context-feed")
+def read_context_feed(
+    dayObsStart: int,
+    dayObsEnd: int,
+    service=Depends(services.get_context_feed_service),
+):
+    """Return the consolidated ScriptQueue context feed for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Inclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``data``, the feed records in time order, and ``cols``, the
+        column order the frontend renders them in.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the context feed query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd)
