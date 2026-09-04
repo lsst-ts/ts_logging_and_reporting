@@ -71,9 +71,17 @@ def _clear_overrides():
 
 
 # (service getter, request URL, args the endpoint should forward to handle).
-FORWARDING = []
+FORWARDING = [
+    (
+        web_services.get_jira_tickets_service,
+        "/jira-tickets?dayObsStart=20250730&dayObsEnd=20250731&instrument=LATISS",
+        (20250730, 20250731, "LATISS"),
+    ),
+]
 
-FORWARDING_IDS = []
+FORWARDING_IDS = [
+    "jira-tickets",
+]
 
 
 @pytest.mark.parametrize(("getter", "url", "expected"), FORWARDING, ids=FORWARDING_IDS)
