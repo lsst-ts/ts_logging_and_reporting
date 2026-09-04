@@ -124,3 +124,67 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/exposure-entries")
+def read_exposure_entries(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_exposure_entries_service),
+):
+    """Return exposure log entries for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select exposure log messages.
+
+    Returns
+    -------
+    dict
+        ``exposure_entries``, the messages for the range ordered by the
+        time they were added.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the exposure log query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
+
+
+@app.get("/exposure-flags")
+def read_exposure_flags(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_exposure_flags_service),
+):
+    """Return the exposure flag set on each flagged exposure.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select exposure log messages.
+
+    Returns
+    -------
+    dict
+        ``exposure_flags``, one ``obs_id``/``exposure_flag`` pair per
+        flagged exposure. Exposures with no flag are omitted.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the exposure log query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
