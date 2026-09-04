@@ -124,3 +124,33 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/expected-exposures")
+def read_expected_exposures(
+    dayObsStart: int,
+    dayObsEnd: int,
+    service=Depends(services.get_expected_exposures_service),
+):
+    """Return the expected (simulated) visit count for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Inclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``sum_exposures``, the total nominal visit count summed over the
+        pre-night simulations for each dayobs in the range.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        404 when no matching simulation exists for a requested night,
+        502 if the simulation archive cannot be reached.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd)
