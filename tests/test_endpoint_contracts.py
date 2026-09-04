@@ -71,9 +71,17 @@ def _clear_overrides():
 
 
 # (service getter, request URL, args the endpoint should forward to handle).
-FORWARDING = []
+FORWARDING = [
+    (
+        web_services.get_visit_maps_service,
+        "/multi-night-visit-maps?dayObsStart=20240101&dayObsEnd=20240104&instrument=latiss",
+        (20240101, 20240104, "latiss", False),
+    ),
+]
 
-FORWARDING_IDS = []
+FORWARDING_IDS = [
+    "multi-night-visit-maps",
+]
 
 
 @pytest.mark.parametrize(("getter", "url", "expected"), FORWARDING, ids=FORWARDING_IDS)
@@ -108,3 +116,13 @@ def test_version():
     assert response.status_code == 200
     assert response.json()["version"] == __version__
 
+
+def test_visit_maps_forwards_applet_mode():
+    service = CapturingService()
+    app.dependency_overrides[web_services.get_visit_maps_service] = lambda: service
+
+    client.get(
+        "/multi-night-visit-maps?dayObsStart=20240101&dayObsEnd=20240104&instrument=latiss&appletMode=true"
+    )
+
+    assert service.calls == [(20240101, 20240104, "latiss", True)]
