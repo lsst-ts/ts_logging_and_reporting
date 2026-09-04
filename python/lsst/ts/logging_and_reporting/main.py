@@ -124,3 +124,100 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/exposures")
+def read_exposures(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_exposures_service),
+) -> dict[str, Any]:
+    """Return exposures and derived night-summary metrics.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used for the ConsDB exposure query.
+
+    Returns
+    -------
+    dict[str, Any]
+        JSON-serializable response containing exposure records and
+        totals, dome-open summaries, and twilight-windowed
+        time-accounting metrics.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        422 for an unrecognised instrument or malformed dayobs, 502 if
+        the ConsDB exposure query fails. Dome-open and time-accounting
+        sub-query failures are reported in the response payload instead.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
+
+
+@app.get("/almanac")
+def read_almanac(
+    dayObsStart: int,
+    dayObsEnd: int,
+    service=Depends(services.get_almanac_service),
+):
+    """Return almanac records for the nights in the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``almanac_info``, one record per night with sun and moon
+        rise/set times, twilight boundaries and elapsed twilight hours.
+
+    Notes
+    -----
+    Almanac records are labeled by the dayobs of their morning twilight
+    boundary, so the range yields records labeled ``dayObsStart + 1``
+    through ``dayObsEnd``.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd)
+
+
+@app.get("/data-log")
+def read_data_log(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_data_log_service),
+):
+    """Return the full ConsDB exposure record for each exposure.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used for the ConsDB exposure query.
+
+    Returns
+    -------
+    dict
+        ``data_log``, the exposure records for the range, JSON-safe.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        422 for an unrecognised instrument or malformed dayobs, 502 if
+        the ConsDB query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)

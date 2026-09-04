@@ -1,18 +1,34 @@
-# tests/test_time_accounting.py
-from unittest.mock import MagicMock, patch
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import pandas as pd
 import pytest
 
-from lsst.ts.logging_and_reporting.web_app.services.rubin_nights_service import (
+from lsst.ts.logging_and_reporting.services.exposures import (
     _compute_filter_changed,
     _obs_start_tai_to_utc_ms,
     _sum_on_sky_within_twilight,
     _twilight_windows_by_dayobs,
-    get_time_accounting,
 )
 
-MODULE = "lsst.ts.logging_and_reporting.web_app.services.rubin_nights_service"
 TWILIGHT_SUM_KEYS = (
     "sum_overhead_with_filter_change",
     "sum_overhead_without_filter_change",
@@ -392,85 +408,3 @@ class TestSumOnSkyWithinTwilight:
         total_gap = result["sum_visit_gap_with_filter_change"] + result["sum_visit_gap_without_filter_change"]
         assert total_overhead == pytest.approx(round((3600 + 1800) / 3600, 2))
         assert total_gap == pytest.approx(round((7200 + 900) / 3600, 2))
-
-
-# ---------------------------------------------------------------------------
-# get_time_accounting
-# ---------------------------------------------------------------------------
-
-MOCK_ALMANAC = ALMANAC_INFO
-
-MOCK_VISITS_DF = make_visits_df(
-    {
-        "obs_start": OBS_START_IN_WINDOW_TAI,
-        "band": "r",
-        "physical_filter": "r_57",
-        "overhead": 3600.0,
-        "visit_gap": 7200.0,
-        "can_see_sky": True,
-    },
-)
-
-
-@pytest.fixture
-def mock_time_accounting_deps():
-    """Mock all external calls inside get_time_accounting."""
-
-    def mock_augment_visits(exposures_df, instrument, skip_rs_columns=True):
-        visits = exposures_df.copy()
-        visits["slew_model"] = 5.0
-        return visits
-
-    def mock_add_model_slew_times(visits, efd, model_settle, dome_crawl=False):
-        return visits.copy(), None
-
-    with (
-        patch(f"{MODULE}.get_clients", return_value={"efd": MagicMock()}),
-        patch(f"{MODULE}.rn_aug.augment_visits", side_effect=mock_augment_visits),
-        patch(f"{MODULE}.rn_sch.add_model_slew_times", side_effect=mock_add_model_slew_times),
-        patch(f"{MODULE}.get_almanac", return_value=MOCK_ALMANAC),
-    ):
-        yield
-
-
-class TestGetTimeAccounting:
-    def test_empty_exposures_returns_zero_sums(self):
-        result = get_time_accounting(20260409, 20260410, "lsstcam", [])
-        assert set(result.keys()) == set(TWILIGHT_SUM_KEYS)
-        assert all(v == 0.0 for v in result.values())
-
-    def test_empty_exposures_does_not_call_external_services(self):
-        with patch(f"{MODULE}.get_clients") as mock_clients:
-            get_time_accounting(20260409, 20260410, "lsstcam", [])
-            mock_clients.assert_not_called()
-
-    def test_returns_all_four_keys(self, mock_time_accounting_deps):
-        exposures = [make_visit()]
-        result = get_time_accounting(20260409, 20260410, "lsstcam", exposures)
-        assert set(result.keys()) == set(TWILIGHT_SUM_KEYS)
-
-    def test_all_values_are_floats(self, mock_time_accounting_deps):
-        exposures = [make_visit()]
-        result = get_time_accounting(20260409, 20260410, "lsstcam", exposures)
-        assert all(isinstance(v, float) for v in result.values())
-
-    def test_non_on_sky_exposures_produce_zero_sums(self, mock_time_accounting_deps):
-        exposures = [make_visit(can_see_sky=False)]
-        result = get_time_accounting(20260409, 20260410, "lsstcam", exposures)
-        assert all(v == 0.0 for v in result.values())
-
-    def test_almanac_called_with_correct_dayobs_end(self, mock_time_accounting_deps):
-        # almanac_dayobs_end should be dayObsEnd + 1 day.
-        mock_visits = MOCK_VISITS_DF.copy()
-        mock_visits["slew_model"] = 5.0
-
-        with patch(f"{MODULE}.get_almanac", return_value=MOCK_ALMANAC) as mock_almanac:
-            with patch(f"{MODULE}.rn_aug.augment_visits", return_value=mock_visits.copy()):
-                with patch(
-                    f"{MODULE}.rn_sch.add_model_slew_times",
-                    return_value=(mock_visits.copy(), None),
-                ):
-                    get_time_accounting(20260409, 20260410, "lsstcam", [make_visit()])
-        call_args = mock_almanac.call_args
-        assert call_args[0][0] == 20260409  # dayObsStart unchanged
-        assert call_args[0][1] == 20260411  # dayObsEnd + 1
