@@ -126,6 +126,39 @@ def flush_redis():
     return JSONResponse(status_code=200, content={"status": "ok"})
 
 
+@app.get("/narrative-log")
+def read_narrative_log(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_narrative_log_service),
+):
+    """Return narrative log messages and time lost for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select messages by telescope.
+
+    Returns
+    -------
+    dict
+        ``narrative_log`` with the messages, plus
+        ``time_lost_to_weather`` and ``time_lost_to_faults`` summed over
+        them.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the narrative log query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
+
+
 @app.get("/exposure-flags")
 def read_exposure_flags(
     dayObsStart: int,
