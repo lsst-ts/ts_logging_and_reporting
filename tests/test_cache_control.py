@@ -1,7 +1,6 @@
-#
 # This file is part of ts_logging_and_reporting.
 #
-# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
 # This product includes software developed by the LSST Project
 # (https://www.lsst.org).
 # See the COPYRIGHT file at the top-level directory of this distribution
@@ -14,22 +13,25 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 
-from lsst.ts.logging_and_reporting.web_app.middleware.cache_control import (
-    _ALWAYS_SHORT_PATHS,
-    _HISTORICAL_MAX_AGE,
-    _TODAY_MAX_AGE,
+from lsst.ts.logging_and_reporting.cache_ttl import (
+    HISTORIC_TTL_CLIENT,
+    MUTABLE_TTL_CLIENT,
+    TODAY_TTL_CLIENT,
+)
+from lsst.ts.logging_and_reporting.middleware.cache_control import (
+    _MUTABLE_PATHS,
     CacheControlMiddleware,
 )
 
@@ -61,9 +63,17 @@ def _make_app():
     def narrative_log():
         return {"ok": True}
 
+    @app.get("/jira-tickets")
+    def jira_tickets():
+        return {"ok": True}
+
     @app.get("/health")
     def health():
         return {"ok": True}
+
+    @app.get("/error/{status_code}")
+    def error_endpoint(status_code: int):
+        return Response(status_code=status_code)
 
     return app
 
@@ -81,16 +91,16 @@ def _cache_header(response):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_historical_range_gets_long_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsStart": 20250101, "dayObsEnd": 20250131})
-    assert _cache_header(resp) == f"public, max-age={_HISTORICAL_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_range_including_today_gets_short_ttl(mock_today, client):
@@ -98,25 +108,25 @@ def test_range_including_today_gets_short_ttl(mock_today, client):
         "/some-endpoint",
         params={"dayObsStart": 20251201, "dayObsEnd": 20260201},
     )
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_single_dayobs_today_gets_short_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObs": MOCK_TODAY})
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_single_dayobs_historical_gets_long_ttl(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObs": 20250601})
-    assert _cache_header(resp) == f"public, max-age={_HISTORICAL_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
 
 
 # -- no dayobs params → no header --
@@ -127,23 +137,33 @@ def test_no_dayobs_params_no_cache_header(client):
     assert _cache_header(resp) is None
 
 
-# -- always-short-path endpoints --
+# -- mutable-path endpoints --
 
 
-@pytest.mark.parametrize("path", sorted(_ALWAYS_SHORT_PATHS))
+@pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
-def test_always_short_paths_get_short_ttl(mock_today, path, client):
+def test_mutable_paths_get_mutable_ttl_for_historical_range(mock_today, path, client):
     resp = client.get(path, params={"dayObsStart": 20250101, "dayObsEnd": 20250131})
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL_CLIENT}"
 
 
-@pytest.mark.parametrize("path", sorted(_ALWAYS_SHORT_PATHS))
-def test_always_short_paths_without_dayobs(path, client):
+@pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
+@patch(
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_mutable_paths_get_today_ttl_when_range_includes_today(mock_today, path, client):
+    resp = client.get(path, params={"dayObsStart": 20251201, "dayObsEnd": 20260201})
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
+
+
+@pytest.mark.parametrize("path", sorted(_MUTABLE_PATHS))
+def test_mutable_paths_without_dayobs(path, client):
     resp = client.get(path)
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={MUTABLE_TTL_CLIENT}"
 
 
 # -- edge cases --
@@ -155,18 +175,63 @@ def test_invalid_dayobs_no_cache_header(client):
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_only_start_param(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsStart": 20250601})
-    assert _cache_header(resp) == f"public, max-age={_HISTORICAL_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
 
 
 @patch(
-    "lsst.ts.logging_and_reporting.web_app.middleware.cache_control.current_dayobs_utc",
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
     return_value=MOCK_TODAY,
 )
 def test_only_end_param(mock_today, client):
     resp = client.get("/some-endpoint", params={"dayObsEnd": MOCK_TODAY})
-    assert _cache_header(resp) == f"public, max-age={_TODAY_MAX_AGE}"
+    assert _cache_header(resp) == f"public, max-age={TODAY_TTL_CLIENT}"
+
+
+# -- error responses --
+
+
+@pytest.mark.parametrize("status_code", [400, 404, 422, 500, 503])
+def test_error_response_gets_no_store(status_code, client):
+    resp = client.get(f"/error/{status_code}")
+    assert _cache_header(resp) == "no-store"
+
+
+@patch(
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_error_response_overrides_dayobs_ttl(mock_today, client):
+    resp = client.get(
+        "/error/500",
+        params={"dayObsStart": 20250101, "dayObsEnd": 20250131},
+    )
+    assert _cache_header(resp) == "no-store"
+
+
+@patch(
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_status_399_not_treated_as_error(mock_today, client):
+    resp = client.get(
+        "/error/399",
+        params={"dayObsStart": 20250101, "dayObsEnd": 20250131},
+    )
+    assert _cache_header(resp) == f"public, max-age={HISTORIC_TTL_CLIENT}"
+
+
+@patch(
+    "lsst.ts.logging_and_reporting.middleware.cache_control.current_dayobs",
+    return_value=MOCK_TODAY,
+)
+def test_status_400_treated_as_error(mock_today, client):
+    resp = client.get(
+        "/error/400",
+        params={"dayObsStart": 20250101, "dayObsEnd": 20250131},
+    )
+    assert _cache_header(resp) == "no-store"

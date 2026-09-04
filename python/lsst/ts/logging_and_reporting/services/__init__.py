@@ -18,23 +18,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-import uvicorn
-
-from lsst.ts.logging_and_reporting.utils.logging_config import log_level
+"""Singleton getters for the endpoint services."""
 
 
-def run_logging_and_reporting() -> None:
-    """Run the night report REST API web server."""
+# Services owning a `WorkerPoolMixin` pool, started and stopped with the
+# application. Add a service here when it gains a worker pool.
+WORKER_POOL_SERVICES = ()
 
-    uvicorn.run(
-        "lsst.ts.logging_and_reporting.main:app",
-        host="0.0.0.0",
-        port=8080,
-        log_level=log_level().lower(),
-        reload=True,
-    )
-
-
-if __name__ == "__main__":
-    run_logging_and_reporting()
+__all__ = [
+    "WORKER_POOL_SERVICES",
+]
