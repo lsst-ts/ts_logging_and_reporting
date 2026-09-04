@@ -30,6 +30,7 @@ from .jira_obs import get_jira_obs_adapter
 from .narrativelog import get_narrativelog_adapter
 from .nightreport import get_nightreport_adapter
 from .rubin_nights_context import get_rubin_nights_context_adapter
+from .rubin_nights_dome import get_rubin_nights_dome_adapter
 from .rubin_nights_obs_status import get_rubin_nights_obs_status_adapter
 from .zephyr import get_zephyr_adapter
 
@@ -46,6 +47,7 @@ REFRESH_ADAPTERS = (
     get_narrativelog_adapter,
     get_nightreport_adapter,
     get_rubin_nights_context_adapter,
+    get_rubin_nights_dome_adapter,
     get_rubin_nights_obs_status_adapter,
 )
 
@@ -61,6 +63,7 @@ __all__ = [
     "get_narrativelog_adapter",
     "get_nightreport_adapter",
     "get_rubin_nights_context_adapter",
+    "get_rubin_nights_dome_adapter",
     "get_rubin_nights_obs_status_adapter",
     "get_zephyr_adapter",
 ]
