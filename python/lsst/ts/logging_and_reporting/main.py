@@ -124,3 +124,33 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/almanac")
+def read_almanac(
+    dayObsStart: int,
+    dayObsEnd: int,
+    service=Depends(services.get_almanac_service),
+):
+    """Return almanac records for the nights in the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``almanac_info``, one record per night with sun and moon
+        rise/set times, twilight boundaries and elapsed twilight hours.
+
+    Notes
+    -----
+    Almanac records are labeled by the dayobs of their morning twilight
+    boundary, so the range yields records labeled ``dayObsStart + 1``
+    through ``dayObsEnd``.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd)
