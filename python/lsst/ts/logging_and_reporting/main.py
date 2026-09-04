@@ -156,3 +156,35 @@ def read_exposure_entries(
         502 if the exposure log query fails.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
+
+
+@app.get("/exposure-flags")
+def read_exposure_flags(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_exposure_flags_service),
+):
+    """Return the exposure flag set on each flagged exposure.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select exposure log messages.
+
+    Returns
+    -------
+    dict
+        ``exposure_flags``, one ``obs_id``/``exposure_flag`` pair per
+        flagged exposure. Exposures with no flag are omitted.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the exposure log query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)

@@ -21,6 +21,7 @@
 """Singleton getters for the endpoint services."""
 
 from .exposure_entries import get_exposure_entries_service
+from .exposure_flags import get_exposure_flags_service
 
 # Services owning a `WorkerPoolMixin` pool, started and stopped with the
 # application. Add a service here when it gains a worker pool.
@@ -29,4 +30,5 @@ WORKER_POOL_SERVICES = ()
 __all__ = [
     "WORKER_POOL_SERVICES",
     "get_exposure_entries_service",
+    "get_exposure_flags_service",
 ]
