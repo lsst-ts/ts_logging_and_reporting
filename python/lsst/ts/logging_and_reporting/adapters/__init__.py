@@ -20,6 +20,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Singleton getters for the cached upstream-source adapters."""
 
+from .consdb_visits import get_consdb_visits_adapter
 from .expected_exposures import get_expected_exposures_adapter
 from .exposurelog import get_exposurelog_adapter
 from .jira_block import get_jira_block_adapter
@@ -34,6 +35,7 @@ from .zephyr import get_zephyr_adapter
 # consdb_exposures cached, so it has to run after it. Do not sort this
 # list to match `__all__`.
 REFRESH_ADAPTERS = (
+    get_consdb_visits_adapter,
     get_expected_exposures_adapter,
     get_exposurelog_adapter,
     get_jira_obs_adapter,
@@ -44,6 +46,7 @@ REFRESH_ADAPTERS = (
 
 __all__ = [
     "REFRESH_ADAPTERS",
+    "get_consdb_visits_adapter",
     "get_expected_exposures_adapter",
     "get_exposurelog_adapter",
     "get_jira_block_adapter",
