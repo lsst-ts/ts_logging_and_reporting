@@ -124,3 +124,41 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/block-details")
+def read_block_details(
+    keys: list[str] = Query(..., alias="key"),
+    service=Depends(services.get_block_details_service),
+):
+    """Retrieve BLOCK details from Zephyr/Jira for a list of keys.
+
+    Parameters
+    ----------
+    key : list[str]
+        List of BLOCK keys (e.g. ``BLOCK-704`` or ``BLOCK-T123_a``)
+        provided as repeated query parameters. ``BLOCK-Tnnn`` resolves
+        against Zephyr Scale and ``BLOCK-nnn`` against Jira.
+
+    Returns
+    -------
+    dict
+        A ``data`` field mapping each resolved BLOCK key to its
+        summary, URL, and source, and an ``errors`` field mapping each
+        failed source (``zephyr``, ``jira``) to its error message.
+        Keys that resolve in neither source are omitted.
+
+        A failure of one source alone is not an error status: the
+        response is a 200 carrying the surviving source's results in
+        ``data`` and the failed source's message in ``errors``, so its
+        keys are missing from ``data`` for the same reason unresolved
+        keys are. Callers that distinguish the two must check
+        ``errors`` before reading a missing key as unresolved.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        500 if both the Zephyr and Jira requests fail, or if the Jira
+        hostname is not configured.
+    """
+    return service.handle_request(keys)
