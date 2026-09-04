@@ -124,3 +124,36 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/jira-tickets")
+def read_jira_tickets(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_jira_tickets_service),
+):
+    """Return OBS Jira tickets created or updated during the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+    instrument : str
+        Instrument name used to select tickets by their system field.
+
+    Returns
+    -------
+    dict
+        ``issues``, the matching tickets with their summary, systems and
+        Jira URL.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        500 if the Jira hostname is not configured, 502 if the Jira
+        query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
