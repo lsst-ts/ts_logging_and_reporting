@@ -20,6 +20,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Singleton getters for the cached upstream-source adapters."""
 
+from .almanac import get_almanac_adapter
 from .consdb_exposures import get_consdb_exposures_adapter
 from .consdb_visits import get_consdb_visits_adapter
 from .expected_exposures import get_expected_exposures_adapter
@@ -48,6 +49,7 @@ REFRESH_ADAPTERS = (
 
 __all__ = [
     "REFRESH_ADAPTERS",
+    "get_almanac_adapter",
     "get_consdb_exposures_adapter",
     "get_consdb_visits_adapter",
     "get_expected_exposures_adapter",
