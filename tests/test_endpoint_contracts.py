@@ -77,10 +77,16 @@ FORWARDING = [
         "/almanac?dayObsStart=20240101&dayObsEnd=20240102",
         (20240101, 20240102),
     ),
+    (
+        web_services.get_obs_status_service,
+        "/obs-status?dayObsStart=20250101&dayObsEnd=20250102",
+        (20250101, 20250102, True, False, True, None),
+    ),
 ]
 
 FORWARDING_IDS = [
     "almanac",
+    "obs-status",
 ]
 
 
@@ -116,3 +122,37 @@ def test_version():
     assert response.status_code == 200
     assert response.json()["version"] == __version__
 
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("true", True),
+        ("false", False),
+        ("1", True),
+        ("0", False),
+        ("yes", True),
+        ("no", False),
+        ("on", True),
+        ("off", False),
+    ],
+)
+def test_obs_status_bool_coercion(value, expected):
+    service = CapturingService()
+    app.dependency_overrides[web_services.get_obs_status_service] = lambda: service
+
+    client.get(f"/obs-status?dayObsStart=20250101&dayObsEnd=20250102&includeEntries={value}")
+
+    assert service.calls[0][2] is expected
+
+
+def test_obs_status_forwards_all_params():
+    service = CapturingService()
+    app.dependency_overrides[web_services.get_obs_status_service] = lambda: service
+
+    client.get(
+        "/obs-status?dayObsStart=20250101&dayObsEnd=20250102"
+        "&includeEntries=false&includeIntervals=true&nightOnlyMetrics=false"
+        "&metric=fault_loss&metric=weather"
+    )
+
+    assert service.calls == [(20250101, 20250102, False, True, False, ["fault_loss", "weather"])]

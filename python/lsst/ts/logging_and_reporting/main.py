@@ -154,3 +154,57 @@ def read_almanac(
     through ``dayObsEnd``.
     """
     return service.handle_request(dayObsStart, dayObsEnd)
+
+
+@app.get("/obs-status")
+def read_obs_status(
+    dayObsStart: int,
+    dayObsEnd: int,
+    includeEntries: bool = True,
+    includeIntervals: bool = False,
+    nightOnlyMetrics: bool = True,
+    metrics: list[str] | None = Query(
+        None,
+        alias="metric",
+    ),
+    service=Depends(services.get_obs_status_service),
+):
+    """Return observatory status events, intervals and derived metrics.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Inclusive upper bound of the requested dayobs range.
+    includeEntries : bool, optional
+        If True, include the raw status events in the response.
+    includeIntervals : bool, optional
+        If True, include the derived status intervals in the response.
+    nightOnlyMetrics : bool, optional
+        If False, time outside night hours contributes to the metrics.
+    metrics : list[str] or None, optional
+        Metrics to compute, given as repeated ``metric`` parameters.
+        Unrecognised names are logged and skipped.
+
+    Returns
+    -------
+    dict
+        Any of ``entries``, ``intervals`` and ``metrics`` according to
+        the flags above, plus ``availability`` describing how much of
+        the requested range predates the availability of obs-status
+        data.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the status event or almanac query fails.
+    """
+    return service.handle_request(
+        dayObsStart,
+        dayObsEnd,
+        includeEntries,
+        includeIntervals,
+        nightOnlyMetrics,
+        metrics,
+    )
