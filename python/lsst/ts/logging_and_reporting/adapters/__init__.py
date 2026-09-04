@@ -25,6 +25,7 @@ from .jira_block import get_jira_block_adapter
 from .jira_obs import get_jira_obs_adapter
 from .narrativelog import get_narrativelog_adapter
 from .nightreport import get_nightreport_adapter
+from .zephyr import get_zephyr_adapter
 
 # Adapters the refresh worker keeps warm, in the order it refreshes
 # them. The order is load-bearing: visit_overhead reads what
@@ -44,4 +45,5 @@ __all__ = [
     "get_jira_obs_adapter",
     "get_narrativelog_adapter",
     "get_nightreport_adapter",
+    "get_zephyr_adapter",
 ]
