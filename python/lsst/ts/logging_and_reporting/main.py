@@ -106,6 +106,7 @@ async def get_version():
 @app.get("/health/")
 async def health():
     """Health check endpoint.
+
     Used by kubernetes readiness and liveness probes.
     """
     return JSONResponse(status_code=200, content={"status": "ok"})

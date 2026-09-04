@@ -66,7 +66,7 @@ def preload_worker_modules(services: Iterable["WorkerPoolMixin"]) -> None:
 
 
 def start_worker(name: str) -> None:
-    """Prepare one worker process to have consistent logging and proces title.
+    """Prepare one worker process to have consistent logging and process title.
 
     The title matters because otherwise every worker shows the
     forkserver's bootstrap command line, which carries the whole of

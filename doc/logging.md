@@ -28,13 +28,13 @@ each record.
 
 ## 2. Level
 
-The `LOG_LEVEL` environmental variable sets the level for the application
+The `LOG_LEVEL` environment variable sets the level for the application
 and uvicorn. `logging_config.log_level()` is a helper to ensure this is
 a useful value.
 
 `LOG_LEVEL` must match uvicorn's accepted set: `CRITICAL`, `ERROR`,
 `WARNING`, `INFO`, `DEBUG` - values outside this range will warn on
-server startup, and default to `INFO`
+server startup, and default to `INFO`.
 
 
 ---
@@ -48,19 +48,19 @@ LEVEL [logger name] [trace_id] message
 ```
 
 `TraceIdFilter` is attached to the root *handler* rather than to any
-logger, so it stamps every record that reaches it whatever emitted it,
+logger, so it stamps every record that reaches it regardless of whatever emitted it,
 including records from libraries, and an ordinary `logger.debug(...)`
-call anywhere in the tree carries one without doing anything. A record
+call anywhere picks up the current `trace_id` automatically. A record
 logged outside a traced unit of work shows `-` (`NO_TRACE_ID`) instead.
 
 ### What is a "traced unit of work"?
 
 A traced unit of work is either a request or a run of the RefreshWorker.
 
-- `RequestLoggingMiddleware` sets one per request, so all Services,
+- `RequestLoggingMiddleware` sets one tag per request, so all Services,
   Adapters, and any other logging associated with that request shares
   a tag
-- `RefreshWorker._refresh_cycle` sets one per cycle, so the cycle's own
+- `RefreshWorker._refresh_cycle` sets one tag per cycle, so the cycle's own
   lines and everything its adapters log underneath it share a tag.
 
 ### Crossing concurrency boundaries
@@ -127,7 +127,7 @@ than just the handler, and any record those middlewares emit is inside
 the traced region.
 
 `/health` is explicitly not logged by either request line: the Kubernetes
-readiness and liveness probes hit it often enough to drown everything else.
+readiness and liveness probes hit it often enough to drown out everything else.
 
 ---
 
