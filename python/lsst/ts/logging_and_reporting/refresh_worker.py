@@ -20,7 +20,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Background worker that keeps today's cache entries warm.
 
-The worker's fetch-then- overwrite cycle
+The worker's fetch-then-overwrite cycle
 (via ``[Instrument]DayobsCachedAdapter.refresh``) means today's
 entry never misses under normal operation, and user requests for
 today never trigger an external fetch directly.
@@ -118,7 +118,7 @@ class RefreshWorker:
         at the next interval, so the loop cannot die. Finalises
         (re-fetches) yesterday, if required.
 
-        Returns the seconds the pass took
+        Returns the seconds the pass took.
         """
         # The same ID a request carries, so everything one cycle logs —
         # including the adapters it drives — is attributable to it.
@@ -159,7 +159,7 @@ class RefreshWorker:
         """Refresh every adapter for ``dayobs``.
 
         Returns the number of adapters that refreshed successfully and
-        the number that raised
+        the number that raised.
         """
         successes = 0
         failures = 0

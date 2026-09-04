@@ -58,7 +58,7 @@ class RestClient:
     auth_source = "rsp"
     """Key into ``AUTH_SOURCES`` naming the token used upstream."""
 
-    CONNECT_TIMEOUT = 5.05
+    CONNECT_TIMEOUT = 2.5
     """Connection timeout in seconds."""
 
     READ_TIMEOUT = 20
