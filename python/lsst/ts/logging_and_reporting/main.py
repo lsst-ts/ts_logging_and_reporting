@@ -124,3 +124,59 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/multi-night-visit-maps")
+def read_multi_night_visit_maps(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    appletMode: bool = False,
+    service=Depends(services.get_visit_maps_service),
+):
+    """Generate multi-night visit maps using Bokeh.
+
+    Parameters
+    ----------
+    dayObsStart : `int`
+        Start date in YYYYMMDD format.
+    dayObsEnd : `int`
+        End date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+    appletMode : `bool`, optional
+        If True, generate maps suitable for applet display. Default is False.
+
+    Returns
+    -------
+    `dict`
+        A dictionary containing the Bokeh JSON item for the interactive map.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument, appletMode)
+
+
+@app.get("/static-visit-map")
+def read_static_visit_map(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_static_visit_map_service),
+):
+    """Generate a static visit map for a date range and instrument.
+
+    Parameters
+    ----------
+    dayObsStart : `int`
+        Start date in YYYYMMDD format.
+    dayObsEnd : `int`
+        End date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name, such as ``lsstCam`` or ``latiss``.
+
+    Returns
+    -------
+    result : `dict`
+        Dictionary containing the base64-encoded PNG image for the static
+        visit map.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)

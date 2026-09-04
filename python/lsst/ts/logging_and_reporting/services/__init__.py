@@ -20,11 +20,15 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Singleton getters for the endpoint services."""
 
+from .static_visit_map import get_static_visit_map_service
+from .visit_maps import get_visit_maps_service
 
 # Services owning a `WorkerPoolMixin` pool, started and stopped with the
 # application. Add a service here when it gains a worker pool.
-WORKER_POOL_SERVICES = ()
+WORKER_POOL_SERVICES = (get_static_visit_map_service, get_visit_maps_service)
 
 __all__ = [
     "WORKER_POOL_SERVICES",
+    "get_static_visit_map_service",
+    "get_visit_maps_service",
 ]
