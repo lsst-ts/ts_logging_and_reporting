@@ -82,11 +82,17 @@ FORWARDING = [
         "/data-log?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam",
         (20240101, 20240102, "LSSTCam"),
     ),
+    (
+        web_services.get_exposures_service,
+        "/exposures?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam",
+        (20240101, 20240102, "LSSTCam"),
+    ),
 ]
 
 FORWARDING_IDS = [
     "almanac",
     "data-log",
+    "exposures",
 ]
 
 

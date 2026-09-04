@@ -22,6 +22,7 @@
 
 from .almanac import get_almanac_service
 from .data_log import get_data_log_service
+from .exposures import get_exposures_service
 
 # Services owning a `WorkerPoolMixin` pool, started and stopped with the
 # application. Add a service here when it gains a worker pool.
@@ -31,4 +32,5 @@ __all__ = [
     "WORKER_POOL_SERVICES",
     "get_almanac_service",
     "get_data_log_service",
+    "get_exposures_service",
 ]
