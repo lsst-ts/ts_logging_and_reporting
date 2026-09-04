@@ -71,9 +71,17 @@ def _clear_overrides():
 
 
 # (service getter, request URL, args the endpoint should forward to handle).
-FORWARDING = []
+FORWARDING = [
+    (
+        web_services.get_block_details_service,
+        "/block-details?key=BLOCK-1",
+        (["BLOCK-1"],),
+    ),
+]
 
-FORWARDING_IDS = []
+FORWARDING_IDS = [
+    "block-details",
+]
 
 
 @pytest.mark.parametrize(("getter", "url", "expected"), FORWARDING, ids=FORWARDING_IDS)
@@ -108,3 +116,11 @@ def test_version():
     assert response.status_code == 200
     assert response.json()["version"] == __version__
 
+
+def test_block_details_forwards_all_keys():
+    service = CapturingService()
+    app.dependency_overrides[web_services.get_block_details_service] = lambda: service
+
+    client.get("/block-details?key=BLOCK-1&key=BLOCK-2")
+
+    assert service.calls == [(["BLOCK-1", "BLOCK-2"],)]
