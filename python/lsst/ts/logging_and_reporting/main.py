@@ -124,3 +124,31 @@ def flush_redis():
     get_redis_client().flushdb()
     logger.warning("Redis cache flushed via /flush-redis")
     return JSONResponse(status_code=200, content={"status": "ok"})
+
+
+@app.get("/night-reports")
+def read_night_reports(
+    dayObsStart: int,
+    dayObsEnd: int,
+    service=Depends(services.get_night_report_service),
+):
+    """Return night report records for the range.
+
+    Parameters
+    ----------
+    dayObsStart : int
+        Inclusive lower bound of the requested dayobs range.
+    dayObsEnd : int
+        Exclusive upper bound of the requested dayobs range.
+
+    Returns
+    -------
+    dict
+        ``reports``, the night reports for the range ordered by dayobs.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the night report query fails.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd)
