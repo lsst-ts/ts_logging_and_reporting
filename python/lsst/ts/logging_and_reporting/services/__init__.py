@@ -20,6 +20,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Singleton getters for the endpoint services."""
 
+from .exposure_entries import get_exposure_entries_service
 from .nightreport import get_night_report_service
 
 # Services owning a `WorkerPoolMixin` pool, started and stopped with the
@@ -28,5 +29,6 @@ WORKER_POOL_SERVICES = ()
 
 __all__ = [
     "WORKER_POOL_SERVICES",
+    "get_exposure_entries_service",
     "get_night_report_service",
 ]

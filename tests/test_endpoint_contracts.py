@@ -73,6 +73,11 @@ def _clear_overrides():
 # (service getter, request URL, args the endpoint should forward to handle).
 FORWARDING = [
     (
+        web_services.get_exposure_entries_service,
+        "/exposure-entries?dayObsStart=20250730&dayObsEnd=20250731&instrument=LSSTCam",
+        (20250730, 20250731, "LSSTCam"),
+    ),
+    (
         web_services.get_night_report_service,
         "/night-reports?dayObsStart=20250730&dayObsEnd=20250731",
         (20250730, 20250731),
@@ -80,6 +85,7 @@ FORWARDING = [
 ]
 
 FORWARDING_IDS = [
+    "exposure-entries",
     "night-reports",
 ]
 
