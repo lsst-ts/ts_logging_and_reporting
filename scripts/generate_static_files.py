@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 
 OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather"]
 
+EXCLUSIVE_END_ENDPOINTS = [
+    "almanac",
+    "exposures",
+    "exposure-flags",
+    "static-visit-map",
+    "multi-night-visit-maps",
+]
+
 
 # ---------------------------------------------------------------------------
 # DayObs helpers
@@ -116,7 +124,13 @@ def build_filename(endpoint: str, params: dict) -> str:
     """
     if not params:
         return endpoint
-    return f"{endpoint}?{_build_query_string(params)}"
+    # return f"{endpoint}?{_build_query_string(params)}"
+    urlPaths = [endpoint]
+    if "instrument" in params:
+        urlPaths.append(params["instrument"])
+    if "dayObsStart" in params and "dayObsEnd" in params:
+        urlPaths.append(f"{params['dayObsStart']}_{params['dayObsEnd']}")
+    return "/".join(urlPaths)
 
 
 def build_url(backend_url: str, endpoint: str, params: dict) -> str:
@@ -419,7 +433,7 @@ def build_dayobs_tasks(
                     "endpoint": endpoint,
                     "params": params,
                     "start": start,
-                    "end": end,
+                    "end": dayobs_add_days(end, 1) if endpoint in EXCLUSIVE_END_ENDPOINTS else end,
                 }
             )
         elif os.path.exists(file_path):
@@ -760,6 +774,11 @@ def main():
 
         # Generate all dayobs combinations
         combos = generate_dayobs_combinations(today, args.max_days, args.max_combo_size)
+        combos.pop()
+        print("#####", flush=True)
+        print(combos)
+        print(len(combos))
+        print("#####", flush=True)
 
         # Resolve --*-only flags (additive; --mutable-only enables all three)
         want_flags = args.exposure_flags_only or args.mutable_only
