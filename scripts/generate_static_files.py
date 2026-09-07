@@ -1,4 +1,25 @@
 #!/usr/bin/env python3
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """
 Generate static files for the Nightly Digest backend.
 
@@ -29,6 +50,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather"]
+
+EXCLUSIVE_END_ENDPOINTS = [
+    "exposures",
+    "almanac",
+    "exposure-flags",
+    "static-visit-map",
+    "data-log",
+    "exposure-entries",
+    "multi-night-visit-maps",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +94,7 @@ def dayobs_add_days(dayobs: int, days: int) -> int:
 def generate_dayobs_combinations(today: int, max_days_ago: int, max_combo_size: int | None = None) -> list:
     """Return all contiguous (start, end) dayobs pairs.
 
-    Generates every sub-range of [today - max_days_ago, today] with
+    Generates every sub-range of [today - (max_days_ago - 1), today] with
     span capped at max_combo_size. When max_combo_size < max_days_ago,
     rolling windows of up to max_combo_size are generated across the
     full lookback window. Ordered smallest span first (single-day),
@@ -75,8 +106,8 @@ def generate_dayobs_combinations(today: int, max_days_ago: int, max_combo_size: 
     combos = []
     # span = number of days between start and end (0 = single day)
     for span in range(0, max_span + 1):
-        # slide the window: newest (closest to today) first
-        for start_offset in range(-span, -max_days_ago - 1, -1):
+        # Slide the window: newest (closest to today) first
+        for start_offset in range(-span, -max_days_ago, -1):
             end_offset = start_offset + span
             start = dayobs_add_days(today, start_offset)
             end = dayobs_add_days(today, end_offset)
@@ -116,7 +147,12 @@ def build_filename(endpoint: str, params: dict) -> str:
     """
     if not params:
         return endpoint
-    return f"{endpoint}?{_build_query_string(params)}"
+    urlPaths = [endpoint]
+    if "instrument" in params:
+        urlPaths.append(params["instrument"])
+    if "dayObsStart" in params and "dayObsEnd" in params:
+        urlPaths.append(f"{params['dayObsStart']}_{params['dayObsEnd']}")
+    return "/".join(urlPaths)
 
 
 def build_url(backend_url: str, endpoint: str, params: dict) -> str:
@@ -401,6 +437,8 @@ def build_dayobs_tasks(
         nonlocal skipped
         if endpoint_filter is not None and endpoint not in endpoint_filter:
             return
+        if endpoint in EXCLUSIVE_END_ENDPOINTS and start == end:
+            return
         filename = build_filename(endpoint, params)
         file_path = os.path.join(output_dir, filename)
         if should_regenerate(
@@ -427,10 +465,14 @@ def build_dayobs_tasks(
 
     for start, end in combos:
         base_params = {"dayObsStart": start, "dayObsEnd": end}
+        exclusive_end = dayobs_add_days(end, 1)
 
         # Group B: dayobs-only endpoints
         for endpoint in ["expected-exposures", "almanac"]:
-            _check(endpoint, base_params, start, end)
+            if endpoint in EXCLUSIVE_END_ENDPOINTS:
+                _check(endpoint, {**base_params, "dayObsEnd": exclusive_end}, start, exclusive_end)
+            else:
+                _check(endpoint, base_params, start, end)
 
         # Group C: obs-status variant 1 (Digest)
         _check(
@@ -457,19 +499,22 @@ def build_dayobs_tasks(
             "exposure-entries",
             "static-visit-map",
         ]:
-            _check(endpoint, inst_params, start, end)
+            if endpoint in EXCLUSIVE_END_ENDPOINTS:
+                _check(endpoint, {**inst_params, "dayObsEnd": exclusive_end}, start, exclusive_end)
+            else:
+                _check(endpoint, inst_params, start, end)
 
         # multi-night-visit-maps has an extra appletMode param
         _check(
             "multi-night-visit-maps",
             {
                 "dayObsStart": start,
-                "dayObsEnd": end,
+                "dayObsEnd": exclusive_end,
                 "instrument": "LSSTCam",
                 "appletMode": False,
             },
             start,
-            end,
+            exclusive_end,
         )
 
     return tasks, skipped
@@ -734,9 +779,11 @@ def main():
         yesterday = dayobs_add_days(today, -1)
 
         # Detect first run of new day (only meaningful in normal mode)
+        # Note almanac endpoint uses exclusive date range,
+        # so we need to add 1 day to the end date
         today_sentinel = os.path.join(
             args.output_dir,
-            build_filename("almanac", {"dayObsStart": today, "dayObsEnd": today}),
+            build_filename("almanac", {"dayObsStart": today, "dayObsEnd": dayobs_add_days(today, 1)}),
         )
         is_new_day = not historic_mode and not os.path.exists(today_sentinel)
         if is_new_day:
@@ -760,6 +807,10 @@ def main():
 
         # Generate all dayobs combinations
         combos = generate_dayobs_combinations(today, args.max_days, args.max_combo_size)
+        print("#####", flush=True)
+        print(combos)
+        print(len(combos))
+        print("#####", flush=True)
 
         # Resolve --*-only flags (additive; --mutable-only enables all three)
         want_flags = args.exposure_flags_only or args.mutable_only
