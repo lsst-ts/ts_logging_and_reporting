@@ -541,8 +541,16 @@ def read_block_details(
     -------
     dict
         A ``data`` field mapping each resolved BLOCK key to its
-        summary, URL, and source. Keys that resolve in neither source
-        are omitted.
+        summary, URL, and source, and an ``errors`` field mapping each
+        failed source (``zephyr``, ``jira``) to its error message.
+        Keys that resolve in neither source are omitted.
+
+        A failure of one source alone is not an error status: the
+        response is a 200 carrying the surviving source's results in
+        ``data`` and the failed source's message in ``errors``, so its
+        keys are missing from ``data`` for the same reason unresolved
+        keys are. Callers that distinguish the two must check
+        ``errors`` before reading a missing key as unresolved.
 
     Raises
     ------
