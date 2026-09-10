@@ -62,6 +62,16 @@ EXCLUSIVE_END_ENDPOINTS = [
 ]
 
 
+def remove_user_id(record: dict) -> dict:
+    """Remove the 'user_id' field from a record, if it exists."""
+    if "user_id" in record:
+        del record["user_id"]
+    return record
+
+
+POST_PROCESSING = {"exposure-entries": [("exposure_entries", [remove_user_id])]}
+
+
 # ---------------------------------------------------------------------------
 # DayObs helpers
 # ---------------------------------------------------------------------------
@@ -250,6 +260,17 @@ def should_regenerate_block_details(
 # ---------------------------------------------------------------------------
 
 
+def post_process_data(data, endpoint):
+    if endpoint in POST_PROCESSING:
+        entries = POST_PROCESSING[endpoint]
+        for entry, functions in entries:
+            if entry in data and data[entry]:
+                for record in data[entry]:
+                    for func in functions:
+                        record = func(record)
+    return data
+
+
 def fetch_and_save(url: str, file_path: str, timeout: int):
     """Fetch url and atomically save the response body to file_path.
 
@@ -265,6 +286,10 @@ def fetch_and_save(url: str, file_path: str, timeout: int):
         try:
             response = requests.get(url, timeout=timeout)
             response.raise_for_status()
+
+            # Post processing
+            endpoint = url.split("api/")[1].split("?")[0]
+            data = post_process_data(response.json(), endpoint)
         except requests.exceptions.HTTPError as e:
             end_ts = time.time()
             logger.warning("HTTP error (%.2fs): %s", end_ts - start_ts, e)
@@ -302,7 +327,7 @@ def fetch_and_save(url: str, file_path: str, timeout: int):
         try:
             os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
             with open(tmp_path, "w", encoding="utf-8") as f:
-                f.write(response.text)
+                f.write(json.dumps(data))
             os.rename(tmp_path, file_path)
             end_ts = time.time()
             return (start_ts, end_ts, True)
