@@ -39,6 +39,21 @@ EXCLUSIVE_END_ENDPOINTS = [
 ]
 
 
+def remove_user_id(record: dict) -> dict:
+    """Remove the 'user_id' field from a record, if it exists."""
+    if "user_id" in record:
+        del record["user_id"]
+    return record
+
+
+POST_PROCESSING = {
+    "exposure-entries": (
+        "exposure_entries",
+        remove_user_id,
+    )
+}
+
+
 # ---------------------------------------------------------------------------
 # DayObs helpers
 # ---------------------------------------------------------------------------
@@ -243,6 +258,14 @@ def fetch_and_save(url: str, file_path: str, timeout: int):
         try:
             response = requests.get(url, timeout=timeout)
             response.raise_for_status()
+
+            # Post processing
+            endpoint = url.split("api/")[1].split("?")[0]
+            data = response.json()
+            if endpoint in POST_PROCESSING:
+                key, func = POST_PROCESSING[endpoint]
+                if key in data and data[key]:
+                    data[key] = [func(record) for record in data[key]]
         except requests.exceptions.HTTPError as e:
             end_ts = time.time()
             logger.warning("HTTP error (%.2fs): %s", end_ts - start_ts, e)
