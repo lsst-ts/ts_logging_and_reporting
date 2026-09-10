@@ -31,29 +31,29 @@ from lsst.ts.logging_and_reporting.redis_client import get_redis_client
 from lsst.ts.logging_and_reporting.utils.auth import Server
 
 # Transformed-EFD channels folded into each exposure record via a LEFT
-# JOIN, per instrument. An empty/absent list means no EFD join.
-EFD_FIELDS = {
+# JOIN, per instrument. An empty/absent list means no transformed-EFD join.
+TRANSFORMED_EFD_FIELDS = {
     "lsstcam": ["mt_salindex112_temperature_0_mean"],
     "latiss": [],
 }
 
 # Deployments without the transformed-EFD schema; the join is omitted there.
-EFD_UNAVAILABLE_DEPLOYMENTS = {Server.summit, Server.base}
+TRANSFORMED_EFD_UNAVAILABLE_DEPLOYMENTS = {Server.summit, Server.base}
 
 
-def efd_transform_available() -> bool:
+def transformed_efd_available() -> bool:
     """Whether this deployment exposes the transformed-EFD schema.
 
     An unset/unknown deployment defaults to available (dev and tests).
     """
     try:
-        return Server.get_url() not in EFD_UNAVAILABLE_DEPLOYMENTS
+        return Server.get_url() not in TRANSFORMED_EFD_UNAVAILABLE_DEPLOYMENTS
     except ValueError:
         return True
 
 
 class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
-    """Caches the full exposure record (exposure ⋈ quicklook ⋈ EFD).
+    """Caches the exposure record (exposure ⋈ quicklook ⋈ transformed-EFD).
 
     One cache entry serves two endpoints: `ExposuresService` projects
     the curated night-summary columns, `DataLogService` returns the full
@@ -66,19 +66,21 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
     name = "consdb_exposures"
 
     def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
-        efd_fields = EFD_FIELDS.get(instrument, []) if efd_transform_available() else []
-        efd_columns = "".join(f", f.{field}" for field in efd_fields)
-        efd_join = (
+        transformed_efd_fields = (
+            TRANSFORMED_EFD_FIELDS.get(instrument, []) if transformed_efd_available() else []
+        )
+        transformed_efd_columns = "".join(f", f.{field}" for field in transformed_efd_fields)
+        transformed_efd_join = (
             f"LEFT JOIN efd_{instrument}.exposure_efd f ON e.exposure_id = f.exposure_id"
-            if efd_fields
+            if transformed_efd_fields
             else ""
         )
         sql = f"""
-            SELECT e.*, q.*{efd_columns}
+            SELECT e.*, q.*{transformed_efd_columns}
             FROM cdb_{instrument}.exposure e
             LEFT JOIN cdb_{instrument}.visit1_quicklook q
                 ON e.exposure_id = q.visit_id
-            {efd_join}
+            {transformed_efd_join}
             WHERE {run_start} <= e.day_obs AND e.day_obs <= {run_end}
         """
         return self._partition_by_field(self._query(" ".join(sql.split())))
