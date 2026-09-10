@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 class DataLogService(Service):
     """Collates the detailed data log for /data-log.
 
-    Returns the full exposure record (exposure ⋈ quicklook ⋈ EFD),
+    Returns the full exposure record (exposure ⋈ quicklook ⋈
+    transformed-EFD),
     with special floats (NaN/inf) rendered as JSON-safe strings.
     """
 
@@ -75,10 +76,10 @@ class DataLogService(Service):
 
     def collate_response(self, data: dict[int, list[dict]]) -> dict:
         records = flatten_within_dayobs(data, "seq_num")
-        # Records for different days can have different keys (e.g. an
-        # EFD-joined column only present on some rows); the DataFrame gives
-        # every row every column, missing ones as NaN, which stringify then
-        # renders as a JSON-safe string.
+        # Records for different days can have different keys (e.g. a
+        # transformed-EFD column only present on some rows); the DataFrame
+        # gives every row every column, missing ones as NaN, which stringify
+        # then renders as a JSON-safe string.
         safe = pd.DataFrame(records).map(stringify_special_floats)
         return {"data_log": make_json_safe(safe.to_dict(orient="records"))}
 

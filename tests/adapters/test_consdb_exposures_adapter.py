@@ -55,7 +55,7 @@ def adapter(fake_redis, monkeypatch):
 
 
 class TestQueryBuilding:
-    def test_efd_channels_folded_in_for_lsstcam(self, adapter):
+    def test_transformed_efd_channels_folded_in_for_lsstcam(self, adapter):
         mock_post = consdb_post([])
         with patch("requests.Session.post", mock_post):
             adapter._fetch_run("lsstcam", 20250101, 20250101)
@@ -64,7 +64,7 @@ class TestQueryBuilding:
         assert "LEFT JOIN efd_lsstcam.exposure_efd f ON e.exposure_id = f.exposure_id" in sql
         assert "20250101 <= e.day_obs AND e.day_obs <= 20250101" in sql
 
-    def test_no_efd_join_for_latiss(self, adapter):
+    def test_no_transformed_efd_join_for_latiss(self, adapter):
         mock_post = consdb_post([])
         with patch("requests.Session.post", mock_post):
             adapter._fetch_run("latiss", 20250101, 20250101)
@@ -85,7 +85,7 @@ class TestQueryBuilding:
             "https://base-lsp.lsst.codes",
         ],
     )
-    def test_efd_join_omitted_where_transform_unavailable(self, adapter, monkeypatch, deployment):
+    def test_transformed_efd_join_omitted_where_unavailable(self, adapter, monkeypatch, deployment):
         monkeypatch.setenv("EXTERNAL_INSTANCE_URL", deployment)
         mock_post = consdb_post([])
         with patch("requests.Session.post", mock_post):
@@ -94,7 +94,7 @@ class TestQueryBuilding:
         assert "exposure_efd" not in sql
         assert sql.startswith("SELECT e.*, q.*")
 
-    def test_efd_join_kept_at_efd_available_deployment(self, adapter, monkeypatch):
+    def test_transformed_efd_join_kept_where_available(self, adapter, monkeypatch):
         monkeypatch.setenv("EXTERNAL_INSTANCE_URL", "https://usdf-rsp.slac.stanford.edu")
         mock_post = consdb_post([])
         with patch("requests.Session.post", mock_post):
