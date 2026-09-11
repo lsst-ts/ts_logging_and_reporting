@@ -8,7 +8,7 @@ The Nightly Digest application is composed of a front end ([ts_logging_frontend]
 
 Code contributions and git tag creation are accepted from members of the [lsst-ts github organization](https://github.com/lsst-ts).
 Edits to [ts_cycle_build](https://github.com/lsst-ts/ts_cycle_build) & associated Jenkins workflows require elevated permissions.
-Access to Base Test Stand and our summit deployment requires summit software team membership.
+Access to Base Test Stand and our summit deployment requires summit software team membership and associated VPN access.
 Edit permissions to [Phalanx](https://github.com/lsst-sqre/phalanx) requires group membership.
 Access to usdf-rsp locations requires at least a [SLAC](https://s3df.slac.stanford.edu/#/get-started) account.
 Access to public deployment locations requires TBD permissions.
@@ -21,70 +21,86 @@ Follow the [TSSW development workflow](https://tssw-developer.lsst.io/work_manag
 2. Create Pull Request - Ticket author creates a Pull Request into `develop` branch
    1. Draft PRs indicate they are not ready to be tested or reviewed
 3. Automated CI check - Tests and builds are sent to Jenkins & report pass/fail back to Pull Request
+4. Develop image build - Creates a build for every merged PR to `develop` branch
 
 ## Create Dev Release
 
-4. Determine what kind of release you'd like to create based on the type of changes you'd like to release.
-   1. `alpha` release — use when work has not been merged to `develop`.
-      1. Tag the head of the target branch.
-      2. If releasing changes from multiple branches, create a release branch (`alpha-release`) to merge, resolve conflicts, and tag from that branch.
-   2. `release candidate (rc)` — use when changes are merged into `develop` but require further integration testing.
-      1. Tag `develop` with an `rc` marker, e.g. `vX.Y.Z-rc.N`.
-   3. `production` release — use when changes are ready to promote to `main` and deploy to production.
-      1. Follow the production release process below.
+There are two paths for creating a dev release.
 
-See [Versioning from TSSW Developer Guide](https://tssw-developer.lsst.io/development-guidelines/versioning.html) for how to tag different releases.
+### A. Automatic CI pipeline
 
-Note: Often we create production and alpha releases for the backend ([ts_logging_and_reporting](https://github.com/lsst-ts/ts_logging_and_reporting)), to remove some tests that are unable to run in our automated environment due to packaging availability (`lsst-resources` in particular is not conda packaged)
+(4. above) Each merge to `develop` will automatically trigger develop image builds:
 
-5. Create your chosen release:
-   1. Identify the HEAD of the most recent changes, or create/update a release branch for an `alpha` release.
-      1. Integrate all selected PRs onto the release branch (for example, `alpha-release`).
-   2. Create release notes
-      1. Run [towncrier](https://tssw-developer.lsst.io/development-guidelines/language/python.html#version-history) and `python scripts/make_release.py` for the front end (updates `package*.json`).
-   3. Make Git tags
-      1. Create tags on both front end and back end release branches.
+    rubincr.lsst.org/nightlydigest-backend:develop
+    rubincr.lsst.org/nightlydigest-frontend:develop
+
+After each successful image build
+
+1. Update each dev-environment (BTS or USDF-dev) by bouncing pods through Argo-CD ([follow the Phalanx documentation](https://phalanx.lsst.io/admin/sync-argo-cd.html)) or by running the following commands:
+
+``` shell
+kubectl delete rs -n nightlydigest -l app.kubernetes.io/name=nightlydigest-backend
+kubectl delete rs -n nightlydigest -l app.kubernetes.io/name=nightlydigest-nginx
+```
+
+- Restarting replica sets will trigger the deployment to pull the most recently built images.
+
+2. Test there are no major breaks on each dev-deployment.
+
+3. Announce the changes in #ssw-logging.
+
+### B. Semi-automatic CI pipeline
+
+_This option is used when deploying unmerged changes so we use an alpha release._
+
+1. Consolidate the different sets of changes (branches) you want to deploy into a single branch named `alpha-release`.
+   - If the `alpha-release` branch already exists, delete it (from local and remote) and start a new one from `develop` (remember to start from the updated HEAD of `develop`).
+2. After pushing the `alpha-release` branch to Github, this will automatically trigger develop image builds as detailed above.
+
+3. Follow the same steps as [path A.](#a-automatic-ci-pipeline) to update the environments and announce the changes.
 
 ## Deploy Dev Release
 
-6. Await automated Conda build for the backend image to be created via Jenkins - automatically initiated with new git tags
-7. Point `ts_cycle_build` current revision to new development tags - follow [`ts_cycle_build` release documentation](https://ts-cycle-build.lsst.io/user-guide/user-guide.html#building-a-new-revision) to update the package number in the current cycle and run builds (see [cycle build](#cycle-build) context below)
-8. Deploy on Base Test Stand & test that no page or applet breaks
+1. Await automated Conda build for the backend image to be created via Jenkins - automatically initiated with new git tags
+2. Point `ts_cycle_build` current revision to new development tags - follow [`ts_cycle_build` release documentation](https://ts-cycle-build.lsst.io/user-guide/user-guide.html#building-a-new-revision) to update the package number in the current cycle and run builds (see [cycle build](#cycle-build) context below)
+3. Deploy on Base Test Stand & test that no page or applet breaks
     1. Follow the Phalanx documentation to [sync Argo CD in that environment](https://phalanx.lsst.io/admin/sync-argo-cd.html)
     2. If any major breaks are found, look for and implement [hotfixes](#hotfix)
-9. Deploy on usdf-rsp-dev & test new features
+4. Deploy on usdf-rsp-dev & test new features
     1. Follow the Phalanx documentation to bounce Kubernetes pods
-10. Announce the release in #osw-logging for people to test
+5. Announce the release in #ssw-logging for people to test
 
 ## Test Development Deployment
 
-11. Test the deployed changes on usdf-rsp-dev per code review
-12. Identify & communicate bugs to the PR author
+1. Test the deployed changes on usdf-rsp-dev per code review
+2. Identify & communicate bugs to the PR author
     1. For merged PRs: Create Jira tickets linked to initial PRs/tickets
     2. Open PRs: Document the bug in the open Jira ticket & leave a comment in the PR referencing the ticket
-13. Push bug fixes to the PR
+3. Push bug fixes to the PR
     1. The bug fixes are only redeployed to the dev environment if another dev deployment is scheduled and the associated PR has not yet been merged
-14. Approve & Merge PR into `develop` branch
+4. Approve & Merge PR into `develop` branch
 
 ## Create Production Release
 
-1. Check on step 12.1. first before continuing with the production release (don't release merged bugs merged)
-2. Merge `develop` branch into `main` branch
-3. On `main` create the release notes & git tag
-   1. Create release notes - [run towncrier](https://tssw-developer.lsst.io/development-guidelines/language/python.html#version-history) notes & `python scripts/make_release.py` for front end
-   2. Create production tags - on `main` branch, create a git tag (`v0.1.2`) to include most recent PRs
-4. Create PR & merge `main` back into `develop`
+1. Check on [step 2.1.](#test-development-deployment) above first before continuing with the production release (don't release merged bugs)
+2. Follow release process in [TSSW workflow](https://tssw-developer.lsst.io/work_management/development_workflow.html#release-process)
+   1. Merge `develop` branch into `main` branch
+   2. On `main` create the release notes & git tag
+      1. Create release notes - [run towncrier](https://tssw-developer.lsst.io/development-guidelines/language/python.html#version-history) notes & `python scripts/make_release.py` for front end
+      2. Create production tags - on `main` branch, create a git tag (`v0.1.2`) to include most recent PRs
+         - See [Versioning from TSSW Developer Guide](https://tssw-developer.lsst.io/development-guidelines/versioning.html) for how to tag releases.
+3. Create PR & merge `main` back into `develop`
 
 ## Deploy to Production
 
-5. Await automated Conda build for the back end image to be created via Jenkins - automatically initiated with new git tags
-6. Add new tags to current `ts_cycle_build` revision (see [References](#references))
+1. Await automated Conda build for the back end image to be created via Jenkins - automatically initiated with new git tags
+2. Add new tags to current `ts_cycle_build` revision (see [References](#references))
    1. Follow [`ts_cycle_build` release documentation](https://ts-cycle-build.lsst.io/user-guide/user-guide.html#building-a-new-revision) to update the package number in the current cycle and run builds
-7. Update the Phalanx application values files to reference the new revision in the `image` `tag` -- follow [Phalanx documentation](https://phalanx.lsst.io/developers/helm-chart/values-yaml.html)
-8. Deploy the new images to the production environments (usdf-rsp, summit, <public>) by bouncing the Kubernetes pods
+3. Update the Phalanx application values files to reference the new revision in the `image` `tag` -- follow [Phalanx documentation](https://phalanx.lsst.io/developers/helm-chart/values-yaml.html)
+4. Deploy the new images to the production environments (usdf-rsp, summit, <public>) by bouncing the Kubernetes pods
    1. Follow the Phalanx documentation to [sync Argo CD in that environment](https://phalanx.lsst.io/admin/sync-argo-cd.html)
-9. Test out the deployments to spot check for errors
-10. Announce in `#osw-logging` for users.
+5. Test out the deployments to spot check for errors
+6. Announce in `#ssw-logging` for users.
 
 ## HotFix
 
@@ -119,19 +135,13 @@ We use [Phalanx](https://phalanx.lsst.io/) to define our Kubernetes configuratio
 
 ### Cycle Build
 
-The Rubin Summit Software team deploys software to the summit through a [cycle build process](https://ts-cycle-build.lsst.io/) to control and coordinate compatibility between the different components of the observatory control system. The Nightly Digest is not a core package, and can be [updated in revisions](https://ts-cycle-build.lsst.io/user-guide/user-guide.html#building-a-new-revision).
-
-Whenever a core component of the control system is released we begin a new cycle to align the rest of the core packages.
+The Rubin Summit Software team deploys software through a [cycle build process](https://ts-cycle-build.lsst.io/) to control and coordinate compatibility between the different components of the observatory control system. The Nightly Digest is not a core package, and can be [updated in revisions](https://ts-cycle-build.lsst.io/user-guide/user-guide.html#building-a-new-revision).
 
 - Nightly Digest is not a core package and therefore does not drive new cycles but can be updated via revisions.
-
-- We are included in the cycle build process because we deploy to the summit
-
 
 The `ts_cycle_build` repository holds the package versions and dockerfiles for packages included in this process.
 
 When Nightly Digest releases a new version, we coordinate with the Summit Software team via Slack to understand the status of the current revision, update that revision branch in `ts_cycle_build`, and create our associated images through Jenkins.
 
-This process builds two images, one with a cycle tag (c0045) and one including the revision tag (c0045.002). We use the less specific tag (cycle only, c0045) for our dev deployments, and the further specified (cycle & revision c0045.002) for production
-
 When we create a new version of our package, we check the cycle build slack channel to understand the status of the cycle, and maybe create a new revision if necessary. If there is a cycle upgrade in progress already, we usually refrain from adding our non-core package version upgrade until testing the cycle has become stable.
+This process builds an image that includes the cycle and revision in its tag (e.g. c0045.002). This tag is updated through phalanx when rolling updates to prod.
