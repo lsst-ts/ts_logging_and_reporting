@@ -74,6 +74,26 @@ class TestFetch:
             with pytest.raises(NoMatchingSimulationsFoundError):
                 adapter.fetch(20250101, 20250101)
 
+    def test_one_unsimulated_night_fails_the_whole_run(self, adapter, fake_redis):
+        # rubin_sim is queried one night at a time, but the run is
+        # collated as a unit: the first night without a simulation
+        # aborts it, so later nights are never queried and the nights
+        # already fetched are not cached.
+        queried = []
+
+        def stats(day_obs, max_simulation_age):
+            queried.append(day_obs)
+            if day_obs == 20250102:
+                raise NoMatchingSimulationsFoundError("no sim")
+            return {"nominal_visits": 100}
+
+        with patch(f"{ADAPTER}.fetch_sim_stats_for_night", side_effect=stats):
+            with pytest.raises(NoMatchingSimulationsFoundError):
+                adapter.fetch(20250101, 20250103)
+
+        assert queried == [20250101, 20250102]
+        assert fake_redis.get("adapter:expected_exposures:20250101") is None
+
 
 class TestTtl:
     def test_mutable_ttl_for_past_dayobs(self, adapter, fake_redis):
