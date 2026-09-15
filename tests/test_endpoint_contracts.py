@@ -71,9 +71,17 @@ def _clear_overrides():
 
 
 # (service getter, request URL, args the endpoint should forward to handle).
-FORWARDING = []
+FORWARDING = [
+    (
+        web_services.get_data_log_service,
+        "/data-log?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam",
+        (20240101, 20240102, "LSSTCam"),
+    ),
+]
 
-FORWARDING_IDS = []
+FORWARDING_IDS = [
+    "data-log",
+]
 
 
 @pytest.mark.parametrize(("getter", "url", "expected"), FORWARDING, ids=FORWARDING_IDS)
