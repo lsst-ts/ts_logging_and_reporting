@@ -83,6 +83,7 @@ class TestQueryBuilding:
         [
             "https://summit-lsp.lsst.codes",
             "https://base-lsp.lsst.codes",
+            "https://tucson-teststand.lsst.codes",
         ],
     )
     def test_transformed_efd_join_omitted_where_unavailable(self, adapter, monkeypatch, deployment):

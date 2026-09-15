@@ -37,19 +37,14 @@ TRANSFORMED_EFD_FIELDS = {
     "latiss": [],
 }
 
-# Deployments without the transformed-EFD schema; the join is omitted there.
-TRANSFORMED_EFD_UNAVAILABLE_DEPLOYMENTS = {Server.summit, Server.base}
+# Deployments carrying the transformed-EFD schema; the join is omitted
+# everywhere else.
+TRANSFORMED_EFD_DEPLOYMENTS = {Server.usdfdev, Server.usdf}
 
 
 def transformed_efd_available() -> bool:
-    """Whether this deployment exposes the transformed-EFD schema.
-
-    An unset/unknown deployment defaults to available (dev and tests).
-    """
-    try:
-        return Server.get_url() not in TRANSFORMED_EFD_UNAVAILABLE_DEPLOYMENTS
-    except ValueError:
-        return True
+    """Whether this deployment exposes the transformed-EFD schema."""
+    return Server.get_url() in TRANSFORMED_EFD_DEPLOYMENTS
 
 
 class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
@@ -59,22 +54,21 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
     the curated night-summary columns, `DataLogService` returns the full
     record.
 
-    Transformed-EFD is not available at the summit, so this adapter
-    behaves slightly differently based on EXTERNAL_INSTANCE_URL
+    Transformed-EFD is only deployed at USDF, so this adapter behaves
+    slightly differently based on EXTERNAL_INSTANCE_URL
     """
 
     name = "consdb_exposures"
 
     def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
-        transformed_efd_fields = (
-            TRANSFORMED_EFD_FIELDS.get(instrument, []) if transformed_efd_available() else []
-        )
-        transformed_efd_columns = "".join(f", f.{field}" for field in transformed_efd_fields)
-        transformed_efd_join = (
-            f"LEFT JOIN efd_{instrument}.exposure_efd f ON e.exposure_id = f.exposure_id"
-            if transformed_efd_fields
-            else ""
-        )
+        if transformed_efd_available() and (fields := TRANSFORMED_EFD_FIELDS.get(instrument)):
+            transformed_efd_columns = "".join(f", f.{field}" for field in fields)
+            transformed_efd_join = (
+                f"LEFT JOIN efd_{instrument}.exposure_efd f ON e.exposure_id = f.exposure_id"
+            )
+        else:
+            transformed_efd_columns = ""
+            transformed_efd_join = ""
         sql = f"""
             SELECT e.*, q.*{transformed_efd_columns}
             FROM cdb_{instrument}.exposure e
