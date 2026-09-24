@@ -69,7 +69,14 @@ def remove_user_id(record: dict) -> dict:
     return record
 
 
-POST_PROCESSING = {"exposure-entries": [("exposure_entries", [remove_user_id])]}
+def remove_message_text(record: dict) -> dict:
+    """Remove the 'message_text' field from a record, if it exists."""
+    if "message_text" in record:
+        del record["message_text"]
+    return record
+
+
+POST_PROCESSING = {"exposure-entries": [("exposure_entries", [remove_user_id, remove_message_text])]}
 
 
 # ---------------------------------------------------------------------------
