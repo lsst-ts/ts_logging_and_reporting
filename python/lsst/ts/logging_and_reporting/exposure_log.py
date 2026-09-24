@@ -89,9 +89,4 @@ class ExposurelogAdapter(SourceAdapter):
         if code != 200:
             logger.warning(f"Error {code} getting exposurelog messages from {endpoint}")
 
-        for entry in messages:
-            # May just have a message.
-            if entry.get("exposure_flag") == "none":
-                entry["exposure_flag"] = "unknown"
-
         return messages
