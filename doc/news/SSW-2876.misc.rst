@@ -1,0 +1,1 @@
+Removed the line that changed "none" to "unknwon", leaving it as "none" for the exposure flags.
