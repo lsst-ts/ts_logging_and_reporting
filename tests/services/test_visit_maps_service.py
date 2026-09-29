@@ -19,10 +19,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import json
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from bokeh.plotting import figure
 
 from lsst.ts.logging_and_reporting.services.visit_maps import VisitMapsService
 from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
@@ -96,6 +98,24 @@ class TestCollateResponse:
         assert build.call_args.kwargs == {"applet_mode": True}
         json_item.assert_called_once_with("figure")
         assert response == {"interactive": {"root_id": "r"}}
+
+    def test_real_json_item_serializes_figure(self):
+        service = make_service()
+        buckets = {20250101: [visit(20250101)]}
+        plot = figure()
+        plot.scatter([10.0], [-20.0])
+        with (
+            patch(f"{SERVICE}.rn_aug.augment_visits", return_value=pd.DataFrame([{"a": 1}])),
+            patch(f"{SERVICE}.build_visit_maps_using_builder", return_value=plot),
+        ):
+            response = service.collate_response(buckets, instrument="LSSTCam", applet_mode=False)
+
+        document = response["interactive"]
+        assert {"target_id", "root_id", "doc"} <= document.keys()
+        assert document["root_id"] == plot.id
+        assert document["doc"]["roots"]
+        # The document has to survive FastAPI's JSON encoding.
+        json.dumps(document)
 
     def test_no_figure_yields_none(self):
         service = make_service()

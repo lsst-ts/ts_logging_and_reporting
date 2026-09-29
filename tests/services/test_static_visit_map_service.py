@@ -19,12 +19,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
+import requests
+from fastapi import HTTPException
 from matplotlib import pyplot as plt
 
+from lsst.ts.logging_and_reporting.adapters.consdb_visits import ConsdbVisitsAdapter
 from lsst.ts.logging_and_reporting.services import static_visit_map
 from lsst.ts.logging_and_reporting.services.static_visit_map import StaticVisitMapService
 from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
@@ -68,6 +71,20 @@ class TestHandleRequest:
         service.handle_request(20250101, 20250104, "LSSTCam")
         # dayObsEnd is exclusive, so the inclusive fetch stops at end - 1.
         assert adapter.fetch_calls == [("LSSTCam", 20250101, 20250103)]
+
+    def test_consdb_failure_becomes_502(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("ACCESS_TOKEN", "test-token")
+        adapter = ConsdbVisitsAdapter(fake_redis, server_url="https://consdb.test")
+        response = Mock(status_code=500)
+        response.json.return_value = {"message": "relation does not exist"}
+        response.raise_for_status.side_effect = requests.HTTPError(
+            "500 Internal Server Error", response=response
+        )
+        service = make_service(consdb_adapter=adapter)
+        with patch("requests.Session.post", Mock(return_value=response)):
+            with pytest.raises(HTTPException) as exc:
+                service.handle_request(20250101, 20250102, "LSSTCam")
+        assert exc.value.status_code == 502
 
 
 class TestCollateResponse:
@@ -164,3 +181,30 @@ def test_build_static_visit_map_styles_and_adds_graticules(monkeypatch):
     assert png_bytes
     assert style_calls == [(fig, ax)]
     assert graticule_calls == [ax]
+
+
+def test_build_static_visit_map_without_science_visits_returns_none(monkeypatch):
+    compute_calls = []
+    monkeypatch.setattr(static_visit_map, "_compute_nvisits_bundle", compute_calls.append)
+
+    visits = pd.DataFrame(
+        [
+            {
+                "s_ra": 10.0,
+                "s_dec": -20.0,
+                "sky_rotation": 45.0,
+                "obs_start_mjd": 60000.0,
+                "science_program": "not-a-science-program",
+            },
+            {
+                "s_ra": 20.0,
+                "s_dec": -30.0,
+                "sky_rotation": 90.0,
+                "obs_start_mjd": 60000.1,
+                "science_program": None,
+            },
+        ]
+    )
+
+    assert static_visit_map.build_static_visit_map(visits) is None
+    assert compute_calls == []

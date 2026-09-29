@@ -48,6 +48,7 @@ class ConsdbVisitsAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapt
             LEFT JOIN cdb_{instrument}.visit1_quicklook q
                 ON v.visit_id = q.visit_id
             WHERE {run_start} <= v.day_obs AND v.day_obs <= {run_end}
+            ORDER BY v.visit_id
         """
         return self._partition_by_field(self._query(" ".join(sql.split())))
 

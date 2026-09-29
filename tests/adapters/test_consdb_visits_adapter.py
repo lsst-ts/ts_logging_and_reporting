@@ -72,6 +72,38 @@ class TestVisitsAdapter:
             result = visits_adapter.fetch("LSSTCam", 20250101, 20250102)
         assert {dayobs: len(rows) for dayobs, rows in result.items()} == {20250101: 1, 20250102: 1}
 
+    def test_quicklook_join_nulls_do_not_clobber_visit_columns(self, visits_adapter):
+        # v.* then q.*: visit_id comes back twice, and a visit with no
+        # quicklook row has q.visit_id (and every other q column) null.
+        columns = ["visit_id", "day_obs", "s_ra", "science_program", "visit_id", "psf_sigma_median"]
+        data = [
+            [1, 20250101, 10.0, "BLOCK-365", 1, 1.5],
+            [2, 20250101, 20.0, "BLOCK-365", None, None],
+        ]
+        response = Mock()
+        response.json.return_value = {"columns": columns, "data": data}
+        response.raise_for_status.return_value = None
+        with patch("requests.Session.post", Mock(return_value=response)):
+            result = visits_adapter.fetch("lsstcam", 20250101, 20250101)
+        assert result == {
+            20250101: [
+                {
+                    "visit_id": 1,
+                    "day_obs": 20250101,
+                    "s_ra": 10.0,
+                    "science_program": "BLOCK-365",
+                    "psf_sigma_median": 1.5,
+                },
+                {
+                    "visit_id": 2,
+                    "day_obs": 20250101,
+                    "s_ra": 20.0,
+                    "science_program": "BLOCK-365",
+                    "psf_sigma_median": None,
+                },
+            ]
+        }
+
     def test_uses_own_cache_namespace(self, visits_adapter, fake_redis):
         with patch("requests.Session.post", consdb_post([])):
             visits_adapter.fetch("lsstcam", 20250101, 20250101)

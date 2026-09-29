@@ -217,7 +217,7 @@ def _compute_nvisits_bundle(map_data) -> maf.MetricBundle:
     return bundle
 
 
-def build_static_visit_map(visits) -> bytes:
+def build_static_visit_map(visits) -> bytes | None:
     """Build the primary static visit map.
 
     Not safe to call concurrently. The render goes through pyplot's
