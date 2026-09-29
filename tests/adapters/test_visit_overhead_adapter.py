@@ -57,7 +57,9 @@ def make_adapter(fake_redis):
     return _make
 
 
-def exposure(day_obs, seq_num, band="r", visit_gap=7200.0, can_see_sky=True):
+def exposure(day_obs, seq_num, band="r", visit_gap=7200.0, can_see_sky=True, obs_start_mjd=None):
+    if obs_start_mjd is None:
+        obs_start_mjd = 60000.0 + seq_num
     return {
         "day_obs": day_obs,
         "seq_num": seq_num,
@@ -65,7 +67,8 @@ def exposure(day_obs, seq_num, band="r", visit_gap=7200.0, can_see_sky=True):
         "s_ra": 10.0,
         "s_dec": -30.0,
         "sky_rotation": 0.0,
-        "obs_start_mjd": 60000.0 + seq_num,
+        "obs_start_mjd": obs_start_mjd,
+        "obs_end_mjd": obs_start_mjd + 30.0 / 86400,
         "band": band,
         "can_see_sky": can_see_sky,
         "visit_gap": visit_gap,
@@ -75,6 +78,15 @@ def exposure(day_obs, seq_num, band="r", visit_gap=7200.0, can_see_sky=True):
 def stub_augment(exposures_df, instrument, skip_rs_columns=True):
     # augment_visits passes the visit columns through unchanged here.
     return exposures_df.copy()
+
+
+def stub_augment_with_gaps(exposures_df, instrument, skip_rs_columns=True):
+    # Mirrors augment_visits: visit_gap is measured from the preceding
+    # row, and the first row of the frame gets 0.
+    out = exposures_df.sort_values("obs_start_mjd").copy()
+    prev_end = out["obs_end_mjd"].shift(1)
+    out["visit_gap"] = ((out["obs_start_mjd"] - prev_end) * 86400).fillna(0.0)
+    return out
 
 
 def stub_slew(slew_values):
@@ -128,6 +140,32 @@ class TestFetch:
         ):
             record = adapter.fetch("lsstcam", 20250101, 20250101)[20250101][0]
         assert record["overhead"] == pytest.approx(50.0)
+
+    def test_first_visit_of_each_night_has_no_overhead(self, make_adapter):
+        # Night two starts ~12h after night one ends; modelled together,
+        # its first visit would pick up that gap as overhead.
+        adapter = make_adapter(
+            {
+                20250101: [
+                    exposure(20250101, 1, obs_start_mjd=60000.0),
+                    exposure(20250101, 2, obs_start_mjd=60000.001),
+                ],
+                20250102: [
+                    exposure(20250102, 1, obs_start_mjd=60000.5),
+                    exposure(20250102, 2, obs_start_mjd=60000.501),
+                ],
+            }
+        )
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0, 10.0])),
+        ):
+            result = adapter.fetch("lsstcam", 20250101, 20250102)
+        for dayobs in (20250101, 20250102):
+            first, second = result[dayobs]
+            assert first["overhead"] == 0.0
+            # 0.001 days between starts less the 30s exposure -> 56.4s gap.
+            assert second["overhead"] == pytest.approx(56.4)
 
     def test_nan_slew_treated_as_zero(self, make_adapter):
         # slew NaN -> 0 + MAX_SCATTER = 120, capped against visit_gap 7200.

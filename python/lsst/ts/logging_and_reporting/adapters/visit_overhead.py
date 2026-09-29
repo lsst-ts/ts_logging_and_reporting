@@ -72,10 +72,15 @@ class VisitOverheadAdapter(RubinNightsClientsMixin, InstrumentDayobsCachedAdapte
         self._exposures_adapter = exposures_adapter
 
     def _fetch_run(self, instrument: str, run_start: int, run_end: int) -> dict[int, list[dict]]:
+        # Each night is modelled on its own: augment_visits derives
+        # visit_gap from the preceding row, so a multi-night frame would
+        # give each night's first visit a gap back to the previous night,
+        # and a day's cached rows would depend on how it was fetched.
         per_day = self._exposures_adapter.fetch(instrument, run_start, run_end)
-        exposures = [record for dayobs in sorted(per_day) for record in per_day[dayobs]]
-        if not exposures:
-            return {}
+        return {dayobs: self._overhead_rows(records) for dayobs, records in per_day.items() if records}
+
+    def _overhead_rows(self, exposures: list[dict]) -> list[dict]:
+        """Augment and slew-model one night's exposures."""
         # Slew/overhead modelling is Simonyi (lsstcam) kinematics.
         visits = rn_aug.augment_visits(pd.DataFrame(exposures), "lsstcam", skip_rs_columns=True)
         visits, _ = rn_sch.add_model_slew_times(
@@ -86,7 +91,7 @@ class VisitOverheadAdapter(RubinNightsClientsMixin, InstrumentDayobsCachedAdapte
         )
         slew = np.where(np.isnan(visits.slew_model.values), 0, visits.slew_model.values) + MAX_SCATTER
         visits["overhead"] = np.min([slew, visits.visit_gap.values], axis=0)
-        return self._partition_by_field(make_json_safe(visits[OVERHEAD_COLUMNS].to_dict(orient="records")))
+        return make_json_safe(visits[OVERHEAD_COLUMNS].to_dict(orient="records"))
 
 
 @functools.cache
