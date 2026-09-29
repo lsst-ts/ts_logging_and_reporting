@@ -105,7 +105,9 @@ class WorkerPoolMixin:
     pool_queue : `int`
         Requests allowed to wait beyond those already running. Past
         that the endpoint sheds load rather than occupying threadpool
-        workers that other endpoints need.
+        workers that other endpoints need. With `pool_workers` this
+        bounds the HTTP requests waiting on the pool, not the jobs in
+        it: see `run_in_worker` for how the two can differ.
     pool_timeout : `float`
         Seconds to wait for one call before giving up on it. Keep this
         below the timeout of whatever fronts the API: above it, the
@@ -143,6 +145,14 @@ class WorkerPoolMixin:
         A worker killed mid-call is replaced by the pool, so only the
         request it was serving is lost: that one waits out `pool_timeout`
         and gets a 504.
+
+        The admission slot is held only while this caller waits. The
+        pool has no way to cancel a submitted job, so when the caller
+        times out its job carries on, running or still queued, while
+        the slot is released for another request. After timeouts the
+        pool can therefore hold more than ``pool_workers + pool_queue``
+        jobs, and a request admitted then waits behind that abandoned
+        work.
 
         Parameters
         ----------
