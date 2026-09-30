@@ -58,9 +58,6 @@ class ExposurelogCachedAdapter(MutableDataMixin, RestClient, DayobsCachedAdapter
                 "max_day_obs": add_or_subtract_dayobs_days(run_end, 1),
             },
         )
-        for message in messages:
-            if message.get("exposure_flag") == "none":
-                message["exposure_flag"] = "unknown"
         return self._partition_by_field(messages)
 
 

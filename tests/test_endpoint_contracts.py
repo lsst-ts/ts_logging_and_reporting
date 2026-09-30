@@ -248,3 +248,68 @@ def test_block_details_forwards_all_keys():
     client.get("/block-details?key=BLOCK-1&key=BLOCK-2")
 
     assert service.calls == [(["BLOCK-1", "BLOCK-2"],)]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/exposures?dayObsEnd=20240102&instrument=LSSTCam",
+        "/exposures?dayObsStart=20240101&instrument=LSSTCam",
+        "/exposures?dayObsStart=20240101&dayObsEnd=20240102",
+        "/exposures?dayObsStart=abc&dayObsEnd=20240102&instrument=LSSTCam",
+        "/block-details",
+    ],
+    ids=["missing-start", "missing-end", "missing-instrument", "non-integer", "missing-key"],
+)
+def test_missing_or_invalid_params_return_422(url):
+    response = client.get(url)
+    assert response.status_code == 422
+
+
+DAYOBS_CASES = [(getter, url) for getter, url, _ in FORWARDING if "dayObsStart" in url]
+DAYOBS_IDS = [id_ for id_ in FORWARDING_IDS if id_ != "block-details"]
+
+
+@pytest.mark.parametrize(("getter", "url"), DAYOBS_CASES, ids=DAYOBS_IDS)
+def test_malformed_dayobs_start_returns_422(getter, url):
+    app.dependency_overrides[getter] = lambda: StubService(SENTINEL)
+
+    bad_url = re.sub(r"dayObsStart=\d+", "dayObsStart=20250230", url)
+    response = client.get(bad_url)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(("getter", "url"), DAYOBS_CASES, ids=DAYOBS_IDS)
+def test_malformed_dayobs_end_returns_422(getter, url):
+    app.dependency_overrides[getter] = lambda: StubService(SENTINEL)
+
+    bad_url = re.sub(r"dayObsEnd=\d+", "dayObsEnd=20250230", url)
+    response = client.get(bad_url)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(("getter", "url"), DAYOBS_CASES, ids=DAYOBS_IDS)
+def test_inverted_dayobs_range_returns_422(getter, url):
+    app.dependency_overrides[getter] = lambda: StubService(SENTINEL)
+
+    # A well-formed but far-future start makes dayObsStart > dayObsEnd
+    # for every case in DAYOBS_CASES without touching the date format.
+    bad_url = re.sub(r"dayObsStart=\d+", "dayObsStart=20991231", url)
+    response = client.get(bad_url)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("status", [404, 422, 502])
+def test_service_httpexception_surfaces_as_status(status):
+    class Raising:
+        def handle_request(self, *args):
+            raise HTTPException(status_code=status, detail="boom")
+
+    app.dependency_overrides[web_services.get_obs_status_service] = lambda: Raising()
+
+    response = client.get("/obs-status?dayObsStart=20250101&dayObsEnd=20250102")
+
+    assert response.status_code == status
