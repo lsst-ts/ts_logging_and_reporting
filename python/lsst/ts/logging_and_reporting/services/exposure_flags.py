@@ -34,8 +34,7 @@ from lsst.ts.logging_and_reporting.utils.dayobs import add_or_subtract_dayobs_da
 
 logger = logging.getLogger(__name__)
 
-# Exposure flags worth surfacing; "unknown" (mapped from upstream
-# "none") is deliberately excluded.
+# Exposure flags worth surfacing; "none" is deliberately excluded.
 FLAG_VALUES = {"questionable", "junk"}
 
 
