@@ -21,6 +21,7 @@
 """Singleton getters for the endpoint services."""
 
 from .block_details import get_block_details_service
+from .expected_exposures import get_expected_exposures_service
 from .exposure_entries import get_exposure_entries_service
 from .exposure_flags import get_exposure_flags_service
 from .jira import get_jira_tickets_service
@@ -34,6 +35,7 @@ WORKER_POOL_SERVICES = ()
 __all__ = [
     "WORKER_POOL_SERVICES",
     "get_block_details_service",
+    "get_expected_exposures_service",
     "get_exposure_entries_service",
     "get_exposure_flags_service",
     "get_jira_tickets_service",

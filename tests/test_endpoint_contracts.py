@@ -73,6 +73,11 @@ def _clear_overrides():
 # (service getter, request URL, args the endpoint should forward to handle).
 FORWARDING = [
     (
+        web_services.get_expected_exposures_service,
+        "/expected-exposures?dayObsStart=20240101&dayObsEnd=20240102",
+        (20240101, 20240102),
+    ),
+    (
         web_services.get_jira_tickets_service,
         "/jira-tickets?dayObsStart=20250730&dayObsEnd=20250731&instrument=LATISS",
         (20250730, 20250731, "LATISS"),
@@ -105,6 +110,7 @@ FORWARDING = [
 ]
 
 FORWARDING_IDS = [
+    "expected-exposures",
     "jira-tickets",
     "narrative-log",
     "exposure-flags",
