@@ -21,6 +21,7 @@
 """Singleton getters for the cached upstream-source adapters."""
 
 from .exposurelog import get_exposurelog_adapter
+from .narrativelog import get_narrativelog_adapter
 from .nightreport import get_nightreport_adapter
 
 # Adapters the refresh worker keeps warm, in the order it refreshes
@@ -29,11 +30,13 @@ from .nightreport import get_nightreport_adapter
 # list to match `__all__`.
 REFRESH_ADAPTERS = (
     get_exposurelog_adapter,
+    get_narrativelog_adapter,
     get_nightreport_adapter,
 )
 
 __all__ = [
     "REFRESH_ADAPTERS",
     "get_exposurelog_adapter",
+    "get_narrativelog_adapter",
     "get_nightreport_adapter",
 ]
