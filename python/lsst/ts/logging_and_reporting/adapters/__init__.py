@@ -21,6 +21,7 @@
 """Singleton getters for the cached upstream-source adapters."""
 
 from .exposurelog import get_exposurelog_adapter
+from .jira_obs import get_jira_obs_adapter
 from .narrativelog import get_narrativelog_adapter
 from .nightreport import get_nightreport_adapter
 
@@ -30,6 +31,7 @@ from .nightreport import get_nightreport_adapter
 # list to match `__all__`.
 REFRESH_ADAPTERS = (
     get_exposurelog_adapter,
+    get_jira_obs_adapter,
     get_narrativelog_adapter,
     get_nightreport_adapter,
 )
@@ -37,6 +39,7 @@ REFRESH_ADAPTERS = (
 __all__ = [
     "REFRESH_ADAPTERS",
     "get_exposurelog_adapter",
+    "get_jira_obs_adapter",
     "get_narrativelog_adapter",
     "get_nightreport_adapter",
 ]
