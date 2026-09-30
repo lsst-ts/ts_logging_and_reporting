@@ -86,6 +86,7 @@ The query templates below show the InfluxQL built by `rubin_nights.InfluxQueryCl
     ```python
     query = 'select message, traceback, salIndex from "lsst.sal.Script.logevent_logMessage"'
     query += f"where time >= '{t_start.isot}Z' and time <= '{t_end.isot}Z' and traceback != ''"
+    traceback_messages: pd.DataFrame = efd_client.query(query)
     ```
 
     Exact raw query string passed to `query` (note the missing space before `where` in the installed helper):
@@ -94,12 +95,6 @@ The query templates below show the InfluxQL built by `rubin_nights.InfluxQueryCl
     select message, traceback, salIndex from "lsst.sal.Script.logevent_logMessage"where time >= '{t_start.isot}Z' and time <= '{t_end.isot}Z' and traceback != ''
     ```
 
-    ```python
-    traceback_messages: pd.DataFrame = efd_client.query(query)
-    ```
-    
-    ```sql
-    looking...
 
 - get_scheduler_configs(efd, obsenv)
 
@@ -194,8 +189,6 @@ The query templates below show the InfluxQL built by `rubin_nights.InfluxQueryCl
     topics = efd_client.get_topics()
     ```
 
-    `get_topics()` uses the same cached measurement list; on a cache miss, it sends:
-
     ```sql
     show measurements
     ```
@@ -203,15 +196,13 @@ The query templates below show the InfluxQL built by `rubin_nights.InfluxQueryCl
     ```python
     query = f'select * from "{topic}"'
     query += f"where time >= '{t_start.isot}Z' and time <= '{t_end.isot}Z' and traceback != ''"
+    traceback_messages: pd.DataFrame = efd_client.query(query)
     ```
 
     ```sql
     select * from "{topic}"where time >= '{t_start.isot}Z' and time <= '{t_end.isot}Z' and traceback != ''
     ```
 
-    ```python
-    traceback_messages: pd.DataFrame = efd_client.query(query)
-    ```
 
 - get_exposure_info(efd, exposurelog)
 
@@ -277,10 +268,6 @@ The query templates below show the InfluxQL built by `rubin_nights.InfluxQueryCl
     SELECT imageName, imageIndex, exposureTime, darkTime, measuredShutterOpenTime, additionalValues, timestampAcquisitionStart, timestampDateEnd, timestampDateObs FROM "lsst.sal.ATCamera.logevent_endOfImageTelemetry" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
     ```
 
-    ```python
-    exp_logs = exposure_log_client.query_log(t_start, t_end)
-    ```
-
 - block_names =
 
     ```python
@@ -292,11 +279,11 @@ The query templates below show the InfluxQL built by `rubin_nights.InfluxQueryCl
     SELECT id, salIndex FROM "lsst.sal.Scheduler.command_addBlock" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
     ```
 
-## rubin nights dome adapter
+## Rubin Nights Dome Adapter
 
 *adapters/rubin_nights_dome.py*
 
-calls rubin_nights/observatory_statpus.py::get_dome_open_close(efd client)
+Calls rubin_nights/observatory_status.py::get_dome_open_close(efd client)
 
 ```python
 open_query = (
@@ -309,6 +296,10 @@ open_query = (
     "and (abs(positionActual1) >= 25 and abs(positionActual1) <= 85)"
 )
 dome_shutter_open: pd.DataFrame = efd_client.query(open_query)
+```
+
+```sql
+SELECT positionActual0, positionActual1, positionCommanded0, positionCommanded1 FROM "lsst.sal.MTDome.apertureShutter" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND (abs(positionCommanded0) = 100 and abs(positionCommanded1) = 100) AND (abs(positionActual0) >= 25 and abs(positionActual0) <= 85) and (abs(positionActual1) >= 25 and abs(positionActual1) <= 85)
 ```
 
 The dome closes a bit faster than it opens, so the close query uses a wider range of `positionActual` values:
@@ -324,6 +315,10 @@ close_query = (
     "and (abs(positionActual1) >= 25 and abs(positionActual1) <= 85)"
 )
 dome_shutter_close: pd.DataFrame = efd_client.query(close_query)
+```
+
+```sql
+SELECT positionActual0, positionActual1, positionCommanded0, positionCommanded1 FROM "lsst.sal.MTDome.apertureShutter" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND (abs(positionCommanded0) = 0 and abs(positionCommanded1) = 0) AND (abs(positionActual0) >= 25 and abs(positionActual0) <= 85) and (abs(positionActual1) >= 25 and abs(positionActual1) <= 85)
 ```
 
 ## Rubin Nights Observatory Status Adapter
