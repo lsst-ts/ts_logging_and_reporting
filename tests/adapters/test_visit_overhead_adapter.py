@@ -75,6 +75,18 @@ def exposure(day_obs, seq_num, band="r", visit_gap=7200.0, can_see_sky=True, obs
     }
 
 
+def consecutive_nights(start_dayobs, end_dayobs):
+    """Two visits per night, each night starting half a day after the last."""
+    per_day = {}
+    for i, dayobs in enumerate(range(start_dayobs, end_dayobs + 1)):
+        start = 60000.0 + 0.5 * i
+        per_day[dayobs] = [
+            exposure(dayobs, 1, obs_start_mjd=start),
+            exposure(dayobs, 2, obs_start_mjd=start + 0.001),
+        ]
+    return per_day
+
+
 def stub_augment(exposures_df, instrument, skip_rs_columns=True):
     # augment_visits passes the visit columns through unchanged here.
     return exposures_df.copy()
@@ -144,21 +156,10 @@ class TestFetch:
     def test_first_visit_of_each_night_has_no_overhead(self, make_adapter):
         # Night two starts ~12h after night one ends; modelled together,
         # its first visit would pick up that gap as overhead.
-        adapter = make_adapter(
-            {
-                20250101: [
-                    exposure(20250101, 1, obs_start_mjd=60000.0),
-                    exposure(20250101, 2, obs_start_mjd=60000.001),
-                ],
-                20250102: [
-                    exposure(20250102, 1, obs_start_mjd=60000.5),
-                    exposure(20250102, 2, obs_start_mjd=60000.501),
-                ],
-            }
-        )
+        adapter = make_adapter(consecutive_nights(20250101, 20250102))
         with (
             patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps),
-            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0, 10.0])),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 4)),
         ):
             result = adapter.fetch("lsstcam", 20250101, 20250102)
         for dayobs in (20250101, 20250102):
@@ -166,6 +167,50 @@ class TestFetch:
             assert first["overhead"] == 0.0
             # 0.001 days between starts less the 30s exposure -> 56.4s gap.
             assert second["overhead"] == pytest.approx(56.4)
+
+    def test_nights_fetched_together_match_nights_fetched_apart(self, make_adapter):
+        adapter = make_adapter(consecutive_nights(20250101, 20250102))
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 4)),
+        ):
+            # _fetch_run directly, so neither result is served from cache.
+            together = adapter._fetch_run("lsstcam", 20250101, 20250102)
+            apart = {
+                **adapter._fetch_run("lsstcam", 20250101, 20250101),
+                **adapter._fetch_run("lsstcam", 20250102, 20250102),
+            }
+        assert together == apart
+
+    def test_empty_night_between_nights_yields_empty_list(self, make_adapter):
+        per_day = consecutive_nights(20250101, 20250103)
+        per_day[20250102] = []
+        adapter = make_adapter(per_day)
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps),
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 4)),
+        ):
+            result = adapter.fetch("lsstcam", 20250101, 20250103)
+        assert result[20250102] == []
+        assert [len(result[d]) for d in (20250101, 20250103)] == [2, 2]
+        assert result[20250103][0]["overhead"] == 0.0
+
+    def test_augments_per_night_and_slew_models_once(self, make_adapter):
+        adapter = make_adapter(consecutive_nights(20250101, 20250103))
+        with (
+            patch(f"{ADAPTER}.rn_aug.augment_visits", side_effect=stub_augment_with_gaps) as augment,
+            patch(f"{ADAPTER}.rn_sch.add_model_slew_times", side_effect=stub_slew([10.0] * 6)) as slew,
+        ):
+            adapter.fetch("lsstcam", 20250101, 20250103)
+        # Each augment call sees one night's visits only.
+        assert [set(c.args[0]["day_obs"]) for c in augment.call_args_list] == [
+            {20250101},
+            {20250102},
+            {20250103},
+        ]
+        # The slew model (and its EFD query) runs once over the whole run.
+        assert slew.call_count == 1
+        assert len(slew.call_args.args[0]) == 6
 
     def test_nan_slew_treated_as_zero(self, make_adapter):
         # slew NaN -> 0 + MAX_SCATTER = 120, capped against visit_gap 7200.
