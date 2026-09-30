@@ -88,6 +88,11 @@ FORWARDING = [
         (20250730, 20250731, "LATISS"),
     ),
     (
+        web_services.get_almanac_service,
+        "/almanac?dayObsStart=20240101&dayObsEnd=20240102",
+        (20240101, 20240102),
+    ),
+    (
         web_services.get_narrative_log_service,
         "/narrative-log?dayObsStart=20250730&dayObsEnd=20250731&instrument=LSSTCam",
         (20250730, 20250731, "LSSTCam"),
@@ -133,6 +138,7 @@ FORWARDING_IDS = [
     "expected-exposures",
     "data-log",
     "jira-tickets",
+    "almanac",
     "narrative-log",
     "exposure-flags",
     "exposure-entries",

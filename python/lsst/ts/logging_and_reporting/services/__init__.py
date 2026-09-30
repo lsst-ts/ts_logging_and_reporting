@@ -20,6 +20,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Singleton getters for the endpoint services."""
 
+from .almanac import get_almanac_service
 from .block_details import get_block_details_service
 from .context_feed import get_context_feed_service
 from .data_log import get_data_log_service
@@ -38,6 +39,7 @@ WORKER_POOL_SERVICES = (get_static_visit_map_service, get_visit_maps_service)
 
 __all__ = [
     "WORKER_POOL_SERVICES",
+    "get_almanac_service",
     "get_block_details_service",
     "get_context_feed_service",
     "get_data_log_service",
