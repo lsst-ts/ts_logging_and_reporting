@@ -1,7 +1,6 @@
-#
 # This file is part of ts_logging_and_reporting.
 #
-# Developed for Vera C. Rubin Observatory Telescope and Site Systems.
+# Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
 # This product includes software developed by the LSST Project
 # (https://www.lsst.org).
 # See the COPYRIGHT file at the top-level directory of this distribution
@@ -14,11 +13,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 from collections.abc import Callable
@@ -569,7 +568,7 @@ def get_obs_status_events(
         # to preserve it in subsequent list transformation
         time_as_col = obs_status_messages.reset_index(names="time")
         # Create a column of Unix ms timestamps for plotting library
-        time_as_col["time_ms"] = time_as_col["time"].astype("int64") // 1_000_000
+        time_as_col["time_ms"] = time_as_col["time"].dt.as_unit("ms").astype("int64")
         records = time_as_col.to_dict(orient="records")
 
         return records
