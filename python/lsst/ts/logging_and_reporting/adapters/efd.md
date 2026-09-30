@@ -1,5 +1,14 @@
 # EFD adapter bits
 
+## Goals
+
+- we don’t need get_clients() to create and call a client to every data source
+- we want to select/query only the data we are requesting
+- we do need to explicitly say why we are using one efd client over another (at least acknowledge it for future TS members)
+- we need to have control over the location of the efd that we are querying against
+preference is to not use rubin_nights, but their influx client looks exactly like efd client so I don’t have a strong urge there – but we should probably be able to control what location we are querying.
+
+
 what do we want instead of a rubin nights adapter for observatory status?
 
 why are we handling add or subtract dayobs in both services/obs_status.py::ObsStatusService.handle() AND in adapters/rubin_nights_obs_status.py::RubinNightsObsStatusAdapter._fetch_run()
@@ -80,9 +89,16 @@ then in rubin_nights_obs_status.py RubinNightsObsStatusAdapter create a new adap
 - only possible change is the add or subtract or not dayobs end stuff to clean it up, the rest of the logic is not based on rubin_nights
 changes in obs_status.py ObsStatusService are minimal, just change the name of the RubinNightsObsStatusAdapter
 
+the tests probably won't need to change much
+
+We need to be able to request or check what efd we are accessing from rubin_nights 
+
 ## secondary pass through
 
 where else do we use RubinNightsClientsMixin?
+- RubinNightsDomeAdapter uses RubinNightsClientsMixin specifically for just the efd client
+- separately imports in get_dome_open_close()
+  - it is not useful to replace this at this time.
 Can we substitute the efd client for our efd client?
 Are we using any other rubin nights clients?
 revisit services/obs_status.py get_obs_status_intervals
