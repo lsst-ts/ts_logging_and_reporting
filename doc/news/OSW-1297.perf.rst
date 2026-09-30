@@ -1,0 +1,3 @@
+Cache upstream data in Redis behind a per-source adapter layer, so repeat requests no longer re-query their upstream sources.
+This decreases response time under load by between 40% and 90%, depending on endpoint. It also reduces upstream calls by a similar amount.
+A separate background worker ensures that the current night's data is always kept warm.
