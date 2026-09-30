@@ -443,3 +443,32 @@ https://github.com/lsst-ts/ts_logging_and_reporting/compare/develop...sebastian/
 Every five minutes (configurable) we generate files to store in GCP buckets where our public front end will access data from.
 Public front end will not directly call any backend functionality.
 Calls our backend url endpoints rather than our CachedAdapters or any internal logic.
+
+## Just the influxql calls
+
+The timeframe for all of these will just be a single dayobs as the refresh worker and producer will call every five minutes for the current day.
+
+```sql
+SELECT salIndex, summaryState FROM "lsst.sal.ScriptQueue.logevent_summaryState" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT salIndex, summaryState FROM "lsst.sal.ScriptQueue.logevent_summaryState" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND salIndex = {queue}
+SELECT classname, description, salIndex FROM "lsst.sal.Script.logevent_description" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT blockId, config,  executionId, salIndex FROM "lsst.sal.Script.command_configure" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT blockId, path, processState, scriptState, salIndex, scriptSalIndex, timestampProcessStart, timestampConfigureStart, timestampConfigureEnd, timestampRunStart, timestampProcessEnd FROM "lsst.sal.ScriptQueue.logevent_script" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND salIndex = {queue_index}
+SELECT SchedulerId, configurations, salIndex, schemaVersion, url, version FROM "lsst.sal.Scheduler.logevent_configurationApplied" WHERE time <= '{t_start.utc.isot}Z' AND salIndex = {queue} GROUP BY * ORDER BY DESC LIMIT 1
+SELECT SchedulerId, configurations, salIndex, schemaVersion, url, version FROM "lsst.sal.Scheduler.logevent_configurationApplied" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND salIndex = {queue}
+SELECT cloudModel, downtimeModel, seeingModel, skybrightnessModel, observatoryLocation, observatoryModel, scheduler, salIndex, version FROM "lsst.sal.Scheduler.logevent_dependenciesVersions" WHERE time <= '{Time(conf.index[0]).utc.isot}Z' AND salIndex = {queue} GROUP BY * ORDER BY DESC LIMIT 1
+SELECT cloudModel, downtimeModel, seeingModel, skybrightnessModel, observatoryLocation, observatoryModel, scheduler, salIndex, version FROM "lsst.sal.Scheduler.logevent_dependenciesVersions" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND salIndex = {queue}
+SELECT status, note, statusLabels FROM "lsst.sal.Scheduler.logevent_observatoryStatus" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT errorCode, errorReport FROM "{topic}" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT imageName, imageIndex, exposureTime, darkTime, measuredShutterOpenTime, additionalValues, timestampAcquisitionStart, timestampDateEnd, timestampDateObs FROM "lsst.sal.MTCamera.logevent_endOfImageTelemetry" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT imageName, imageIndex, exposureTime, darkTime, measuredShutterOpenTime, additionalValues, timestampAcquisitionStart, timestampDateEnd, timestampDateObs FROM "lsst.sal.CCCamera.logevent_endOfImageTelemetry" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT imageName, imageIndex, exposureTime, darkTime, measuredShutterOpenTime, additionalValues, timestampAcquisitionStart, timestampDateEnd, timestampDateObs FROM "lsst.sal.ATCamera.logevent_endOfImageTelemetry" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT id, salIndex FROM "lsst.sal.Scheduler.command_addBlock" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT positionActual0, positionActual1, positionCommanded0, positionCommanded1 FROM "lsst.sal.MTDome.apertureShutter" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND (abs(positionCommanded0) = 100 and abs(positionCommanded1) = 100) AND (abs(positionActual0) >= 25 and abs(positionActual0) <= 85) and (abs(positionActual1) >= 25 and abs(positionActual1) <= 85)
+SELECT positionActual0, positionActual1, positionCommanded0, positionCommanded1 FROM "lsst.sal.MTDome.apertureShutter" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z' AND (abs(positionCommanded0) = 0 and abs(positionCommanded1) = 0) AND (abs(positionActual0) >= 25 and abs(positionActual0) <= 85) and (abs(positionActual1) >= 25 and abs(positionActual1) <= 85)
+SELECT status, note, statusLabels FROM "lsst.sal.Scheduler.logevent_observatoryStatus" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT minL1Limit, maxL1Limit, maxMoveVelocity, maxMoveAcceleration, maxMoveJerk FROM "lsst.sal.MTMount.logevent_elevationControllerSettings" WHERE time <= '{t_start.utc.isot}Z' GROUP BY * ORDER BY DESC LIMIT 1
+SELECT minL1Limit, maxL1Limit, maxMoveVelocity, maxMoveAcceleration, maxMoveJerk FROM "lsst.sal.MTMount.logevent_elevationControllerSettings" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+SELECT minL1Limit, maxL1Limit, maxMoveVelocity, maxMoveAcceleration, maxMoveJerk FROM "lsst.sal.MTMount.logevent_azimuthControllerSettings" WHERE time <= '{t_start.utc.isot}Z' GROUP BY * ORDER BY DESC LIMIT 1
+SELECT minL1Limit, maxL1Limit, maxMoveVelocity, maxMoveAcceleration, maxMoveJerk FROM "lsst.sal.MTMount.logevent_azimuthControllerSettings" WHERE time >= '{t_start.utc.isot}Z' AND time <= '{t_end.utc.isot}Z'
+```
