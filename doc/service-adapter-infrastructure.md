@@ -163,6 +163,13 @@ specific in practice—naming the service's own module so its
 dependencies are imported once at startup and shared, rather than 
 per worker or per request.
 
+`pool_workers + pool_queue` bounds the HTTP requests waiting on a
+pool, not the jobs inside it; past it, requests are shed with a 503.
+A request that times out gets a 504 and gives its slot back, but its
+job is not cancelled and runs on (or stays queued) with nobody waiting
+for it. So after timeouts the pool can hold more jobs than that bound,
+and newly admitted requests queue behind the abandoned ones.
+
 All the pools share one forkserver, which reads its preload list only
 when it starts, so `preload_worker_modules` registers every service's
 list together before any pool is built. Setting it per pool would apply

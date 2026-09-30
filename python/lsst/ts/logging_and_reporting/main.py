@@ -343,6 +343,35 @@ def read_context_feed(
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
+@app.get("/multi-night-visit-maps")
+def read_multi_night_visit_maps(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    appletMode: bool = False,
+    service=Depends(services.get_visit_maps_service),
+):
+    """Generate multi-night visit maps using Bokeh.
+
+    Parameters
+    ----------
+    dayObsStart : `int`
+        Start date in YYYYMMDD format.
+    dayObsEnd : `int`
+        End date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+    appletMode : `bool`, optional
+        If True, generate maps suitable for applet display. Default is False.
+
+    Returns
+    -------
+    `dict`
+        A dictionary containing the Bokeh JSON item for the interactive map.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument, appletMode)
+
+
 @app.get("/block-details")
 def read_block_details(
     keys: list[str] = Query(..., alias="key"),
@@ -379,3 +408,30 @@ def read_block_details(
         hostname is not configured.
     """
     return service.handle_request(keys)
+
+
+@app.get("/static-visit-map")
+def read_static_visit_map(
+    dayObsStart: int,
+    dayObsEnd: int,
+    instrument: str,
+    service=Depends(services.get_static_visit_map_service),
+):
+    """Generate a static visit map for a date range and instrument.
+
+    Parameters
+    ----------
+    dayObsStart : `int`
+        Start date in YYYYMMDD format.
+    dayObsEnd : `int`
+        End date in YYYYMMDD format.
+    instrument : `str`
+        Instrument name, such as ``lsstCam`` or ``latiss``.
+
+    Returns
+    -------
+    result : `dict`
+        Dictionary containing the base64-encoded PNG image for the static
+        visit map.
+    """
+    return service.handle_request(dayObsStart, dayObsEnd, instrument)
