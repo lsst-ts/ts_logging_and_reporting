@@ -22,6 +22,7 @@
 
 from .block_details import get_block_details_service
 from .context_feed import get_context_feed_service
+from .data_log import get_data_log_service
 from .expected_exposures import get_expected_exposures_service
 from .exposure_entries import get_exposure_entries_service
 from .exposure_flags import get_exposure_flags_service
@@ -39,6 +40,7 @@ __all__ = [
     "WORKER_POOL_SERVICES",
     "get_block_details_service",
     "get_context_feed_service",
+    "get_data_log_service",
     "get_expected_exposures_service",
     "get_exposure_entries_service",
     "get_exposure_flags_service",

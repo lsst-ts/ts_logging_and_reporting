@@ -78,6 +78,11 @@ FORWARDING = [
         (20240101, 20240102),
     ),
     (
+        web_services.get_data_log_service,
+        "/data-log?dayObsStart=20240101&dayObsEnd=20240102&instrument=LSSTCam",
+        (20240101, 20240102, "LSSTCam"),
+    ),
+    (
         web_services.get_jira_tickets_service,
         "/jira-tickets?dayObsStart=20250730&dayObsEnd=20250731&instrument=LATISS",
         (20250730, 20250731, "LATISS"),
@@ -126,6 +131,7 @@ FORWARDING = [
 
 FORWARDING_IDS = [
     "expected-exposures",
+    "data-log",
     "jira-tickets",
     "narrative-log",
     "exposure-flags",
