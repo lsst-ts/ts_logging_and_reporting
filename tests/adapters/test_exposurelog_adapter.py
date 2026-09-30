@@ -91,11 +91,11 @@ class TestFetchFromSource:
         assert params["order_by"] == "-date_added"
         assert "instrument" not in params
 
-    def test_none_flag_mapped_to_unknown(self, adapter):
+    def test_none_flag_passed_through(self, adapter):
         payload = [make_message(20250101, flag="none")]
         with patch("requests.Session.get", return_value=mock_response(payload)):
             result = adapter._fetch_from_source([20250101])
-        assert result[20250101][0]["exposure_flag"] == "unknown"
+        assert result[20250101][0]["exposure_flag"] == "none"
 
     def test_http_error_propagates(self, adapter):
         response = mock_response([])
