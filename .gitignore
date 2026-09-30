@@ -169,4 +169,5 @@ cython_debug/
 .mypy.ini
 .ruff.toml
 towncrier.toml
+.LICENSE.txt
 python/lsst/ts/logging_and_reporting/data/*

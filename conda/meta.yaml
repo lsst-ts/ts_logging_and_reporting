@@ -55,5 +55,6 @@ requirements:
         - scikit-learn
         - psycopg2 =2.9
         - astropy-iers-data
+        - lsst-resources
         - redis-py
         - setproctitle

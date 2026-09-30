@@ -1,1 +1,0 @@
-Added ``CacheControlMiddleware`` to set ``Cache-Control`` response headers, enabling caching at the browser and nginx proxy layers.

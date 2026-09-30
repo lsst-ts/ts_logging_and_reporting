@@ -1,3 +1,28 @@
+v0.15.2 (2026-08-13)
+====================
+
+Bug Fixes
+---------
+
+- Fix timestamp unit issue in get_obs_status_events due to bump in pandas to v3. (`OSW-2755 <https://rubinobs.atlassian.net//browse/OSW-2755>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Implement automatic CI pipeline for image building in merges to develop. (`OSW-2773 <https://rubinobs.atlassian.net//browse/OSW-2773>`_)
+- Properly pass py_version to Jenkins job to build develop image. (`OSW-2789 <https://rubinobs.atlassian.net//browse/OSW-2789>`_)
+
+
+v0.15.1 (2026-07-30)
+====================
+
+Performance Enhancement
+-----------------------
+
+- Added ``CacheControlMiddleware`` to set ``Cache-Control`` response headers, enabling caching at the browser and nginx proxy layers. (`OSW-2415 <https://rubinobs.atlassian.net//browse/OSW-2415>`_)
+
+
 v0.15.0 (2026-07-23)
 ====================
 
