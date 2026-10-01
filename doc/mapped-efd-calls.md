@@ -433,6 +433,7 @@ https://github.com/lsst-ts/ts_logging_and_reporting/blob/0cf1ac44f55e93502a63d71
 Every five minutes (configurable) we refresh the current dayobs set of data for every CachedAdapter (also listed above in /adapters/)
 Each adapter's `refresh(dayobs)` is called, and this is what eventually calls `fetch_one_run()`
 
+These queries aren't in addition to normal user load, but essentially replacing them. A user visiting the context feed page for the current dayobs (or any dayobs which is cached, which will at a minimum be from now back until the deployment was updated) doesn't make a single query to EFD. We trade off a bit of steady-state load for response time and spike prevention.
 The RefreshWorker will be rolled out with our new backend refactor at all of our internal deployment locations, once the refactor is merged.
 
 ### Producer - static file generator
@@ -440,9 +441,12 @@ The RefreshWorker will be rolled out with our new backend refactor at all of our
 https://github.com/lsst-ts/ts_logging_and_reporting/compare/develop...sebastian/experimental/static-file-generator#diff-7c23445bf2965e14b9a998b69dfaa11ff2cec5f1e925c1ba2263620d3d01ec08
 (update link once merged)
 
-Every five minutes (configurable) we generate files to store in GCP buckets where our public front end will access data from.
+Every five minutes (configurable) we generate or update files to store in GCP buckets where our public front end will access data from.
 Public front end will not directly call any backend functionality.
 Calls our backend url endpoints rather than our CachedAdapters or any internal logic.
+
+The SND producer doesn't cause any meaningful upstream queries at all, since all the data it is fetching is cached (after the first time it runs per deployment).
+Even if it runs every 5 minutes, the RefreshWorker will have initiated caching of the data before or at the same time as the SND needs to create the files.
 
 ## Just the influxql calls
 
