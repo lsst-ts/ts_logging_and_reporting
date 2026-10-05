@@ -8,3 +8,4 @@ check-yaml: true
 check-xml: true
 ruff: true
 towncrier: true
+insert-license: true

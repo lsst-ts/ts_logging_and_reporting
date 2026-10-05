@@ -170,3 +170,4 @@ cython_debug/
 .ruff.toml
 towncrier.toml
 python/lsst/ts/logging_and_reporting/web_app/data/*
+.LICENSE.txt
