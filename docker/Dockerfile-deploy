@@ -22,6 +22,7 @@ COPY . .
 
 USER root
 RUN chown -R saluser:saluser /home/saluser/develop /tmp/conda-bld
+
 USER saluser
 
 RUN source /home/saluser/.setup_sal_env.sh && \
@@ -35,7 +36,9 @@ RUN source /home/saluser/.setup_sal_env.sh && \
     conda update -y -c conda-forge astropy astropy-iers-data
 
 COPY docker/startup-deploy.sh /home/saluser/.startup.sh
+COPY docker/refresh_worker_deploy.sh /home/saluser/.refresh-worker.sh
 USER root
 RUN chown saluser:saluser /home/saluser/.startup.sh && \
-    chmod a+x /home/saluser/.startup.sh
+    chmod a+x /home/saluser/.startup.sh && \
+    chmod a+x /home/saluser/.refresh-worker.sh
 USER saluser

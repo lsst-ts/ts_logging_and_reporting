@@ -60,7 +60,7 @@ class TestExposureFlagsService:
             20250101: [
                 make_message(20250101, obs_id="junk-obs", flag="junk"),
                 make_message(20250101, obs_id="questionable-obs", flag="questionable"),
-                make_message(20250101, obs_id="unknown-obs", flag="unknown"),
+                make_message(20250101, obs_id="none-obs", flag="none"),
                 make_message(20250101, obs_id="no-flag-obs", flag=None),
                 make_message(20250101, obs_id="other-cam", flag="junk", instrument="LATISS"),
             ]
