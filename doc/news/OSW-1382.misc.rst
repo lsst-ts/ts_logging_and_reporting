@@ -1,1 +1,0 @@
-Add lsst-resources to conda recipe.
