@@ -1,0 +1,1 @@
+Add updated license file to all files' headers via pre-commit.

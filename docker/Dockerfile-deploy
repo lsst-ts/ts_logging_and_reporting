@@ -34,11 +34,6 @@ RUN source /home/saluser/.setup_sal_env.sh && \
 RUN source /home/saluser/.setup_sal_env.sh && \
     conda update -y -c conda-forge astropy astropy-iers-data
 
-# Workaround until lsst-resources get conda packaged
-# See: OSW-1382.
-RUN source /home/saluser/.setup_sal_env.sh && \
-    pip install lsst-resources
-
 COPY docker/startup-deploy.sh /home/saluser/.startup.sh
 USER root
 RUN chown saluser:saluser /home/saluser/.startup.sh && \
