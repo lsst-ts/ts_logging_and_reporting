@@ -42,7 +42,7 @@ from lsst.ts.logging_and_reporting.utils.logging_config import (
 class Worker(WorkerPoolMixin):
     pool_workers = 2
     pool_queue = 1
-    pool_timeout = 10.0
+    pool_timeout = 30.0
 
 
 def occupy(worker, seconds):
