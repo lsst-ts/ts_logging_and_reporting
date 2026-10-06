@@ -22,7 +22,6 @@
 
 from .almanac import get_almanac_adapter
 from .consdb_exposures import get_consdb_exposures_adapter
-from .consdb_visits import get_consdb_visits_adapter
 from .expected_exposures import get_expected_exposures_adapter
 from .exposurelog import get_exposurelog_adapter
 from .jira_block import get_jira_block_adapter
@@ -42,7 +41,6 @@ from .zephyr import get_zephyr_adapter
 REFRESH_ADAPTERS = (
     get_consdb_exposures_adapter,
     get_visit_overhead_adapter,
-    get_consdb_visits_adapter,
     get_expected_exposures_adapter,
     get_exposurelog_adapter,
     get_jira_obs_adapter,
@@ -57,7 +55,6 @@ __all__ = [
     "REFRESH_ADAPTERS",
     "get_almanac_adapter",
     "get_consdb_exposures_adapter",
-    "get_consdb_visits_adapter",
     "get_expected_exposures_adapter",
     "get_exposurelog_adapter",
     "get_jira_block_adapter",
