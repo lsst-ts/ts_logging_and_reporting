@@ -1055,24 +1055,3 @@ is external, override `server` and add an entry to `AUTH_SOURCES` (an
 `env_var` naming its variable and a `label` for the error log), then
 point `auth_source` at it. Override `_request_headers` only if the
 upstream wants something other than a bearer token.
-
----
-
-## Appendix: environment variables
-
-| Variable | Default | Read by | Purpose |
-|---|---|---|---|
-| `EXTERNAL_INSTANCE_URL` | *(none—required)* | `utils/auth.py` | Identifies the deployment and supplies the default upstream base URL. Must exactly match a known deployment URL ([§15](#15-upstream-authentication-and-server-resolution)); otherwise every adapter fetch fails. |
-| `ACCESS_TOKEN` | *(none—required)* | `utils/auth.py` | RSP service-account token for deployment-local APIs and the `rubin_nights` clients. Unset means every fetch that needs it fails with a 500. |
-| `JIRA_API_TOKEN` | *(none)* | `utils/auth.py` | Jira credential, sent as Basic auth. |
-| `JIRA_API_HOSTNAME` | *(none)* | `utils/auth.py` | Jira host; also used to build the BLOCK links in `/block-details` responses. |
-| `ZEPHYR_API_TOKEN` | *(none)* | `utils/auth.py` | Zephyr Scale credential. |
-| `REDIS_HOST` | `localhost` | `redis_client.py` | Redis hostname (`redis` in the dev compose stack). |
-| `REDIS_PORT` | `6379` | `redis_client.py` | Redis port. |
-| `REDIS_DB` | `0` | `redis_client.py` | Redis logical database number. |
-| `ND_CACHING_DISABLE_NGINX` | unset | `frontend: docker/nginx.conf.template` | Any value other than empty or 0 disables the nginx cache |
-| `ND_CACHING_DISABLE_REDIS` | unset | `redis_client.py` | Any value other than empty or `0` disables redis caching entirely and makes the refresh worker exit at startup. |
-| `LOG_LEVEL` | `INFO` | `utils/logging_config.py` | Log level for the entire app. |
-
-The API service needs all of these to be set correctly; the refresh worker
-needs the same set, since it drives the same adapters.

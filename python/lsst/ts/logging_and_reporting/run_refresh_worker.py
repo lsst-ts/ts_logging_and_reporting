@@ -37,6 +37,7 @@ from lsst.ts.logging_and_reporting.redis_client import (
 )
 
 from .refresh_worker import RefreshWorker
+from .utils.env_check import check_environment
 from .utils.logging_config import configure_logging
 
 configure_logging()
@@ -45,6 +46,8 @@ logger = logging.getLogger(__name__)
 
 def run_refresh_worker() -> None:
     """Run the refresh worker until SIGTERM or SIGINT."""
+
+    check_environment()
 
     if redis_caching_disabled():
         # Nothing to warm: every entry the worker wrote would be

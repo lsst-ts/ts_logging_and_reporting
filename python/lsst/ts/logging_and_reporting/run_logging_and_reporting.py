@@ -21,11 +21,15 @@
 
 import uvicorn
 
-from lsst.ts.logging_and_reporting.utils.logging_config import log_level
+from lsst.ts.logging_and_reporting.utils.env_check import check_environment
+from lsst.ts.logging_and_reporting.utils.logging_config import configure_logging, log_level
 
 
 def run_logging_and_reporting() -> None:
     """Run the night report REST API web server."""
+
+    configure_logging()
+    check_environment()
 
     uvicorn.run(
         "lsst.ts.logging_and_reporting.main:app",
