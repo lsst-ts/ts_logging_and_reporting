@@ -91,6 +91,9 @@ def harness(monkeypatch):
     monkeypatch.setattr(entrypoint, "adapters", stub_adapters)
     monkeypatch.setattr(entrypoint, "RefreshWorker", make_worker)
     monkeypatch.setattr(entrypoint, "redis_caching_disabled", lambda: False)
+    # The environment check has its own concerns; these tests cover
+    # only what the entrypoint does once it passes.
+    monkeypatch.setattr(entrypoint, "check_environment", lambda: None)
 
     def record_handler(signum, handler):
         harness.handlers[signum] = handler
