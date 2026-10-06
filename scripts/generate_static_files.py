@@ -870,28 +870,22 @@ def main():
         if run_version:
             # --- Pass 1: Group D — version (no dayobs) ---
             version_filename = "version"
-            version_file_path = os.path.join(args.output_dir, version_filename)
 
-            version_tasks = []
-            if args.force_refresh or not os.path.exists(version_file_path):
-                version_tasks = [{"filename": version_filename, "endpoint": "version", "params": {}}]
-
-            version_skipped = 1 if (not version_tasks and os.path.exists(version_file_path)) else 0
+            # Always recreate the version task regardless of existing file
+            version_tasks = [{"filename": version_filename, "endpoint": "version", "params": {}}]
             progress.total += len(version_tasks)
-            progress.skipped += version_skipped
 
-            if version_tasks:
-                logger.info("\nVersion fetch")
-                _run_tasks(
-                    version_tasks,
-                    args.backend_url,
-                    args.output_dir,
-                    args.request_timeout,
-                    args.rate_limit,
-                    args.dry_run,
-                    progress,
-                    args.workers,
-                )
+            logger.info("\nVersion fetch")
+            _run_tasks(
+                version_tasks,
+                args.backend_url,
+                args.output_dir,
+                args.request_timeout,
+                args.rate_limit,
+                args.dry_run,
+                progress,
+                args.workers,
+            )
 
         if run_dayobs:
             # --- Pass 2: Groups A, B, C — dayobs endpoints ---
