@@ -59,7 +59,7 @@ pipeline {
       }
       steps {
         script {
-          image_tag = "develop"
+          image_tag = "alpha"
           dockerImageName = dockerImageName + image_tag
           echo "dockerImageName: ${dockerImageName}"
           dockerImage = docker.build(dockerImageName, "--build-arg py_version=${pythonVersion} -f docker/Dockerfile-deploy .")
