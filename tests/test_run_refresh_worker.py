@@ -146,9 +146,10 @@ class TestWorkerSetup:
         assert harness.worker.adapters == [f"<{name}>" for name in StubAdapters.NAMES]
 
 
-class TestCachingDisabled:
-    def test_no_worker_and_no_handlers(self, harness, monkeypatch):
-        monkeypatch.setattr(entrypoint, "redis_caching_disabled", lambda: True)
+class TestDisabled:
+    @pytest.mark.parametrize("check", ["redis_caching_disabled", "refresh_worker_disabled"])
+    def test_no_worker_and_no_handlers(self, harness, monkeypatch, check):
+        monkeypatch.setattr(entrypoint, check, lambda: True)
         entrypoint.run_refresh_worker()
         assert harness.workers == []
         assert harness.handlers == {}
