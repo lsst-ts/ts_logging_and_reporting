@@ -18,23 +18,3 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-import uvicorn
-
-from lsst.ts.logging_and_reporting.utils.logging_config import log_level
-
-
-def run_logging_and_reporting() -> None:
-    """Run the night report REST API web server."""
-
-    uvicorn.run(
-        "lsst.ts.logging_and_reporting.main:app",
-        host="0.0.0.0",
-        port=8080,
-        log_level=log_level().lower(),
-        reload=True,
-    )
-
-
-if __name__ == "__main__":
-    run_logging_and_reporting()
