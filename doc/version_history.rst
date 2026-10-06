@@ -1,3 +1,22 @@
+v0.15.3 (2026-10-05)
+====================
+
+Documentation
+-------------
+
+- Add Nightly Digest release and deployment process document. (`OSW-2724 <https://rubinobs.atlassian.net//browse/OSW-2724>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Add lsst-resources to conda recipe. (`OSW-1382 <https://rubinobs.atlassian.net//browse/OSW-1382>`_)
+- Add alpha-release branch target for automatic develop image builds. (`OSW-2801 <https://rubinobs.atlassian.net//browse/OSW-2801>`_)
+- Add updated license file to all files' headers via pre-commit. (`OSW-2869 <https://rubinobs.atlassian.net//browse/OSW-2869>`_)
+- Removed the line that changed "none" to "unknwon", leaving it as "none" for the exposure flags. (`SSW-2876 <https://rubinobs.atlassian.net//browse/SSW-2876>`_)
+- Add `local_scheme="no-local-version"` to setup.py to strip git hash from version string so Nexus can accept a development version. (`SSW-3025 <https://rubinobs.atlassian.net//browse/SSW-3025>`_)
+
+
 v0.15.2 (2026-08-13)
 ====================
 
