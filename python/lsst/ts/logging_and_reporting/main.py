@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from . import __version__, services
@@ -73,7 +74,7 @@ origins = [
 ]
 
 # add_middleware prepends, so the last added is the outermost:
-# RequestLogging -> CacheControl -> CORS -> DayobsValidation -> route.
+# RequestLogging -> GZip -> CacheControl -> CORS -> DayobsValidation -> route.
 # CORS has to stay outside DayobsValidation, or its 422 reaches the
 # browser without CORS headers and surfaces as a CORS failure instead of
 # the validation message. CacheControl is outside CORS so it has the last
@@ -88,6 +89,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(CacheControlMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 app.add_middleware(RequestLoggingMiddleware)
 
 
