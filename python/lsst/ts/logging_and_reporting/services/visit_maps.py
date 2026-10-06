@@ -36,9 +36,9 @@ from schedview.compute.visits import add_coords_tuple
 from schedview.plot.visit_skymaps import VisitMapBuilder
 from uranography.api import ArmillarySphere, Planisphere
 
-from lsst.ts.logging_and_reporting.adapters.consdb_visits import (
-    ConsdbVisitsAdapter,
-    get_consdb_visits_adapter,
+from lsst.ts.logging_and_reporting.adapters.consdb_exposures import (
+    ConsdbExposuresAdapter,
+    get_consdb_exposures_adapter,
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
@@ -293,15 +293,15 @@ def build_visit_maps_payload(visits: pd.DataFrame, instrument: str, applet_mode:
 class VisitMapsService(WorkerPoolMixin, Service):
     """Serves /multi-night-visit-maps: the interactive Bokeh visit map.
 
-    The raw visit frame comes from `ConsdbVisitsAdapter`; augmentation
+    The raw visit frame comes from `ConsdbExposuresAdapter`; augmentation
     and the map build both run in a worker process (`WorkerPoolMixin`),
     not the API process.
     """
 
     pool_preload = ("lsst.ts.logging_and_reporting.services.visit_maps",)
 
-    def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
-        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
+    def __init__(self, consdb_adapter: ConsdbExposuresAdapter | None = None) -> None:
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_exposures_adapter()
 
     def handle(
         self,
