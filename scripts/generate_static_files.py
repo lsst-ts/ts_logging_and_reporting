@@ -163,13 +163,13 @@ def build_filename(endpoint: str, params: dict) -> str:
         exposures?dayObsStart=20260625&dayObsEnd=20260625&instrument=LSSTCam
     """
     if not params:
-        return endpoint
+        return endpoint + ".json"
     urlPaths = [endpoint]
     if "instrument" in params:
         urlPaths.append(params["instrument"])
     if "dayObsStart" in params and "dayObsEnd" in params:
         urlPaths.append(f"{params['dayObsStart']}_{params['dayObsEnd']}")
-    return "/".join(urlPaths)
+    return "/".join(urlPaths) + ".json"
 
 
 def build_url(backend_url: str, endpoint: str, params: dict) -> str:
@@ -869,7 +869,7 @@ def main():
 
         if run_version:
             # --- Pass 1: Group D — version (no dayobs) ---
-            version_filename = "version"
+            version_filename = build_filename("version", {})
 
             # Always recreate the version task regardless of existing file
             version_tasks = [{"filename": version_filename, "endpoint": "version", "params": {}}]
