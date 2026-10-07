@@ -1,0 +1,1 @@
+Bump schedview to v0.24.
