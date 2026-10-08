@@ -7,14 +7,15 @@ logs at what level.
 
 ---
 
-## 1. One configuration, three kinds of process
+## 1. One configuration, four kinds of process
 
 Everything here lives in `utils/logging_config.py`. It is a module
-rather than a couple of lines in each entrypoint because three
+rather than a couple of lines in each entrypoint because four
 different kinds of process need identical configuration:
 
 | Process | Configured by |
 |---|---|
+| The uvicorn launcher | `run_logging_and_reporting()` |
 | The API | `main.py`, at import |
 | The refresh worker | `run_refresh_worker.py`, at import |
 | Each WorkerPoolMixin worker | `WorkerPoolMixin`'s pool initialiser |

@@ -1,0 +1,1 @@
+Fail at startup if required environment variables are unset, with a new ``ND_DEBUG`` development mode that downgrades the production-only ones to a warning.
