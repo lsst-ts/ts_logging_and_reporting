@@ -1,15 +1,9 @@
 ARG dev_cycle=develop
-FROM lsstts/develop-env:${dev_cycle}
+FROM rubincr.lsst.org/develop-env-sqre:${dev_cycle}
 
 WORKDIR /home/saluser/develop
-COPY . .
+COPY --chown=saluser:saluser . .
 
-USER root
-RUN chown -R saluser:saluser /home/saluser/develop
-USER saluser
-
-RUN source /home/saluser/.setup_dev.sh && \
-	# install this package
-	pip install -e .
+RUN source ~/.bashrc && pip install -e .
 
 CMD ["docker/startup.sh"]
