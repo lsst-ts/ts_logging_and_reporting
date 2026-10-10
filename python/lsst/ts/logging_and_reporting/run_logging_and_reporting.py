@@ -21,7 +21,7 @@
 
 import uvicorn
 
-from lsst.ts.logging_and_reporting.utils.env_check import check_environment
+from lsst.ts.logging_and_reporting.utils.env_check import check_environment, debug_mode
 from lsst.ts.logging_and_reporting.utils.logging_config import configure_logging, log_level
 
 
@@ -36,7 +36,7 @@ def run_logging_and_reporting() -> None:
         host="0.0.0.0",
         port=8080,
         log_level=log_level().lower(),
-        reload=True,
+        reload=debug_mode(),
     )
 
 
