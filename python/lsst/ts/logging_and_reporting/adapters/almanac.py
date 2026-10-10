@@ -24,6 +24,7 @@ import datetime as dt
 import functools
 import logging
 import warnings
+from collections.abc import Callable
 from typing import Any
 
 import astropy.coordinates
@@ -38,8 +39,32 @@ from lsst.ts.logging_and_reporting.utils.dayobs import dayobs_range
 logger = logging.getLogger(__name__)
 
 
-def _iso(time: Time) -> str:
+def _iso(time: Time) -> str | None:
+    """Format as an ISO string, or None if astroplan found no event."""
+    if time.masked:
+        return None
     return Time(time, precision=0).iso
+
+
+def _nearest_event(event_fn: Callable[..., Time], time: Time) -> Time:
+    """astroplan's ``Observer._determine_which_event`` in ``which="nearest"``
+    mode returns a masked astropy.Time when either the previous or next search
+    window is empty, even if the other one found an event. Moon rise times
+    drift by up to ~1 hour per day, so occasionally there is no rise in the
+    25 hour window before ``time``.
+
+    This reimplementation of the ``which="nearest"`` behaviour fixes
+    this oversight.
+    """
+    previous_event = event_fn(time, which="previous")
+    next_event = event_fn(time, which="next")
+    if previous_event.masked:
+        return next_event
+    if next_event.masked:
+        return previous_event
+    if time - previous_event < next_event - time:
+        return previous_event
+    return next_event
 
 
 class AlmanacCachedAdapter(DayobsCachedAdapter):
@@ -104,8 +129,8 @@ class AlmanacCachedAdapter(DayobsCachedAdapter):
                 "twilight_morning_6deg": _iso(observer.twilight_morning_civil(midnight, which="next")),
                 "twilight_evening_0deg": _iso(observer.sun_set_time(midnight, which="previous")),
                 "twilight_morning_0deg": _iso(observer.sun_rise_time(midnight, which="next")),
-                "moon_rise_time": _iso(observer.moon_rise_time(midnight, which="nearest")),
-                "moon_set_time": _iso(observer.moon_set_time(midnight, which="nearest")),
+                "moon_rise_time": _iso(_nearest_event(observer.moon_rise_time, midnight)),
+                "moon_set_time": _iso(_nearest_event(observer.moon_set_time, midnight)),
                 "moon_illumination": f"{observer.moon_illumination(midnight):.0%}",
             }
 
