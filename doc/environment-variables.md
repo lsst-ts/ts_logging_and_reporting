@@ -24,6 +24,7 @@ describes the check that enforces them at startup.
 | `REDIS_DB` | `0` | `redis_client.py` | Redis logical database number. |
 | `ND_CACHING_DISABLE_NGINX` | unset | `frontend: docker/nginx.conf.template` | Any value other than empty or 0 disables the nginx cache |
 | `ND_CACHING_DISABLE_REDIS` | unset | `redis_client.py` | Any value other than empty or `0` disables redis caching entirely and makes the refresh worker exit at startup. |
+| `ND_CACHING_DISABLE_WORKER` | unset | `run_refresh_worker.py` | Any value other than empty or `0` makes the refresh worker exit at startup, leaving redis caching on. |
 | `LOG_LEVEL` | `INFO` | `utils/logging_config.py` | Log level for the entire app. |
 
 The API service needs all of these to be set correctly; the refresh worker

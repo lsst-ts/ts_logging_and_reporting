@@ -55,13 +55,17 @@ PRODUCTION_ENV_VARS = (
 development mode, where they may not be found."""
 
 
-def debug_mode() -> bool:
-    """Whether `DEBUG_ENV_VAR` switches on development mode.
+def env_flag(name: str) -> bool:
+    """Whether the boolean environment variable ``name`` is set.
 
-    Unset, empty and ``"0"`` leave it off; any other value turns it
-    on.
+    Unset, empty and ``"0"`` are false; any other value is true.
     """
-    return os.environ.get(DEBUG_ENV_VAR, "").strip() not in ("", "0")
+    return os.environ.get(name, "").strip() not in ("", "0")
+
+
+def debug_mode() -> bool:
+    """Whether `DEBUG_ENV_VAR` switches on development mode."""
+    return env_flag(DEBUG_ENV_VAR)
 
 
 def _unset(names: tuple[str, ...]) -> list[str]:
