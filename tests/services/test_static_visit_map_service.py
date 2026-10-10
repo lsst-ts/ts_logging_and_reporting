@@ -27,7 +27,7 @@ import requests
 from fastapi import HTTPException
 from matplotlib import pyplot as plt
 
-from lsst.ts.logging_and_reporting.adapters.consdb_visits import ConsdbVisitsAdapter
+from lsst.ts.logging_and_reporting.adapters.consdb_exposures import ConsdbExposuresAdapter
 from lsst.ts.logging_and_reporting.services import static_visit_map
 from lsst.ts.logging_and_reporting.services.static_visit_map import StaticVisitMapService
 from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
@@ -74,7 +74,7 @@ class TestHandleRequest:
 
     def test_consdb_failure_becomes_502(self, fake_redis, monkeypatch):
         monkeypatch.setenv("ACCESS_TOKEN", "test-token")
-        adapter = ConsdbVisitsAdapter(fake_redis, server_url="https://consdb.test")
+        adapter = ConsdbExposuresAdapter(fake_redis, server_url="https://consdb.test")
         response = Mock(status_code=500)
         response.json.return_value = {"message": "relation does not exist"}
         response.raise_for_status.side_effect = requests.HTTPError(
