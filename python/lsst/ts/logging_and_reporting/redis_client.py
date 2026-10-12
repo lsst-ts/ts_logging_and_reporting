@@ -39,6 +39,8 @@ from typing import Any
 
 import redis
 
+from .utils.env_check import env_flag
+
 logger = logging.getLogger(__name__)
 
 DISABLE_ENV_VAR = "ND_CACHING_DISABLE_REDIS"
@@ -46,12 +48,8 @@ DISABLE_ENV_VAR = "ND_CACHING_DISABLE_REDIS"
 
 
 def redis_caching_disabled() -> bool:
-    """Whether `DISABLE_ENV_VAR` turns the Redis cache off.
-
-    Unset, empty and ``"0"`` leave caching on; any other value turns it
-    off.
-    """
-    return os.environ.get(DISABLE_ENV_VAR, "").strip() not in ("", "0")
+    """Whether `DISABLE_ENV_VAR` turns the Redis cache off."""
+    return env_flag(DISABLE_ENV_VAR)
 
 
 class DisabledRedis:

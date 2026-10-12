@@ -37,11 +37,19 @@ from lsst.ts.logging_and_reporting.redis_client import (
 )
 
 from .refresh_worker import RefreshWorker
-from .utils.env_check import check_environment
+from .utils.env_check import check_environment, env_flag
 from .utils.logging_config import configure_logging
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+WORKER_DISABLE_ENV_VAR = "ND_CACHING_DISABLE_WORKER"
+"""Environment variable that turns the refresh worker off."""
+
+
+def refresh_worker_disabled() -> bool:
+    """Whether `WORKER_DISABLE_ENV_VAR` turns the refresh worker off."""
+    return env_flag(WORKER_DISABLE_ENV_VAR)
 
 
 def run_refresh_worker() -> None:
@@ -53,6 +61,10 @@ def run_refresh_worker() -> None:
         # Nothing to warm: every entry the worker wrote would be
         # dropped, leaving only the upstream load.
         logger.warning(f"{DISABLE_ENV_VAR} is set; refresh worker has no cache to warm, exiting")
+        return
+
+    if refresh_worker_disabled():
+        logger.warning(f"{WORKER_DISABLE_ENV_VAR} is set; refresh worker disabled, exiting")
         return
 
     worker = RefreshWorker([get_adapter() for get_adapter in adapters.REFRESH_ADAPTERS])

@@ -922,6 +922,8 @@ built from the same image and sharing one Redis:
 - If `ND_CACHING_DISABLE_REDIS` is set the worker logs a warning and
   exits immediately: with nothing to warm it would only add upstream
   load.
+- If `ND_CACHING_DISABLE_WORKER` is set the worker logs a warning and
+  exits immediately, leaving the Redis cache in place.
 
 **Exactly one instance must run per deployment.** Nothing in the process
 coordinates with peers, so a second instance merely duplicates upstream
