@@ -1057,3 +1057,40 @@ is external, override `server` and add an entry to `AUTH_SOURCES` (an
 `env_var` naming its variable and a `label` for the error log), then
 point `auth_source` at it. Override `_request_headers` only if the
 upstream wants something other than a bearer token.
+
+---
+
+## 16. Adapter catalogue
+
+This table lists every adapter, by its `name` (and therefore its cache key prefix).
+*Mutable* adapters carry `MutableDataMixin`
+([§6](#6-ttls-three-data-kinds-two-tiers)); *refreshed* ones are in
+`REFRESH_ADAPTERS` ([§12](#12-the-refresh-worker)).
+
+| `name` | Upstream | Key | Mutable | Refreshed | Used by |
+|---|---|---|---|---|---|
+| `consdb_exposures` | ConsDB `cdb_<instrument>.exposure` | `<instrument>:<dayobs>` | | ✓ | `/exposures`, `/data-log`, `/multi-night-visit-maps`, `/static-visit-map` |
+| `visit_overhead` | `consdb_exposures`, plus the EFD for the slew model | `<instrument>:<dayobs>` | | ✓ | `/exposures` |
+| `rubin_nights_dome` | EFD dome open/close events | `<dayobs>` | | ✓ | `/exposures` |
+| `rubin_nights_obs_status` | EFD Scheduler observatory status events | `<dayobs>` | | ✓ | `/obs-status` |
+| `rubin_nights_context` | EFD, exposure log and narrative log, consolidated by `rubin_nights` | `<dayobs>` | | ✓ | `/context-feed` |
+| `almanac` | None: computed with astroplan | `<dayobs>` | | | `/almanac`, `/exposures`, `/obs-status` |
+| `expected_exposures` | `rubin_sim` prenight simulation archive | `<dayobs>` | ✓ | ✓ | `/expected-exposures` |
+| `nightreport` | Night Report API | `<dayobs>` | | ✓ | `/night-reports` |
+| `narrativelog` | Narrative Log API | `<dayobs>` | ✓ | ✓ | `/narrative-log` |
+| `exposurelog` | Exposure Log API | `<dayobs>` | ✓ | ✓ | `/exposure-entries`, `/exposure-flags` |
+| `jira_obs` | Jira, OBS project | `<dayobs>` | ✓ | ✓ | `/jira-tickets` |
+| `jira_block` | Jira, BLOCK project | `<BLOCK key>` | ✓ | | `/block-details` |
+| `zephyr` | Zephyr Scale test cases | `<BLOCK key>` | ✓ | | `/block-details` |
+
+The exceptions to the general rules:
+
+- `almanac` is not refreshed, and keeps the historic TTL even for today,
+  because its values are known in advance
+  ([§6](#how-an-adapter-picks-its-ttl)).
+- `visit_overhead` reads `consdb_exposures` rather than querying ConsDB
+  itself, so it is registered immediately after it
+  ([§8](#an-adapter-holding-another-adapter)).
+- `jira_block` and `zephyr` are keyed by ID, so they have no today to
+  refresh. Both cache an unknown key as `None`, so it is not
+  re-queried on every request ([§13](#13-failure-semantics)).
