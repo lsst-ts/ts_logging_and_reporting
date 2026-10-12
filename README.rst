@@ -28,6 +28,21 @@ This includes fetching data from the `consolidated database`_, `exposure log`_, 
 Set up
 ======
 
-This is a conda package following the standards at `TSSW Developer Guide`_
+This is a conda package following the standards at `TSSW Developer Guide`_.
+To run it locally, see `doc/getting-started.md`_.
 
 .. _TSSW Developer Guide: https://tssw-developer.lsst.io/index.html
+.. _doc/getting-started.md: doc/getting-started.md
+
+=============
+Documentation
+=============
+
+- `Getting started <doc/getting-started.md>`_: running the backend locally, tests, lint and pull requests.
+- `Endpoints <doc/endpoints.md>`_: the HTTP API, its conventions, and how derived values are computed.
+- `Environment variables <doc/environment-variables.md>`_: every variable the backend reads, and how to obtain credentials.
+- `Service and adapter infrastructure <doc/service-adapter-infrastructure.md>`_: how endpoints are served and cached, and how to add one.
+- `Logging <doc/logging.md>`_: log configuration, levels and request tracing.
+- `Deployment <doc/deployment.md>`_: what runs in a deployment and where it is configured.
+- `Release process <doc/release-process.md>`_: how changes are released and deployed.
+- `Version history <doc/version_history.rst>`_
