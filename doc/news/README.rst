@@ -27,7 +27,7 @@ You can create new fragments using the ``towncrier create`` command, which will 
 The news fragments are then automatically integrated into the release notes by the ``towncrier`` tool.
 
 You can test how the content will be integrated into the release notes by running ``towncrier build --draft --version=v<X.XX.X>``.
-Note that you have to run it from the root repository directory (i.e. ``watcher``).
+Note that you have to run it from the root repository directory (i.e. ``ts_logging_and_reporting``).
 
 In order to update the release notes file for real, the person responsible for the release should run:
 

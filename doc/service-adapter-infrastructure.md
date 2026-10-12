@@ -222,7 +222,7 @@ adapter—and the `functools.cache` factory are the standard dependency injectio
 construction idiom, shared with the adapter layer and described in
 [§7](#7-dependency-injection).
 
-### Three rules keep the layer thin:
+### Two rules keep the layer thin:
 
 - **Anything that talks to an upstream belongs in an adapter.**
   Reaching for `requests` inside a service is the signal that the fetch
