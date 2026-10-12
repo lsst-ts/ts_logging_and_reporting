@@ -74,8 +74,21 @@ Endpoint-specific behaviour worth knowing before calling them:
 - **`/obs-status`** takes `includeEntries` (default true),
   `includeIntervals` (default false), `nightOnlyMetrics` (default
   true), and repeated `metric` parameters naming the metrics to
-  compute. Its `availability` field reports how much of the range
-  predates the start of obs-status data.
+  compute; see [Observatory status metrics](#observatory-status-metrics).
+- **`/expected-exposures`** counts, for each night, the visits in the
+  most recent prenight simulation of that night tagged `ideal` and
+  `nominal`, considering only simulations up to 60 days old, so it
+  cannot return counts for nights more than 60 days ago.
+- **`/jira-tickets`** matches tickets to an instrument by their
+  *System* field: `LATISS` returns tickets whose system names `LATISS`
+  or `AuxTel`, while `LSSTCam` returns every ticket *except* those.
+  `isNew` is true for tickets created within the range, as opposed to
+  older tickets updated during it. Jira's `updated` field does not
+  capture every change, which has two consequences for tickets that
+  are not new:
+  - a ticket updated during the range drops out of it if it is updated
+    again later
+  - some changes, most importantly comments, do not count as updates
 - **`/block-details`** takes `key=BLOCK-704&key=BLOCK-T123`, and so
   on. `BLOCK-Tnnn` keys are looked up in Zephyr Scale and `BLOCK-nnn`
   keys in Jira. If one source fails, the response is still a 200, with
@@ -83,6 +96,67 @@ Endpoint-specific behaviour worth knowing before calling them:
   so check `errors` before treating a missing key as unresolved.
 - **`/multi-night-visit-maps`** with `appletMode=true` returns a map
   sized for display in an applet.
+
+Where an endpoint needs a night, it means the time between evening and
+morning 12° (nautical) twilight.
+
+### Time accounting in `/exposures`
+
+The frontend combines these values into calculated fault time; see its
+[`doc/time_accounting.rst`](https://github.com/lsst-ts/ts_logging_frontend/blob/develop/doc/time_accounting.rst).
+
+**Dome hours**, per night, in `day_obs_open_dome_hours`:
+
+- `night_hours`: the length of the night.
+- `open_hours`: time the dome was open during the night.
+- `closed_hours`: `night_hours - open_hours` for a completed night. For
+  a night in progress it is the time closed *so far*: hours since
+  evening twilight, less `open_hours`, and never negative.
+
+**On-sky overhead**, in `night_on_sky_time_accounting`, covers visits
+with `can_see_sky` set that start within the night:
+
+- `visit_gap`: the time from the end of the previous visit on the same
+  night to the start of this one; zero for the night's first visit.
+- `overhead`: `min(modelled slew + 120 s, visit_gap)`. The slew is
+  modelled between the two visits' pointings using Simonyi kinematics
+  and the telescope's motion limits at the time; the 120 s allows for
+  scatter the model does not capture.
+
+Both are summed over the range in hours, and split by whether the
+visit's band differs from the previous visit's, since filter changes
+add their own overhead: `sum_overhead_with_filter_change`,
+`sum_overhead_without_filter_change`, and the matching
+`sum_visit_gap_*` pair.
+
+### Observatory status metrics
+
+The Scheduler publishes the observatory's state as a bitmask whenever
+it changes, and a status can carry several states at once:
+
+| State | Bit |
+|---|---|
+| `UNKNOWN` | none set (`0`) |
+| `DAYTIME` | 1 |
+| `OPERATIONAL` | 2 |
+| `FAULT` | 4 |
+| `WEATHER` | 8 |
+| `DOWNTIME` | 16 |
+| `IDLE` | 32 |
+
+Each metric is the hours spent in a state over the range, counting only
+time within the night unless `nightOnlyMetrics=false`:
+
+- `unknown`, `daytime`, `operational`, `fault`, `weather`, `downtime`,
+  `idle`: time whose status includes that state (`unknown`: no state
+  set).
+- `fault_loss`: time in `FAULT` but not `DOWNTIME`, so faults during
+  scheduled downtime are not counted as lost observing time.
+
+Status events exist only from dayobs 20260225. The `availability` field
+reports whether the range is entirely after that (`full`), entirely
+before it (`none`), or straddles it (`partial`), so that zeros before
+that date are not mistaken for real data.
 
 ---
 
