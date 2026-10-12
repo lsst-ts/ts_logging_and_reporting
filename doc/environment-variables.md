@@ -14,10 +14,10 @@ describes the check that enforces them at startup.
 | `JIRA_API_TOKEN` | *(none—required)* | `utils/auth.py` | Jira credential, sent as Basic auth. |
 | `JIRA_API_HOSTNAME` | *(none—required)* | `utils/auth.py` | Jira host; also used to build the BLOCK links in `/block-details` responses. |
 | `ZEPHYR_API_TOKEN` | *(none—required)* | `utils/auth.py` | Zephyr Scale credential. |
-| `RUBIN_SIM_DATA_DIR` | *(none—required in production)* | `rubin_sim`, `rubin_scheduler` | Directory holding the `rubin_sim` data used by the almanac and visit maps. |
-| `AWS_SHARED_CREDENTIALS_FILE` | *(none—required in production)* | `rubin_sim.sim_archive` | Credentials for the S3 bucket holding the prenight simulations behind expected exposures. |
-| `S3_ENDPOINT_URL` | *(none—required in production)* | `rubin_sim.sim_archive` | S3 endpoint for that bucket. |
-| `LSST_DISABLE_BUCKET_VALIDATION` | *(none—required in production)* | `rubin_sim.sim_archive` | Set to `1` in every deployment. |
+| `RUBIN_SIM_DATA_DIR` | *(none—required in production)* | `rubin_sim`, `rubin_scheduler` | Directory holding the `rubin_sim` data used by the visit maps and the time-accounting slew model. |
+| `AWS_SHARED_CREDENTIALS_FILE` | *(none—required in production)* | `boto3`, via `lsst.resources` | Credentials for the S3 bucket holding the prenight simulations behind expected exposures. |
+| `S3_ENDPOINT_URL` | *(none—required in production)* | `lsst.resources` | S3 endpoint for that bucket. |
+| `LSST_DISABLE_BUCKET_VALIDATION` | *(none—required in production)* | `lsst.resources` | Set to `1` in every deployment, so the bucket's `tenant:bucket` name is not rejected as an invalid S3 bucket name. |
 | `ND_DEBUG` | unset | `utils/env_check.py` | Any value other than empty or `0` switches on development mode. |
 | `REDIS_HOST` | `localhost` | `redis_client.py` | Redis hostname (`redis` in the dev compose stack). Required in production. |
 | `REDIS_PORT` | `6379` | `redis_client.py` | Redis port. |
