@@ -42,7 +42,7 @@ the form the upstream expects.
 
 - **`ACCESS_TOKEN`**: on the RSP deployment named by
   `EXTERNAL_INSTANCE_URL`, open the account menu → *Security tokens* →
-  *Create Token*, with at least the `image:read` and
+  *Create Token*, with at least the `read:image` and
   `exec:internal-tools` scopes. A token works only on the deployment
   that issued it.
 - **`JIRA_API_TOKEN`**: create an API token at

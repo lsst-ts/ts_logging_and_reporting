@@ -41,7 +41,7 @@ and fill it in:
 | Variable | Where it comes from |
 |---|---|
 | `EXTERNAL_INSTANCE_URL` | One of the known deployment URLs ([§15 of the service and adapter infrastructure doc](service-adapter-infrastructure.md#15-upstream-authentication-and-server-resolution)), most likely `https://usdf-rsp-dev.slac.stanford.edu` |
-| `ACCESS_TOKEN` | An RSP token created on the deployment named by `EXTERNAL_INSTANCE_URL`, with at least the `image:read` and `exec:internal-tools` scopes. |
+| `ACCESS_TOKEN` | An RSP token created on the deployment named by `EXTERNAL_INSTANCE_URL`, with at least the `read:image` and `exec:internal-tools` scopes. |
 | `JIRA_API_TOKEN`, `JIRA_API_HOSTNAME` | A Jira API token and the Jira host. |
 | `ZEPHYR_API_TOKEN` | Jira account menu → "Zephyr Scale API Access Tokens". |
 | `LOCAL_RUBIN_SIM_DATA_DIR` | A local copy of the `rubin_sim` data, fetched with `rs_download_data`. |
