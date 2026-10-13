@@ -29,9 +29,10 @@ describes the check that enforces them at startup.
 The API service needs all of these to be set correctly; the refresh worker
 needs the same set, since it drives the same adapters.
 
-Variables read by the frontend, nginx, or the local Docker Compose
-stack are documented in the frontend repository's
-[`docker/README.rst`](https://github.com/lsst-ts/ts_logging_frontend/blob/develop/docker/README.rst).
+Variables read by the frontend are documented in the frontend repository's
+[architecture guide](https://github.com/lsst-ts/ts_logging_frontend/blob/develop/doc/architecture.md#2-build-time-configuration),
+and those read by nginx or the local Docker Compose stack in its
+[getting started guide](https://github.com/lsst-ts/ts_logging_frontend/blob/develop/doc/getting-started.md#3-the-local-stack).
 
 ---
 

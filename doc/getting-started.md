@@ -52,8 +52,9 @@ startup check enforces.
 
 Leave `ND_DEBUG=1` set, as the example does. Amongst other things, it
 enables the FastAPI automatic reload, making development easier.
-The frontend's `docker/README.rst` covers the frontend-side and
-Compose-only options.
+The frontend's
+[getting started guide](https://github.com/lsst-ts/ts_logging_frontend/blob/develop/doc/getting-started.md#3-the-local-stack)
+covers the frontend-side and Compose-only options.
 
 ### Run
 
