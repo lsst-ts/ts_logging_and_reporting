@@ -16,14 +16,14 @@ pipeline {
       agent {
         docker {
           alwaysPull true
-          image 'lsstts/develop-env:develop'
+          image 'rubincr.lsst.org/develop-env-sqre:develop'
           args "--entrypoint=''"
         }
       }
       steps {
         script {
           sh """
-            source /home/saluser/.setup_dev.sh || echo loading env failed. Continuing...
+            source /home/saluser/.bashrc
             generate_pre_commit_conf --skip-pre-commit-install
             pre-commit run --all
           """
@@ -35,14 +35,14 @@ pipeline {
       agent {
         docker {
           alwaysPull true
-          image 'lsstts/develop-env:develop'
+          image 'rubincr.lsst.org/develop-env-sqre:develop'
           args "--entrypoint=''"
         }
       }
       steps {
         script {
           sh """
-            source /home/saluser/.setup_dev.sh || echo loading env failed. Continuing...
+            source /home/saluser/.bashrc
             pip install -e .
             pytest -v
           """
