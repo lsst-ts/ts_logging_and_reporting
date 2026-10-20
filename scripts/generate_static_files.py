@@ -49,7 +49,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather"]
+OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather", "downtime"]
 
 EXCLUSIVE_END_ENDPOINTS = [
     "exposures",
