@@ -1,0 +1,1 @@
+Remove the ConsDB visits adapter, which duplicated the data from the ConsDB exposure adapter.

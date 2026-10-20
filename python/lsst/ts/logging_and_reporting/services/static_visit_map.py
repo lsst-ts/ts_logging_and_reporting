@@ -32,9 +32,9 @@ import pandas as pd
 import rubin_sim.maf as maf
 from rubin_nights.reference_values import SCIENCE_PROGRAMS
 
-from lsst.ts.logging_and_reporting.adapters.consdb_visits import (
-    ConsdbVisitsAdapter,
-    get_consdb_visits_adapter,
+from lsst.ts.logging_and_reporting.adapters.consdb_exposures import (
+    ConsdbExposuresAdapter,
+    get_consdb_exposures_adapter,
 )
 from lsst.ts.logging_and_reporting.services.base_service import Service
 from lsst.ts.logging_and_reporting.services.worker_pool_mixin import WorkerPoolMixin
@@ -296,8 +296,8 @@ class StaticVisitMapService(WorkerPoolMixin, Service):
 
     pool_preload = ("lsst.ts.logging_and_reporting.services.static_visit_map",)
 
-    def __init__(self, consdb_adapter: ConsdbVisitsAdapter | None = None) -> None:
-        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_visits_adapter()
+    def __init__(self, consdb_adapter: ConsdbExposuresAdapter | None = None) -> None:
+        self.consdb_adapter = consdb_adapter if consdb_adapter is not None else get_consdb_exposures_adapter()
 
     def handle(self, day_obs_start: int, day_obs_end: int, instrument: str) -> dict:
         """Build the static visit map for the range.
