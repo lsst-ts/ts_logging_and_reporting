@@ -1,3 +1,3 @@
 #!/bin/bash
-source /home/saluser/.setup_dev.sh
+source $HOME/.bashrc
 run_refresh_worker
