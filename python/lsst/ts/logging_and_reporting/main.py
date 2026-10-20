@@ -27,6 +27,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from . import __version__, services
 from .middleware import (
@@ -93,6 +94,42 @@ app.add_middleware(RequestLoggingMiddleware)
 
 logger.info("Starting FastAPI app")
 
+# Swagger (/docs) renders a route's docstring as Markdown, which mangles
+# numpydoc sections. FastAPI leaves everything after a form feed (\f) out
+# of the OpenAPI description, so each route's docstring has its summary
+# above a \f for Swagger, and its numpydoc below it for developers.
+# Swagger's parameter table takes its descriptions from
+# Query(description=...), and its responses table takes error codes from
+# the route's responses=, so keep both in step with the numpydoc.
+
+
+INTERNAL_ERROR = "An unexpected internal error, such as the cache being unreachable."
+
+
+class ErrorResponse(BaseModel):
+    """Body of an error response raised as an HTTPException."""
+
+    detail: str
+
+
+def error_responses(descriptions: dict[int, str]) -> dict[int | str, dict[str, Any]]:
+    """Build a route's ``responses`` entries for its error codes.
+
+    Parameters
+    ----------
+    descriptions : dict[int, str]
+        Description of each error status code the route can return.
+
+    Returns
+    -------
+    dict[int | str, dict[str, Any]]
+        One entry per status code, each with an ``ErrorResponse`` body.
+    """
+    return {
+        code: {"model": ErrorResponse, "description": description}
+        for code, description in descriptions.items()
+    }
+
 
 @app.get("/version")
 @app.get("/version/")
@@ -111,15 +148,19 @@ async def health():
     return JSONResponse(status_code=200, content={"status": "ok"})
 
 
-@app.get("/exposures")
+@app.get(
+    "/exposures",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The ConsDB exposure query failed."}),
+)
 def read_exposures(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name used for the ConsDB exposure query."),
     service=Depends(services.get_exposures_service),
 ) -> dict[str, Any]:
     """Return exposures and derived night-summary metrics.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -142,18 +183,30 @@ def read_exposures(
         422 for an unrecognised instrument or malformed dayobs, 502 if
         the ConsDB exposure query fails. Dome-open and time-accounting
         sub-query failures are reported in the response payload instead.
+        500 for an unexpected internal error, such as the cache being
+        unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
-@app.get("/expected-exposures")
+@app.get(
+    "/expected-exposures",
+    responses=error_responses(
+        {
+            404: "No matching simulation exists for a requested night.",
+            500: INTERNAL_ERROR,
+            502: "The simulation archive could not be reached.",
+        }
+    ),
+)
 def read_expected_exposures(
-    dayObsStart: int,
-    dayObsEnd: int,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Inclusive upper bound of the requested dayobs range."),
     service=Depends(services.get_expected_exposures_service),
 ):
     """Return the expected (simulated) visit count for the range.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -171,20 +224,25 @@ def read_expected_exposures(
     ------
     fastapi.HTTPException
         404 when no matching simulation exists for a requested night,
-        502 if the simulation archive cannot be reached.
+        502 if the simulation archive cannot be reached, 500 for an
+        unexpected internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
-@app.get("/data-log")
+@app.get(
+    "/data-log",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The ConsDB query failed."}),
+)
 def read_data_log(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name used for the ConsDB exposure query."),
     service=Depends(services.get_data_log_service),
 ):
     """Return the full ConsDB exposure record for each exposure.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -203,20 +261,30 @@ def read_data_log(
     ------
     fastapi.HTTPException
         422 for an unrecognised instrument or malformed dayobs, 502 if
-        the ConsDB query fails.
+        the ConsDB query fails, 500 for an unexpected internal error,
+        such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
-@app.get("/jira-tickets")
+@app.get(
+    "/jira-tickets",
+    responses=error_responses(
+        {
+            500: "The Jira hostname is not configured, or an unexpected internal error occurred.",
+            502: "The Jira query failed.",
+        }
+    ),
+)
 def read_jira_tickets(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name used to select tickets by their system field."),
     service=Depends(services.get_jira_tickets_service),
 ):
     """Return OBS Jira tickets created or updated during the range.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -235,20 +303,22 @@ def read_jira_tickets(
     Raises
     ------
     fastapi.HTTPException
-        500 if the Jira hostname is not configured, 502 if the Jira
-        query fails.
+        500 if the Jira hostname is not configured or for an unexpected
+        internal error, such as the cache being unreachable, 502 if the
+        Jira query fails.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
-@app.get("/almanac")
+@app.get("/almanac", responses=error_responses({500: INTERNAL_ERROR}))
 def read_almanac(
-    dayObsStart: int,
-    dayObsEnd: int,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
     service=Depends(services.get_almanac_service),
 ):
     """Return almanac records for the nights in the range.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -262,6 +332,12 @@ def read_almanac(
         ``almanac_info``, one record per night with sun and moon
         rise/set times, twilight boundaries and elapsed twilight hours.
 
+    Raises
+    ------
+    fastapi.HTTPException
+        500 for an unexpected internal error, such as the cache being
+        unreachable.
+
     Notes
     -----
     Almanac records are labeled by the dayobs of their morning twilight
@@ -271,15 +347,19 @@ def read_almanac(
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
-@app.get("/narrative-log")
+@app.get(
+    "/narrative-log",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The narrative log query failed."}),
+)
 def read_narrative_log(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name used to select messages by telescope."),
     service=Depends(services.get_narrative_log_service),
 ):
     """Return narrative log messages and time lost for the range.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -299,20 +379,25 @@ def read_narrative_log(
     Raises
     ------
     fastapi.HTTPException
-        502 if the narrative log query fails.
+        502 if the narrative log query fails, 500 for an unexpected
+        internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
-@app.get("/exposure-flags")
+@app.get(
+    "/exposure-flags",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The exposure log query failed."}),
+)
 def read_exposure_flags(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name used to select exposure log messages."),
     service=Depends(services.get_exposure_flags_service),
 ):
     """Return the exposure flag set on each flagged exposure.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -331,20 +416,25 @@ def read_exposure_flags(
     Raises
     ------
     fastapi.HTTPException
-        502 if the exposure log query fails.
+        502 if the exposure log query fails, 500 for an unexpected
+        internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
-@app.get("/exposure-entries")
+@app.get(
+    "/exposure-entries",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The exposure log query failed."}),
+)
 def read_exposure_entries(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name used to select exposure log messages."),
     service=Depends(services.get_exposure_entries_service),
 ):
     """Return exposure log entries for the range.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -363,19 +453,24 @@ def read_exposure_entries(
     Raises
     ------
     fastapi.HTTPException
-        502 if the exposure log query fails.
+        502 if the exposure log query fails, 500 for an unexpected
+        internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
 
 
-@app.get("/night-reports")
+@app.get(
+    "/night-reports",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The night report query failed."}),
+)
 def read_night_reports(
-    dayObsStart: int,
-    dayObsEnd: int,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
     service=Depends(services.get_night_report_service),
 ):
     """Return night report records for the range.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -391,19 +486,24 @@ def read_night_reports(
     Raises
     ------
     fastapi.HTTPException
-        502 if the night report query fails.
+        502 if the night report query fails, 500 for an unexpected
+        internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
-@app.get("/context-feed")
+@app.get(
+    "/context-feed",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The context feed query failed."}),
+)
 def read_context_feed(
-    dayObsStart: int,
-    dayObsEnd: int,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Inclusive upper bound of the requested dayobs range."),
     service=Depends(services.get_context_feed_service),
 ):
     """Return the consolidated ScriptQueue context feed for the range.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -420,26 +520,41 @@ def read_context_feed(
     Raises
     ------
     fastapi.HTTPException
-        502 if the context feed query fails.
+        502 if the context feed query fails, 500 for an unexpected
+        internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd)
 
 
-@app.get("/obs-status")
+@app.get(
+    "/obs-status",
+    responses=error_responses({500: INTERNAL_ERROR, 502: "The status event or almanac query failed."}),
+)
 def read_obs_status(
-    dayObsStart: int,
-    dayObsEnd: int,
-    includeEntries: bool = True,
-    includeIntervals: bool = False,
-    nightOnlyMetrics: bool = True,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Inclusive upper bound of the requested dayobs range."),
+    includeEntries: bool = Query(True, description="If True, include the raw status events in the response."),
+    includeIntervals: bool = Query(
+        False,
+        description="If True, include the derived status intervals in the response.",
+    ),
+    nightOnlyMetrics: bool = Query(
+        True,
+        description="If False, time outside night hours contributes to the metrics.",
+    ),
     metrics: list[str] | None = Query(
         None,
         alias="metric",
+        description=(
+            "Metrics to compute, given as repeated `metric` parameters. "
+            "Unrecognised names are logged and skipped."
+        ),
     ),
     service=Depends(services.get_obs_status_service),
 ):
     """Return observatory status events, intervals and derived metrics.
 
+    \f
     Parameters
     ----------
     dayObsStart : int
@@ -467,7 +582,8 @@ def read_obs_status(
     Raises
     ------
     fastapi.HTTPException
-        502 if the status event or almanac query fails.
+        502 if the status event or almanac query fails, 500 for an
+        unexpected internal error, such as the cache being unreachable.
     """
     return service.handle_request(
         dayObsStart,
@@ -479,24 +595,35 @@ def read_obs_status(
     )
 
 
-@app.get("/multi-night-visit-maps")
+@app.get(
+    "/multi-night-visit-maps",
+    responses=error_responses(
+        {
+            500: INTERNAL_ERROR,
+            502: "The ConsDB exposure query failed.",
+            503: "The map worker pool is busy; try again shortly.",
+            504: "Generating the map timed out.",
+        }
+    ),
+)
 def read_multi_night_visit_maps(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
-    appletMode: bool = False,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name, such as `lsstCam` or `latiss`."),
+    appletMode: bool = Query(False, description="If True, generate maps suitable for applet display."),
     service=Depends(services.get_visit_maps_service),
 ):
     """Generate multi-night visit maps using Bokeh.
 
+    \f
     Parameters
     ----------
     dayObsStart : `int`
-        Start date in YYYYMMDD format.
+        Inclusive lower bound of the requested dayobs range.
     dayObsEnd : `int`
-        End date in YYYYMMDD format.
+        Exclusive upper bound of the requested dayobs range.
     instrument : `str`
-        Instrument name (e.g., 'lsstCam', 'latiss', etc.).
+        Instrument name, such as ``lsstCam`` or ``latiss``.
     appletMode : `bool`, optional
         If True, generate maps suitable for applet display. Default is False.
 
@@ -504,17 +631,43 @@ def read_multi_night_visit_maps(
     -------
     `dict`
         A dictionary containing the Bokeh JSON item for the interactive map.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the ConsDB exposure query fails, 503 when the map worker
+        pool is busy, 504 when generating the map times out, 500 for an
+        unexpected internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument, appletMode)
 
 
-@app.get("/block-details")
+@app.get(
+    "/block-details",
+    responses=error_responses(
+        {
+            500: (
+                "Both the Zephyr and Jira requests failed, the Jira hostname is not "
+                "configured, or an unexpected internal error occurred."
+            )
+        }
+    ),
+)
 def read_block_details(
-    keys: list[str] = Query(..., alias="key"),
+    keys: list[str] = Query(
+        ...,
+        alias="key",
+        description=(
+            "BLOCK keys (e.g. `BLOCK-704` or `BLOCK-T123_a`), given as "
+            "repeated `key` parameters. `BLOCK-Tnnn` resolves against "
+            "Zephyr Scale and `BLOCK-nnn` against Jira."
+        ),
+    ),
     service=Depends(services.get_block_details_service),
 ):
     """Retrieve BLOCK details from Zephyr/Jira for a list of keys.
 
+    \f
     Parameters
     ----------
     key : list[str]
@@ -540,27 +693,39 @@ def read_block_details(
     Raises
     ------
     fastapi.HTTPException
-        500 if both the Zephyr and Jira requests fail, or if the Jira
-        hostname is not configured.
+        500 if both the Zephyr and Jira requests fail, if the Jira
+        hostname is not configured, or for an unexpected internal
+        error, such as the cache being unreachable.
     """
     return service.handle_request(keys)
 
 
-@app.get("/static-visit-map")
+@app.get(
+    "/static-visit-map",
+    responses=error_responses(
+        {
+            500: INTERNAL_ERROR,
+            502: "The ConsDB exposure query failed.",
+            503: "The map worker pool is busy; try again shortly.",
+            504: "Generating the map timed out.",
+        }
+    ),
+)
 def read_static_visit_map(
-    dayObsStart: int,
-    dayObsEnd: int,
-    instrument: str,
+    dayObsStart: int = Query(description="Inclusive lower bound of the requested dayobs range."),
+    dayObsEnd: int = Query(description="Exclusive upper bound of the requested dayobs range."),
+    instrument: str = Query(description="Instrument name, such as `lsstCam` or `latiss`."),
     service=Depends(services.get_static_visit_map_service),
 ):
     """Generate a static visit map for a date range and instrument.
 
+    \f
     Parameters
     ----------
     dayObsStart : `int`
-        Start date in YYYYMMDD format.
+        Inclusive lower bound of the requested dayobs range.
     dayObsEnd : `int`
-        End date in YYYYMMDD format.
+        Exclusive upper bound of the requested dayobs range.
     instrument : `str`
         Instrument name, such as ``lsstCam`` or ``latiss``.
 
@@ -569,5 +734,12 @@ def read_static_visit_map(
     result : `dict`
         Dictionary containing the base64-encoded PNG image for the static
         visit map.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        502 if the ConsDB exposure query fails, 503 when the map worker
+        pool is busy, 504 when generating the map times out, 500 for an
+        unexpected internal error, such as the cache being unreachable.
     """
     return service.handle_request(dayObsStart, dayObsEnd, instrument)
