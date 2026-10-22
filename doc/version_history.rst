@@ -1,3 +1,36 @@
+0.16.0 (2026-10-22)
+===================
+
+New Features
+------------
+
+- Add `ND_CACHING_DISABLE_WORKER` to turn off the refresh worker while keeping redis caching. (`SSW-3027 <https://rubinobs.atlassian.net//browse/SSW-3027>`_)
+
+
+Bug Fixes
+---------
+
+- Fix RefreshWorker failing to start. (`SSW-3084 <https://rubinobs.atlassian.net//browse/SSW-3084>`_)
+
+
+Performance Enhancement
+-----------------------
+
+- Cache upstream data in Redis behind a per-source adapter layer, so repeat requests no longer re-query their upstream sources.
+  This decreases response time under load by between 40% and 90%, depending on endpoint. It also reduces upstream calls by a similar amount.
+  A separate background worker ensures that the current night's data is always kept warm. (`OSW-1297 <https://rubinobs.atlassian.net//browse/OSW-1297>`_)
+- Gzip-compress API responses of 1000 bytes or more. (`SSW-2812 <https://rubinobs.atlassian.net//browse/SSW-2812>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Fail at startup if required environment variables are unset, with a new ``ND_DEBUG`` development mode that downgrades the production-only ones to a warning. (`SSW-2809 <https://rubinobs.atlassian.net//browse/SSW-2809>`_)
+- Only run uvicorn with auto-reload in ``ND_DEBUG`` development mode. (`SSW-2810 <https://rubinobs.atlassian.net//browse/SSW-2810>`_)
+- Bump schedview to v0.24. (`SSW-3044 <https://rubinobs.atlassian.net//browse/SSW-3044>`_)
+- Update base development image. (`SSW-3053 <https://rubinobs.atlassian.net//browse/SSW-3053>`_)
+
+
 v0.15.3 (2026-10-05)
 ====================
 
