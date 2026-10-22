@@ -1,1 +1,0 @@
-Add `ND_CACHING_DISABLE_WORKER` to turn off the refresh worker while keeping redis caching.
