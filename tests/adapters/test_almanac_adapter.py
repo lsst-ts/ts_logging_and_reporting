@@ -23,9 +23,11 @@ import datetime as dt
 import threading
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
+from astropy.time import Time, TimeDelta
 
-from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter
+from lsst.ts.logging_and_reporting.adapters.almanac import AlmanacCachedAdapter, _iso, _nearest_event
 from lsst.ts.logging_and_reporting.cache_ttl import HISTORIC_TTL_REDIS
 from lsst.ts.logging_and_reporting.utils.dayobs import current_dayobs
 
@@ -104,3 +106,52 @@ class TestComputeNight:
 
         # Cached copy JSON-roundtrips to the same record
         assert adapter.fetch(20250731, 20250731) == first
+
+    def test_moon_rise_found_when_previous_window_is_empty(self, adapter):
+        # Solar midnight is 04:32:16 and the moon rises at 04:35:45; the
+        # rise before that is more than 25 hours earlier, so astroplan's
+        # which="nearest" returns a masked time for this night.
+        first = adapter.fetch(20261002, 20261002)
+        moon_rise = dt.datetime.fromisoformat(first[20261002]["moon_rise_time"])
+        assert abs(moon_rise - dt.datetime(2026, 10, 2, 4, 35, 45)) < dt.timedelta(seconds=5)
+
+        assert adapter.fetch(20261002, 20261002) == first
+
+
+MIDNIGHT = Time("2026-10-02T04:32:16", scale="utc")
+MASKED = Time(np.ma.masked_array([0.0], mask=[True]), format="jd")[0]
+
+
+def _events(previous: Time, next_: Time):
+    return lambda time, which: {"previous": previous, "next": next_}[which]
+
+
+class TestNearestEvent:
+    def test_picks_closer_previous(self):
+        previous = MIDNIGHT - TimeDelta(1 * 3600, format="sec")
+        next_ = MIDNIGHT + TimeDelta(2 * 3600, format="sec")
+        assert _nearest_event(_events(previous, next_), MIDNIGHT) is previous
+
+    def test_picks_closer_next(self):
+        previous = MIDNIGHT - TimeDelta(2 * 3600, format="sec")
+        next_ = MIDNIGHT + TimeDelta(1 * 3600, format="sec")
+        assert _nearest_event(_events(previous, next_), MIDNIGHT) is next_
+
+    def test_falls_back_to_next_when_previous_masked(self):
+        next_ = MIDNIGHT + TimeDelta(10 * 3600, format="sec")
+        assert _nearest_event(_events(MASKED, next_), MIDNIGHT) is next_
+
+    def test_falls_back_to_previous_when_next_masked(self):
+        previous = MIDNIGHT - TimeDelta(10 * 3600, format="sec")
+        assert _nearest_event(_events(previous, MASKED), MIDNIGHT) is previous
+
+    def test_masked_when_both_masked(self):
+        assert _nearest_event(_events(MASKED, MASKED), MIDNIGHT).masked
+
+
+class TestIso:
+    def test_formats_to_whole_seconds(self):
+        assert _iso(Time("2026-10-02T04:35:45", scale="utc")) == "2026-10-02 04:35:45"
+
+    def test_masked_time_is_none(self):
+        assert _iso(MASKED) is None
