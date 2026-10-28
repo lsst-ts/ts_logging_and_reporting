@@ -50,9 +50,9 @@ def transformed_efd_available() -> bool:
 class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAdapter):
     """Caches the exposure record (exposure ⋈ quicklook ⋈ transformed-EFD).
 
-    One cache entry serves two endpoints: `ExposuresService` projects
-    the curated night-summary columns, `DataLogService` returns the full
-    record.
+    One cache entry serves several endpoints: `ExposuresService` projects
+    the curated night-summary columns, while the DataLog and Visit Map services
+    use the full record.
 
     Transformed-EFD is only deployed at USDF, so this adapter behaves
     slightly differently based on EXTERNAL_INSTANCE_URL
@@ -69,8 +69,11 @@ class ConsdbExposuresAdapter(ConsdbSqlMixin, SqlClient, InstrumentDayobsCachedAd
         else:
             transformed_efd_columns = ""
             transformed_efd_join = ""
+        # visit1 is a view on exposure that renames exposure_id to visit_id.
+        # visit_id is set by the visit1_quicklook table, so if it's not present
+        # we set it to exposure_id
         sql = f"""
-            SELECT e.*, q.*{transformed_efd_columns}
+            SELECT e.*, q.*{transformed_efd_columns}, e.exposure_id AS visit_id
             FROM cdb_{instrument}.exposure e
             LEFT JOIN cdb_{instrument}.visit1_quicklook q
                 ON e.exposure_id = q.visit_id
