@@ -1,3 +1,12 @@
+v0.16.1 (2026-10-29)
+====================
+
+Bug Fixes
+---------
+
+- Add salIndex=1 (Simonyi) to RubinNightsObservatoryStatusAdapter's select_time_series query for observatory status. (`SSW-3107 <https://rubinobs.atlassian.net//browse/SSW-3107>`_)
+
+
 0.16.0 (2026-10-22)
 ===================
 
