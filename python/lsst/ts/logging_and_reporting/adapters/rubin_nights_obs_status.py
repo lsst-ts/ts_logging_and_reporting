@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 OBS_STATUS_TOPIC = "lsst.sal.Scheduler.logevent_observatoryStatus"
 OBS_STATUS_FIELDS = ["status", "note", "statusLabels"]
+SALINDEX = 1
 
 
 class RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
@@ -54,7 +55,9 @@ class RubinNightsObsStatusAdapter(RubinNightsClientsMixin, DayobsCachedAdapter):
     def _fetch_run(self, run_start: int, run_end: int) -> dict[int, list[dict]]:
         t_start = Time(get_utc_datetime_from_dayobs_str(run_start))
         t_end = Time(get_utc_datetime_from_dayobs_str(add_or_subtract_dayobs_days(run_end, 1)))
-        frame = self._efd_client.select_time_series(OBS_STATUS_TOPIC, OBS_STATUS_FIELDS, t_start, t_end)
+        frame = self._efd_client.select_time_series(
+            OBS_STATUS_TOPIC, OBS_STATUS_FIELDS, t_start, t_end, SALINDEX
+        )
         if frame is None or frame.empty:
             return {}
         frame = frame.reset_index(names="time")
