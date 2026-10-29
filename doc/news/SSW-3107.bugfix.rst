@@ -1,1 +1,0 @@
-Add salIndex=1 (Simonyi) to RubinNightsObservatoryStatusAdapter's select_time_series query for observatory status.
