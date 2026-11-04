@@ -614,6 +614,9 @@ def build_block_details_tasks(
     skipped = 0
 
     for frozen_keys, touches in keyset_touches.items():
+        print("####", flush=True)
+        print("Processing keyset:", frozen_keys)
+        print("####", flush=True)
         sorted_keys = sorted(frozen_keys)
         params = {"key": sorted_keys}
         filename = build_filename("block-details", params)
@@ -623,6 +626,62 @@ def build_block_details_tasks(
             tasks.append({"filename": filename, "endpoint": "block-details", "params": params})
         elif os.path.exists(file_path):
             skipped += 1
+
+    return tasks, skipped
+
+
+def build_block_details_tasks2(
+    combos: list,
+    output_dir: str,
+    today: int,
+    yesterday: int,
+    is_new_day: bool,
+    force_refresh: bool,
+    historic_mode: bool,
+    dry_run: bool = False,
+) -> tuple:
+    all_keys = set()
+    for start, end in combos:
+        exclusive_end = dayobs_add_days(end, 1)
+        dl_filename = build_filename(
+            "data-log",
+            {"dayObsStart": start, "dayObsEnd": exclusive_end, "instrument": "LSSTCam"},
+        )
+        dl_path = os.path.join(output_dir, dl_filename)
+        if os.path.exists(dl_path):
+            dl_keys = extract_block_keys_from_data_log(dl_path)
+            # print(f"Recording keyset
+            # from data-log {start}-{exclusive_end}:", dl_keys)
+            all_keys.update(dl_keys)
+        elif not dry_run:
+            logger.warning("block-details: data-log missing for %d-%d %s", start, end, "LSSTCam")
+
+        exp_filename = build_filename(
+            "exposures",
+            {"dayObsStart": start, "dayObsEnd": exclusive_end, "instrument": "LSSTCam"},
+        )
+        exp_path = os.path.join(output_dir, exp_filename)
+        if os.path.exists(exp_path):
+            exp_keys = extract_block_keys_from_exposures(exp_path)
+            # print(f"Recording keyset
+            # from exposures {start}-{exclusive_end}:", exp_keys)
+            all_keys.update(exp_keys)
+        elif not dry_run:
+            logger.warning("block-details: exposures missing for %d-%d %s", start, end, "LSSTCam")
+
+    tasks = []
+    skipped = 0
+
+    filename = build_filename("block-details", {})
+    sorted_keys = sorted(all_keys)
+    filtered_keys = [k for k in sorted_keys if k.startswith("BLOCK-T")]
+    print("####", flush=True)
+    print("Filtered keyset:", filtered_keys)
+    print("####", flush=True)
+
+    if filtered_keys:
+        params = {"key": filtered_keys}
+        tasks.append({"filename": filename, "endpoint": "block-details", "params": params})
 
     return tasks, skipped
 
@@ -917,7 +976,7 @@ def main():
 
         if run_blocks:
             # --- Pass 3: Group E — block-details (derived) ---
-            block_tasks, block_skipped = build_block_details_tasks(
+            block_tasks, block_skipped = build_block_details_tasks2(
                 combos,
                 args.output_dir,
                 today,
