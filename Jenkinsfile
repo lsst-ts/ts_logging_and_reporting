@@ -62,7 +62,7 @@ pipeline {
           image_tag = "alpha"
           dockerImageName = dockerImageName + image_tag
           echo "dockerImageName: ${dockerImageName}"
-          dockerImage = docker.build(dockerImageName, "--build-arg py_version=${pythonVersion} -f docker/Dockerfile-deploy .")
+          dockerImage = docker.build(dockerImageName, "--pull --no-cache --build-arg py_version=${pythonVersion} -f docker/Dockerfile-deploy .")
         }
       }
     }
