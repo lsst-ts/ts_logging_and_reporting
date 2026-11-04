@@ -555,74 +555,49 @@ def build_dayobs_tasks(
 def build_block_details_tasks(
     combos: list,
     output_dir: str,
-    today: int,
-    yesterday: int,
-    is_new_day: bool,
-    force_refresh: bool,
-    historic_mode: bool,
     dry_run: bool = False,
 ) -> tuple:
     """Derive block-details tasks from saved files.
-
-    Reads data-log and exposure files. For each unique set of BLOCK
-    keys across all combos, produce one task (deduplicated by key set).
+    Reads data-log and exposure files. One task is created that contains
+    the entire set of BLOCK keys across all combos.
     Returns (tasks, skipped_count).
     """
-    # Each source (data-log, exposures) contributes its key set
-    # independently so generated filenames match each frontend
-    # page's requests.
-    #
-    # keyset_touches maps frozenset -> date-adjacency flags.
-    # frozenset is used because sets are unhashable; this
-    # deduplicates identical key sets across date combos.
-    keyset_touches: dict = {}  # frozenset[str] -> {"today": bool, "yesterday": bool}
 
-    def _record_keyset(frozen: frozenset, start: int, end: int) -> None:
-        if frozen not in keyset_touches:
-            keyset_touches[frozen] = {"today": False, "yesterday": False}
-        if start <= today <= end:
-            keyset_touches[frozen]["today"] = True
-        if start <= yesterday <= end:
-            keyset_touches[frozen]["yesterday"] = True
-
+    all_keys = set()
     for start, end in combos:
+        exclusive_end = dayobs_add_days(end, 1)
         dl_filename = build_filename(
             "data-log",
-            {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"},
+            {"dayObsStart": start, "dayObsEnd": exclusive_end, "instrument": "LSSTCam"},
         )
         dl_path = os.path.join(output_dir, dl_filename)
         if os.path.exists(dl_path):
             dl_keys = extract_block_keys_from_data_log(dl_path)
-            if dl_keys:
-                _record_keyset(frozenset(dl_keys), start, end)
+            all_keys.update(dl_keys)
         elif not dry_run:
             logger.warning("block-details: data-log missing for %d-%d %s", start, end, "LSSTCam")
 
         exp_filename = build_filename(
             "exposures",
-            {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"},
+            {"dayObsStart": start, "dayObsEnd": exclusive_end, "instrument": "LSSTCam"},
         )
         exp_path = os.path.join(output_dir, exp_filename)
         if os.path.exists(exp_path):
             exp_keys = extract_block_keys_from_exposures(exp_path)
-            if exp_keys:
-                _record_keyset(frozenset(exp_keys), start, end)
+            all_keys.update(exp_keys)
         elif not dry_run:
             logger.warning("block-details: exposures missing for %d-%d %s", start, end, "LSSTCam")
 
     tasks = []
     skipped = 0
 
-    for frozen_keys, touches in keyset_touches.items():
-        sorted_keys = sorted(frozen_keys)
-        params = {"key": sorted_keys}
-        filename = build_filename("block-details", params)
-        file_path = os.path.join(output_dir, filename)
+    filename = build_filename("block-details", {})
+    sorted_keys = sorted(all_keys)
+    filtered_keys = [k for k in sorted_keys if k.startswith("BLOCK-")]
 
-        if should_regenerate_block_details(file_path, touches, is_new_day, force_refresh, historic_mode):
-            tasks.append({"filename": filename, "endpoint": "block-details", "params": params})
-        elif os.path.exists(file_path):
-            skipped += 1
+    if filtered_keys:
+        params = {"key": filtered_keys}
+        tasks.append({"filename": filename, "endpoint": "block-details", "params": params})
 
     return tasks, skipped
 
@@ -917,11 +892,6 @@ def main():
             block_tasks, block_skipped = build_block_details_tasks(
                 combos,
                 args.output_dir,
-                today,
-                yesterday,
-                is_new_day,
-                args.force_refresh,
-                historic_mode,
                 dry_run=args.dry_run,
             )
 
