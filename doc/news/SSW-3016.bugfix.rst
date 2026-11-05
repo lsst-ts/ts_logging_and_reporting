@@ -1,1 +1,0 @@
-Fix almanac failing on nights where astroplan finds no moon rise in the 25 hours before solar midnight.

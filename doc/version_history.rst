@@ -1,3 +1,18 @@
+v0.16.2 (2026-11-04)
+====================
+
+Bug Fixes
+---------
+
+- Fix almanac failing on nights where astroplan finds no moon rise in the 25 hours before solar midnight. (`SSW-3016 <https://rubinobs.atlassian.net//browse/SSW-3016>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Remove the ConsDB visits adapter, which duplicated the data from the ConsDB exposure adapter. (`SSW-3001 <https://rubinobs.atlassian.net//browse/SSW-3001>`_)
+
+
 v0.16.1 (2026-10-29)
 ====================
 
