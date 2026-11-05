@@ -7,12 +7,12 @@ name = "ts_logging_and_reporting"
 description = "Project-side Logging and Reporting"
 license = { text = "GPL" }
 classifiers = [ "Programming Language :: Python :: 3" ]
-readme = "README.md"
+readme = "README.rst"
 dynamic = [ "version" ]
 
 [project.urls]
-documentation = "https://ts-logging_and_reporting.lsst.io"
-Homepage = "https://ts-logging_and_reporting.lsst.io"
+documentation = "https://github.com/lsst-ts/ts_logging_and_reporting/tree/develop/doc"
+Homepage = "https://github.com/lsst-ts/ts_logging_and_reporting"
 Source = "https://github.com/lsst-ts/ts_logging_and_reporting"
 repository = "https://github.com/lsst-ts/ts_logging_and_reporting"
 
