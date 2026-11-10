@@ -51,6 +51,15 @@ logger = logging.getLogger(__name__)
 
 OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather", "downtime"]
 
+INSTRUMENT_ENDPOINTS = [
+    "exposures",
+    "exposure-flags",
+    "static-visit-map",
+    "data-log",
+    "exposure-entries",
+    "multi-night-visit-maps",
+]
+
 EXCLUSIVE_END_ENDPOINTS = [
     "exposures",
     "almanac",
@@ -260,6 +269,42 @@ def should_regenerate_block_details(
         return True
 
     return False
+
+
+# ---------------------------------------------------------------------------
+# Retention policy logic
+# ---------------------------------------------------------------------------
+
+
+def should_remove(filename, dirname, combos):
+    start, end = tuple(filename.removesuffix(".json").split("_"))
+    inclusive_end = dayobs_add_days(end, -1)
+    is_exclusive_endpoint = dirname in EXCLUSIVE_END_ENDPOINTS
+    combo = (int(start), int(inclusive_end if is_exclusive_endpoint else end))
+    return combo not in combos
+
+
+def clean_stale_files(output_dir, combos, dry_run):
+    """Clean up stale files according to the retention policy."""
+    print("---", flush=True)
+    for dirname in os.listdir(output_dir):
+        if not os.path.isdir(os.path.join(output_dir, dirname)):
+            continue
+        if dirname in INSTRUMENT_ENDPOINTS:
+            for filename in os.listdir(os.path.join(output_dir, dirname, "LSSTCam")):
+                if should_remove(filename, dirname, combos):
+                    if dry_run:
+                        print(f"Would remove {os.path.join(output_dir, dirname, 'LSSTCam', filename)}")
+                    else:
+                        os.remove(os.path.join(output_dir, dirname, "LSSTCam", filename))
+        else:
+            for filename in os.listdir(os.path.join(output_dir, dirname)):
+                if should_remove(filename, dirname, combos):
+                    if dry_run:
+                        print(f"Would remove {os.path.join(output_dir, dirname, filename)}")
+                    else:
+                        os.remove(os.path.join(output_dir, dirname, filename))
+    print("---", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -815,6 +860,9 @@ def main():
         # Generate all dayobs combinations
         combos = generate_dayobs_combinations(today, args.max_days, args.max_combo_size)
         logger.info("Generated %d dayobs combinations", len(combos))
+
+        # Enforce retention policy
+        clean_stale_files(args.output_dir, combos, args.dry_run)
 
         # Resolve --*-only flags (additive; --mutable-only enables all three)
         want_flags = args.exposure_flags_only or args.mutable_only
