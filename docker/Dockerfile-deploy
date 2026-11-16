@@ -27,7 +27,7 @@ USER saluser
 
 RUN source /home/saluser/.setup_sal_env.sh && \
 	conda index /tmp/conda-bld && \
-    conda install -c file:///tmp/conda-bld ts-logging-and-reporting -y && \
+    conda install -y -c file:///tmp/conda-bld 'file:///tmp/conda-bld::ts-logging-and-reporting' && \
     conda clean -afy && \
     rm -rf /tmp/conda-bld
 
