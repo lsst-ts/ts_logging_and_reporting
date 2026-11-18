@@ -1,3 +1,18 @@
+v0.16.3 (2026-11-18)
+====================
+
+Bug Fixes
+---------
+
+- Force Dockerfile-deploy conda install step to install the conda package from the local build instead of falling back to a published version. (`SSW-3174 <https://rubinobs.atlassian.net//browse/SSW-3174>`_)
+
+
+Other Changes and Additions
+---------------------------
+
+- Add enforce_rebase tssw github workflow. (`SSW-3199 <https://rubinobs.atlassian.net//browse/SSW-3199>`_)
+
+
 v0.16.2 (2026-11-04)
 ====================
 
