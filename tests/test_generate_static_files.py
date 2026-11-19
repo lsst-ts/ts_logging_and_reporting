@@ -27,6 +27,7 @@ import sys
 import threading
 import time
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -49,14 +50,16 @@ def tmp_output_dir(tmp_path):
 
 def _write_json(path, data):
     """Helper to write a JSON file at the given path."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
 
-def _mock_response(text="", status_code=200, raise_for_status=None):
+def _mock_response(text="", json={}, status_code=200, raise_for_status=None):
     """Build a mock requests.Response."""
     resp = Mock()
     resp.text = text
+    resp.json = Mock(return_value=json if json else None)
     resp.status_code = status_code
     if raise_for_status:
         resp.raise_for_status.side_effect = raise_for_status
@@ -151,18 +154,24 @@ class TestDayobsAddDays:
 class TestGenerateDayobsCombinations:
     def test_max0(self):
         result = gsf.generate_dayobs_combinations(20260707, 0)
-        assert result == [(20260707, 20260707)]
+        assert result == []
 
     def test_max1(self):
         result = gsf.generate_dayobs_combinations(20260707, 1)
+        assert result == [
+            (20260707, 20260707),
+        ]
+
+    def test_max2(self):
+        result = gsf.generate_dayobs_combinations(20260707, 2)
         assert result == [
             (20260707, 20260707),
             (20260706, 20260706),
             (20260706, 20260707),
         ]
 
-    def test_max2(self):
-        result = gsf.generate_dayobs_combinations(20260707, 2)
+    def test_max3(self):
+        result = gsf.generate_dayobs_combinations(20260707, 3)
         assert result == [
             (20260707, 20260707),
             (20260706, 20260706),
@@ -174,7 +183,7 @@ class TestGenerateDayobsCombinations:
 
     def test_max7_count(self):
         result = gsf.generate_dayobs_combinations(20260707, 7)
-        assert len(result) == 36
+        assert len(result) == 28
 
     def test_all_start_le_end(self):
         result = gsf.generate_dayobs_combinations(20260707, 7)
@@ -191,6 +200,7 @@ class TestGenerateDayobsCombinations:
         explicit = gsf.generate_dayobs_combinations(20260707, 7, max_combo_size=7)
         assert explicit == default
 
+    # @pytest.mark.skip(reason="Requires updating")
     def test_max_combo_size_smaller_than_max_days(self):
         """Rolling combos: 14-day window but max combo span of 2."""
         result = gsf.generate_dayobs_combinations(20260707, 14, max_combo_size=2)
@@ -198,14 +208,14 @@ class TestGenerateDayobsCombinations:
         for start, end in result:
             diff = (gsf.dayobs_to_date(end) - gsf.dayobs_to_date(start)).days
             assert diff <= 2, f"span {diff} exceeds max_combo_size=2: ({start}, {end})"
-        # Should cover the full 14-day lookback (15 individual days)
+        # Should cover the full 14-day lookback (14 individual days)
         all_days = set()
         for start, end in result:
             d = gsf.dayobs_to_date(start)
             while d <= gsf.dayobs_to_date(end):
                 all_days.add(int(d.strftime("%Y%m%d")))
                 d += timedelta(days=1)
-        expected_days = {int((date(2026, 7, 7) - timedelta(days=i)).strftime("%Y%m%d")) for i in range(15)}
+        expected_days = {int((date(2026, 7, 7) - timedelta(days=i)).strftime("%Y%m%d")) for i in range(14)}
         assert all_days == expected_days
 
     def test_max_combo_size_larger_than_max_days(self):
@@ -220,15 +230,15 @@ class TestGenerateDayobsCombinations:
         for start, end in result:
             diff = (gsf.dayobs_to_date(end) - gsf.dayobs_to_date(start)).days
             assert diff <= 1
-        # 4 individual days + 3 adjacent pairs = 7 combos
-        assert len(result) == 7
+        # 3 individual days + 2 adjacent pairs = 5 combos
+        assert len(result) == 5
 
     def test_max_combo_size_0(self):
         """max_combo_size=0 produces only single-day entries."""
         result = gsf.generate_dayobs_combinations(20260707, 3, max_combo_size=0)
         for start, end in result:
             assert start == end
-        assert len(result) == 4  # today and 3 days back
+        assert len(result) == 3  # 3 single days
 
 
 # ---------------------------------------------------------------------------
@@ -268,12 +278,24 @@ class TestBuildQueryString:
 
 
 class TestBuildFilename:
-    def test_with_params(self):
-        result = gsf.build_filename("exposures", {"dayObsStart": 20260625, "instrument": "LSSTCam"})
-        assert result == "exposures?dayObsStart=20260625&instrument=LSSTCam"
+    def test_with_all_params(self):
+        result = gsf.build_filename(
+            "exposures", {"dayObsStart": 20260625, "dayObsEnd": 20260626, "instrument": "LSSTCam"}
+        )
+        assert result == "exposures/LSSTCam/20260625_20260626.json"
+
+    def test_with_missing_instrument(self):
+        result = gsf.build_filename("almanac", {"dayObsStart": 20260625, "dayObsEnd": 20260626})
+        assert result == "almanac/20260625_20260626.json"
+
+    def test_with_missing_one_date(self):
+        with pytest.raises(ValueError):
+            gsf.build_filename("exposures", {"dayObsStart": 20260625, "instrument": "LSSTCam"})
+        with pytest.raises(ValueError):
+            gsf.build_filename("exposures", {"dayObsEnd": 20260626, "instrument": "LSSTCam"})
 
     def test_no_params(self):
-        assert gsf.build_filename("version", {}) == "version"
+        assert gsf.build_filename("version", {}) == "version.json"
 
     def test_empty_dict_no_question_mark(self):
         result = gsf.build_filename("version", {})
@@ -620,10 +642,10 @@ class TestFetchAndSave:
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
     def test_success(self, mock_get, mock_sleep, tmp_output_dir):
-        mock_get.return_value = _mock_response(text='{"ok": true}')
+        mock_get.return_value = _mock_response(text='{"ok": true}', json={"ok": True})
         fp = str(tmp_output_dir / "test_file")
 
-        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert ok is True
         assert isinstance(start, float)
@@ -634,10 +656,10 @@ class TestFetchAndSave:
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
     def test_file_content(self, mock_get, mock_sleep, tmp_output_dir):
-        mock_get.return_value = _mock_response(text='{"data": [1, 2, 3]}')
+        mock_get.return_value = _mock_response(text='{"data": [1, 2, 3]}', json={"data": [1, 2, 3]})
         fp = str(tmp_output_dir / "test_file")
 
-        gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         with open(fp) as f:
             assert f.read() == '{"data": [1, 2, 3]}'
@@ -645,10 +667,10 @@ class TestFetchAndSave:
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
     def test_atomic_write_no_tmp_remains(self, mock_get, mock_sleep, tmp_output_dir):
-        mock_get.return_value = _mock_response(text="content")
+        mock_get.return_value = _mock_response(text='{"ok": true}', json={"ok": True})
         fp = str(tmp_output_dir / "test_file")
 
-        gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert not os.path.exists(fp + ".tmp")
         assert os.path.exists(fp)
@@ -656,10 +678,10 @@ class TestFetchAndSave:
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
     def test_creates_parent_dirs(self, mock_get, mock_sleep, tmp_path):
-        mock_get.return_value = _mock_response(text="content")
+        mock_get.return_value = _mock_response(text='{"ok": true}', json={"ok": True})
         fp = str(tmp_path / "nested" / "dirs" / "file")
 
-        gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert os.path.exists(fp)
 
@@ -675,7 +697,7 @@ class TestFetchAndSave:
         )
         fp = str(tmp_output_dir / "test_file")
 
-        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert ok is False
         assert not os.path.exists(fp)
@@ -688,11 +710,11 @@ class TestFetchAndSave:
 
         mock_get.side_effect = [
             real_requests.exceptions.ConnectionError("refused"),
-            _mock_response(text="ok"),
+            _mock_response(text="ok", json={"ok": True}),
         ]
         fp = str(tmp_output_dir / "test_file")
 
-        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert ok is True
         assert mock_get.call_count == 2
@@ -706,11 +728,11 @@ class TestFetchAndSave:
         mock_get.side_effect = [
             real_requests.exceptions.ConnectionError("refused"),
             real_requests.exceptions.ConnectionError("refused"),
-            _mock_response(text="ok"),
+            _mock_response(text="ok", json={"ok": True}),
         ]
         fp = str(tmp_output_dir / "test_file")
 
-        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert ok is True
         assert mock_get.call_count == 3
@@ -727,7 +749,7 @@ class TestFetchAndSave:
         mock_get.side_effect = real_requests.exceptions.ConnectionError("refused")
         fp = str(tmp_output_dir / "test_file")
 
-        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert ok is False
         assert mock_get.call_count == 3  # initial + 2 retries
@@ -741,7 +763,7 @@ class TestFetchAndSave:
         mock_get.side_effect = real_requests.exceptions.Timeout("timed out")
         fp = str(tmp_output_dir / "test_file")
 
-        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert ok is False
         mock_sleep.assert_not_called()
@@ -749,24 +771,24 @@ class TestFetchAndSave:
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
     def test_os_error_raises(self, mock_get, mock_sleep):
-        mock_get.return_value = _mock_response(text="content")
+        mock_get.return_value = _mock_response(text="content", json={"ok": True})
         # Use an invalid path that will cause an OSError
         fp = "/proc/nonexistent/impossible/path/file"
 
         with pytest.raises(OSError):
-            gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+            gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
     def test_os_error_cleans_tmp(self, mock_get, mock_sleep, tmp_output_dir):
-        mock_get.return_value = _mock_response(text="content")
+        mock_get.return_value = _mock_response(text="content", json={"ok": True})
         fp = str(tmp_output_dir / "test_file")
         tmp_fp = fp + ".tmp"
 
         # Make rename fail after the tmp file is written
         with patch("generate_static_files.os.rename", side_effect=OSError("rename fail")):
             with pytest.raises(OSError):
-                gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+                gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         # The tmp file should have been cleaned up
         assert not os.path.exists(tmp_fp)
@@ -779,7 +801,7 @@ class TestFetchAndSave:
         mock_get.side_effect = real_requests.exceptions.ConnectionError("refused")
         fp = str(tmp_output_dir / "test_file")
 
-        gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         assert mock_sleep.call_count == 2
         mock_sleep.assert_any_call(1)  # 2**0
@@ -788,11 +810,11 @@ class TestFetchAndSave:
     @patch("generate_static_files.time.sleep")
     @patch("generate_static_files.requests.get")
     def test_return_timestamps(self, mock_get, mock_sleep, tmp_output_dir):
-        mock_get.return_value = _mock_response(text="content")
+        mock_get.return_value = _mock_response(text="content", json={"ok": True})
         fp = str(tmp_output_dir / "test_file")
         before = time.time()
 
-        start, end, ok = gsf.fetch_and_save("http://host/ep", fp, timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", fp, timeout=10)
 
         after = time.time()
         assert isinstance(start, float)
@@ -803,10 +825,10 @@ class TestFetchAndSave:
     @patch("generate_static_files.requests.get")
     def test_bare_filename_no_directory(self, mock_get, mock_sleep, monkeypatch, tmp_path):
         """When file_path has no dir component, dirname is '' -> uses '.'."""
-        mock_get.return_value = _mock_response(text="content")
+        mock_get.return_value = _mock_response(text="content", json={"ok": True})
         # Run from tmp_path so the bare filename writes there
         monkeypatch.chdir(tmp_path)
-        start, end, ok = gsf.fetch_and_save("http://host/ep", "bare_file", timeout=10)
+        start, end, ok = gsf.fetch_and_save("http://host/api/ep", "bare_file", timeout=10)
         assert ok is True
         assert os.path.exists(tmp_path / "bare_file")
 
@@ -1034,6 +1056,7 @@ class TestProgress:
 class TestBuildDayobsTasks:
     TODAY = 20260707
     YESTERDAY = 20260706
+    TOMORROW = 20260708
 
     def test_force_refresh_all_created(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
@@ -1063,7 +1086,11 @@ class TestBuildDayobsTasks:
         for task in tasks:
             assert set(task.keys()) == {"filename", "endpoint", "params", "start", "end"}
             assert task["start"] == self.TODAY
-            assert task["end"] == self.TODAY
+            assert (
+                task["end"] == self.TODAY
+                if task["endpoint"] not in gsf.EXCLUSIVE_END_ENDPOINTS
+                else self.TOMORROW
+            )
 
     def test_group_b_endpoints(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
@@ -1093,7 +1120,7 @@ class TestBuildDayobsTasks:
         )
         obs_tasks = [t for t in tasks if t["endpoint"] == "obs-status"]
         assert len(obs_tasks) == 1
-        assert obs_tasks[0]["params"]["metric"] == ["fault_loss", "weather"]
+        assert obs_tasks[0]["params"]["metric"] == gsf.OBS_STATUS_DIGEST_METRICS
         assert obs_tasks[0]["params"]["nightOnlyMetrics"] is True
         assert obs_tasks[0]["params"]["includeIntervals"] is True
 
@@ -1131,9 +1158,8 @@ class TestBuildDayobsTasks:
         old_combo = (20260701, 20260701)
         combos = [old_combo]
         # Create an almanac file for this old combo
-        filename = gsf.build_filename("almanac", {"dayObsStart": 20260701, "dayObsEnd": 20260701})
-        with open(str(tmp_output_dir / filename), "w") as f:
-            f.write("{}")
+        filename = gsf.build_filename("almanac", {"dayObsStart": 20260701, "dayObsEnd": 20260702})
+        _write_json(tmp_output_dir / filename, {})
 
         tasks, skipped = gsf.build_dayobs_tasks(
             combos,
@@ -1152,9 +1178,8 @@ class TestBuildDayobsTasks:
     def test_regenerates_today_files(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
         # Create the almanac file for today
-        filename = gsf.build_filename("almanac", {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY})
-        with open(str(tmp_output_dir / filename), "w") as f:
-            f.write("{}")
+        filename = gsf.build_filename("almanac", {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW})
+        _write_json(tmp_output_dir / filename, {})
 
         tasks, skipped = gsf.build_dayobs_tasks(
             combos,
@@ -1171,9 +1196,8 @@ class TestBuildDayobsTasks:
     def test_historic_mode_only_missing(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
         # Create one file (almanac) so it gets skipped
-        filename = gsf.build_filename("almanac", {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY})
-        with open(str(tmp_output_dir / filename), "w") as f:
-            f.write("{}")
+        filename = gsf.build_filename("almanac", {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW})
+        _write_json(tmp_output_dir / filename, {})
 
         tasks, skipped = gsf.build_dayobs_tasks(
             combos,
@@ -1195,17 +1219,20 @@ class TestBuildDayobsTasks:
         old_combo = (20260701, 20260701)
         combos = [old_combo]
         base_params = {"dayObsStart": 20260701, "dayObsEnd": 20260701}
+        base_params_exclusive = {"dayObsStart": 20260701, "dayObsEnd": 20260702}
 
         # Create files for old combo
-        for ep in ["almanac", "expected-exposures"]:
+        for ep in ["expected-exposures"]:
             filename = gsf.build_filename(ep, base_params)
-            with open(str(tmp_output_dir / filename), "w") as f:
-                f.write("{}")
+            _write_json(tmp_output_dir / filename, {})
+        for ep in ["almanac"]:
+            filename = gsf.build_filename(ep, base_params_exclusive)
+            _write_json(tmp_output_dir / filename, {})
+
         # One instrument-specific
-        inst_params = {**base_params, "instrument": "LSSTCam"}
+        inst_params = {**base_params_exclusive, "instrument": "LSSTCam"}
         filename = gsf.build_filename("exposures", inst_params)
-        with open(str(tmp_output_dir / filename), "w") as f:
-            f.write("{}")
+        _write_json(tmp_output_dir / filename, {})
 
         tasks, skipped = gsf.build_dayobs_tasks(
             combos,
@@ -1318,17 +1345,13 @@ class TestBuildDayobsTasks:
 class TestBuildBlockDetailsTasks:
     TODAY = 20260707
     YESTERDAY = 20260706
+    TOMORROW = 20260708
 
     def test_no_source_files(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=False,
-            historic_mode=False,
         )
         assert tasks == []
         assert skipped == 0
@@ -1338,18 +1361,13 @@ class TestBuildBlockDetailsTasks:
         # Write data-log file for LSSTCam only
         dl_filename = gsf.build_filename(
             "data-log",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW, "instrument": "LSSTCam"},
         )
         _write_json(str(tmp_output_dir / dl_filename), {"data_log": [{"science_program": "BLOCK-T400"}]})
 
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
         )
         assert len(tasks) == 1
         assert tasks[0]["params"]["key"] == ["BLOCK-T400"]
@@ -1358,18 +1376,13 @@ class TestBuildBlockDetailsTasks:
         combos = [(self.TODAY, self.TODAY)]
         exp_filename = gsf.build_filename(
             "exposures",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW, "instrument": "LSSTCam"},
         )
         _write_json(str(tmp_output_dir / exp_filename), {"exposures": [{"science_program": "BLOCK-T500"}]})
 
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
         )
         assert len(tasks) == 1
         assert tasks[0]["params"]["key"] == ["BLOCK-T500"]
@@ -1381,9 +1394,10 @@ class TestBuildBlockDetailsTasks:
 
         # Both combos' data-log files have the same BLOCK key
         for start, end in combos:
+            exclusive_end = gsf.dayobs_add_days(end, 1)
             dl_filename = gsf.build_filename(
                 "data-log",
-                {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"},
+                {"dayObsStart": start, "dayObsEnd": exclusive_end, "instrument": "LSSTCam"},
             )
             _write_json(
                 str(tmp_output_dir / dl_filename),
@@ -1393,16 +1407,11 @@ class TestBuildBlockDetailsTasks:
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
         )
-        # Same frozenset -> only one task
+        # Only one task for all keys
         assert len(tasks) == 1
 
-    def test_different_keysets_separate_tasks(self, tmp_output_dir):
+    def test_different_keysets_same_tasks(self, tmp_output_dir):
         combo1 = (self.TODAY, self.TODAY)
         combo2 = (self.YESTERDAY, self.YESTERDAY)
         combos = [combo1, combo2]
@@ -1410,7 +1419,7 @@ class TestBuildBlockDetailsTasks:
         # combo1 has BLOCK-T328, combo2 has BLOCK-T329
         dl1 = gsf.build_filename(
             "data-log",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW, "instrument": "LSSTCam"},
         )
         _write_json(
             str(tmp_output_dir / dl1),
@@ -1418,7 +1427,7 @@ class TestBuildBlockDetailsTasks:
         )
         dl2 = gsf.build_filename(
             "data-log",
-            {"dayObsStart": self.YESTERDAY, "dayObsEnd": self.YESTERDAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.YESTERDAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
         )
         _write_json(
             str(tmp_output_dir / dl2),
@@ -1428,19 +1437,14 @@ class TestBuildBlockDetailsTasks:
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=True,
-            force_refresh=True,
-            historic_mode=False,
         )
-        assert len(tasks) == 2
+        assert len(tasks) == 1
 
     def test_keys_sorted_alphabetically(self, tmp_output_dir):
         combos = [(self.TODAY, self.TODAY)]
         dl_filename = gsf.build_filename(
             "data-log",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW, "instrument": "LSSTCam"},
         )
         _write_json(
             str(tmp_output_dir / dl_filename),
@@ -1456,70 +1460,8 @@ class TestBuildBlockDetailsTasks:
         tasks, _ = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
         )
         assert tasks[0]["params"]["key"] == ["BLOCK-A", "BLOCK-M", "BLOCK-Z"]
-
-    def test_touches_today_regenerates(self, tmp_output_dir):
-        combos = [(self.TODAY, self.TODAY)]
-        dl_filename = gsf.build_filename(
-            "data-log",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
-        )
-        _write_json(
-            str(tmp_output_dir / dl_filename),
-            {"data_log": [{"science_program": "BLOCK-T328"}]},
-        )
-
-        # Create the block-details file so it already exists
-        bd_filename = gsf.build_filename("block-details", {"key": ["BLOCK-T328"]})
-        with open(str(tmp_output_dir / bd_filename), "w") as f:
-            f.write("{}")
-
-        tasks, skipped = gsf.build_block_details_tasks(
-            combos,
-            str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=False,
-            historic_mode=False,
-        )
-        # Should regenerate because the key set touches today
-        assert len(tasks) == 1
-        assert skipped == 0
-
-    def test_historic_mode_skips_existing(self, tmp_output_dir):
-        combos = [(self.TODAY, self.TODAY)]
-        dl_filename = gsf.build_filename(
-            "data-log",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
-        )
-        _write_json(
-            str(tmp_output_dir / dl_filename),
-            {"data_log": [{"science_program": "BLOCK-T328"}]},
-        )
-
-        # Create the block-details file
-        bd_filename = gsf.build_filename("block-details", {"key": ["BLOCK-T328"]})
-        with open(str(tmp_output_dir / bd_filename), "w") as f:
-            f.write("{}")
-
-        tasks, skipped = gsf.build_block_details_tasks(
-            combos,
-            str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=False,
-            historic_mode=True,
-        )
-        assert len(tasks) == 0
-        assert skipped == 1
 
     def test_dry_run_no_warnings(self, tmp_output_dir, caplog):
         combos = [(self.TODAY, self.TODAY)]
@@ -1530,11 +1472,6 @@ class TestBuildBlockDetailsTasks:
             tasks, skipped = gsf.build_block_details_tasks(
                 combos,
                 str(tmp_output_dir),
-                self.TODAY,
-                self.YESTERDAY,
-                is_new_day=False,
-                force_refresh=False,
-                historic_mode=False,
                 dry_run=True,
             )
         # No "missing" warnings should have been logged
@@ -1548,7 +1485,7 @@ class TestBuildBlockDetailsTasks:
         # Data-log with no science_program
         dl_filename = gsf.build_filename(
             "data-log",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW, "instrument": "LSSTCam"},
         )
         _write_json(
             str(tmp_output_dir / dl_filename),
@@ -1558,11 +1495,6 @@ class TestBuildBlockDetailsTasks:
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
         )
         assert tasks == []
         assert skipped == 0
@@ -1576,11 +1508,6 @@ class TestBuildBlockDetailsTasks:
             gsf.build_block_details_tasks(
                 combos,
                 str(tmp_output_dir),
-                self.TODAY,
-                self.YESTERDAY,
-                is_new_day=False,
-                force_refresh=False,
-                historic_mode=False,
                 dry_run=False,
             )
         warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
@@ -1588,43 +1515,13 @@ class TestBuildBlockDetailsTasks:
         # Should warn about missing data-log, exposures
         assert len(block_warnings) >= 1
 
-    def test_touches_yesterday_new_day_regenerates(self, tmp_output_dir):
-        """Combo spanning only yesterday with is_new_day=True
-        should regenerate existing block-details."""
-        combos = [(self.YESTERDAY, self.YESTERDAY)]
-        dl_filename = gsf.build_filename(
-            "data-log",
-            {"dayObsStart": self.YESTERDAY, "dayObsEnd": self.YESTERDAY, "instrument": "LSSTCam"},
-        )
-        _write_json(
-            str(tmp_output_dir / dl_filename),
-            {"data_log": [{"science_program": "BLOCK-T328"}]},
-        )
-
-        # Create the block-details file so it already exists
-        bd_filename = gsf.build_filename("block-details", {"key": ["BLOCK-T328"]})
-        with open(str(tmp_output_dir / bd_filename), "w") as f:
-            f.write("{}")
-
-        tasks, skipped = gsf.build_block_details_tasks(
-            combos,
-            str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=True,
-            force_refresh=False,
-            historic_mode=False,
-        )
-        assert len(tasks) == 1
-        assert skipped == 0
-
     def test_multiple_sources_different_keys_same_combo(self, tmp_output_dir):
         """data-log and exposures with different keys for the same
-        combo should produce separate block-details tasks."""
+        combo should produce the same block-details tasks."""
         combos = [(self.TODAY, self.TODAY)]
         dl_filename = gsf.build_filename(
             "data-log",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW, "instrument": "LSSTCam"},
         )
         _write_json(
             str(tmp_output_dir / dl_filename),
@@ -1632,7 +1529,7 @@ class TestBuildBlockDetailsTasks:
         )
         exp_filename = gsf.build_filename(
             "exposures",
-            {"dayObsStart": self.TODAY, "dayObsEnd": self.TODAY, "instrument": "LSSTCam"},
+            {"dayObsStart": self.TODAY, "dayObsEnd": self.TOMORROW, "instrument": "LSSTCam"},
         )
         _write_json(
             str(tmp_output_dir / exp_filename),
@@ -1642,25 +1539,15 @@ class TestBuildBlockDetailsTasks:
         tasks, skipped = gsf.build_block_details_tasks(
             combos,
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
         )
-        assert len(tasks) == 2
+        assert len(tasks) == 1
         all_keys = {tuple(t["params"]["key"]) for t in tasks}
-        assert all_keys == {("BLOCK-A",), ("BLOCK-B",)}
+        assert all_keys == {("BLOCK-A", "BLOCK-B")}
 
     def test_empty_combos(self, tmp_output_dir):
         tasks, skipped = gsf.build_block_details_tasks(
             [],
             str(tmp_output_dir),
-            self.TODAY,
-            self.YESTERDAY,
-            is_new_day=False,
-            force_refresh=True,
-            historic_mode=False,
         )
         assert tasks == []
         assert skipped == 0
@@ -1925,7 +1812,7 @@ class TestMain:
             "--rate-limit",
             "0",
             "--max-days",
-            "0",
+            "1",
             "--request-timeout",
             "5",
             "--workers",
@@ -2086,9 +1973,8 @@ class TestMain:
         monkeypatch.setattr("generate_static_files.sys.argv", self._base_argv(tmp_output_dir))
 
         # Create today's almanac sentinel file
-        sentinel = gsf.build_filename("almanac", {"dayObsStart": 20260707, "dayObsEnd": 20260707})
-        with open(str(tmp_output_dir / sentinel), "w") as f:
-            f.write("{}")
+        sentinel = gsf.build_filename("almanac", {"dayObsStart": 20260707, "dayObsEnd": 20260708})
+        _write_json(tmp_output_dir / sentinel, {})
 
         with patch("generate_static_files.os.open", return_value=99):
             with patch("generate_static_files.os.write"):
@@ -2109,8 +1995,7 @@ class TestMain:
             self._base_argv(tmp_output_dir, ["--force-refresh"]),
         )
         # Create a version file so it already exists
-        with open(str(tmp_output_dir / "version"), "w") as f:
-            f.write("{}")
+        _write_json(tmp_output_dir / "version", {})
 
         with patch("generate_static_files.os.open", return_value=99):
             with patch("generate_static_files.os.write"):
@@ -2165,33 +2050,6 @@ class TestMain:
                         gsf.main()
 
         mock_combos.assert_called_once_with(20260707, 14, 3)
-
-    @patch("generate_static_files._run_tasks")
-    @patch("generate_static_files.get_current_dayobs", return_value=20260707)
-    def test_version_skip_counting(self, mock_dayobs, mock_run, tmp_output_dir, monkeypatch):
-        """When version file exists and no --force-refresh,
-        version_skipped should be counted."""
-        monkeypatch.setattr(
-            "generate_static_files.sys.argv",
-            self._base_argv(tmp_output_dir),
-        )
-        # Create the version file so it gets skipped
-        with open(str(tmp_output_dir / "version"), "w") as f:
-            f.write("{}")
-
-        with patch("generate_static_files.os.open", return_value=99):
-            with patch("generate_static_files.os.write"):
-                with patch("generate_static_files.os.close"):
-                    with patch("generate_static_files.os.unlink"):
-                        with patch("generate_static_files.logger") as mock_logger:
-                            gsf.main()
-
-        # Find the summary log call
-        summary_calls = [c for c in mock_logger.info.call_args_list if c[0][0] and "skipped" in str(c[0][0])]
-        assert len(summary_calls) == 1
-        # args are (created, skipped, errors); version should be counted
-        skipped_count = summary_calls[0][0][2]
-        assert skipped_count >= 1
 
     @patch("generate_static_files._run_tasks")
     @patch("generate_static_files.get_current_dayobs", return_value=20260707)
