@@ -293,14 +293,16 @@ def _sum_on_sky_within_twilight(
     obs_start_utc_ms = _obs_start_tai_to_utc_ms(visits_sorted["obs_start"])
 
     in_twilight = (obs_start_utc_ms >= window_start_ms) & (obs_start_utc_ms <= window_end_ms)
-    base_mask = visits_sorted["can_see_sky"].fillna(False).astype(bool) & in_twilight
+    base_mask = (
+        visits_sorted["can_see_sky"].fillna(False).infer_objects(copy=False).astype(bool) & in_twilight
+    )
 
     filter_changed = _compute_filter_changed(visits_sorted)
     with_change_mask = base_mask & filter_changed
     without_change_mask = base_mask & ~filter_changed
 
-    overhead = visits_sorted["overhead"].fillna(0)
-    visit_gap = visits_sorted["visit_gap"].fillna(0)
+    overhead = visits_sorted["overhead"].fillna(0).infer_objects(copy=False)
+    visit_gap = visits_sorted["visit_gap"].fillna(0).infer_objects(copy=False)
 
     sums_sec = {
         "sum_overhead_with_filter_change": float(overhead[with_change_mask].sum()),

@@ -97,7 +97,7 @@ def stub_augment_with_gaps(exposures_df, instrument, skip_rs_columns=True):
     # row, and the first row of the frame gets 0.
     out = exposures_df.sort_values("obs_start_mjd").copy()
     prev_end = out["obs_end_mjd"].shift(1)
-    out["visit_gap"] = ((out["obs_start_mjd"] - prev_end) * 86400).fillna(0.0)
+    out["visit_gap"] = ((out["obs_start_mjd"] - prev_end) * 86400).fillna(0.0).infer_objects(copy=False)
     return out
 
 
