@@ -117,23 +117,23 @@ def dayobs_add_days(dayobs: int, days: int) -> int:
     return int(d.strftime("%Y%m%d"))
 
 
-def generate_dayobs_combinations(today: int, max_days_ago: int, max_combo_size: int | None = None) -> list:
+def generate_dayobs_combinations(today: int, max_days: int, max_combo_size: int | None = None) -> list:
     """Return all contiguous (start, end) dayobs pairs.
 
-    Generates every sub-range of [today - (max_days_ago - 1), today] with
-    span capped at max_combo_size. When max_combo_size < max_days_ago,
+    Generates every sub-range of [today - (max_days - 1), today] with
+    span capped at max_combo_size. When max_combo_size < max_days,
     rolling windows of up to max_combo_size are generated across the
     full lookback window. Ordered smallest span first (single-day),
     newest dates first within each span size.
     """
     if max_combo_size is None:
-        max_combo_size = max_days_ago
-    max_span = min(max_days_ago, max_combo_size)
+        max_combo_size = max_days
+    max_span = min(max_days, max_combo_size)
     combos = []
     # span = number of days between start and end (0 = single day)
     for span in range(0, max_span + 1):
         # Slide the window: newest (closest to today) first
-        for start_offset in range(-span, -max_days_ago, -1):
+        for start_offset in range(-span, -max_days, -1):
             end_offset = start_offset + span
             start = dayobs_add_days(today, start_offset)
             end = dayobs_add_days(today, end_offset)
@@ -178,6 +178,10 @@ def build_filename(endpoint: str, params: dict) -> str:
         urlPaths.append(params["instrument"])
     if "dayObsStart" in params and "dayObsEnd" in params:
         urlPaths.append(f"{params['dayObsStart']}_{params['dayObsEnd']}")
+    elif ("dayObsStart" in params and "dayObsEnd" not in params) or (
+        "dayObsEnd" in params and "dayObsStart" not in params
+    ):
+        raise ValueError("Both dayObsStart and dayObsEnd must be provided together.")
     return "/".join(urlPaths) + ".json"
 
 
@@ -858,6 +862,9 @@ def main():
         # Generate all dayobs combinations
         combos = generate_dayobs_combinations(today, args.max_days, args.max_combo_size)
         logger.info("Generated %d dayobs combinations", len(combos))
+        print("---", flush=True)
+        print(combos)
+        print("---", flush=True)
 
         # Enforce retention policy
         clean_stale_files(args.output_dir, combos, args.dry_run)
