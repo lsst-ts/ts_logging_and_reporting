@@ -1,0 +1,1 @@
+Add document mapping where each adapter queries the EFD from.
