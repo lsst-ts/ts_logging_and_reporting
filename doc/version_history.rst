@@ -1,3 +1,12 @@
+v0.16.4 (2026-11-25)
+===================
+
+Bug Fixes
+---------
+
+- Upgrade rubin_nights to access obsenv context feed data bugfix. (`SSW-3203 <https://rubinobs.atlassian.net//browse/SSW-3203>`_)
+
+
 v0.16.3 (2026-11-18)
 ====================
 
