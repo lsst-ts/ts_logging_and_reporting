@@ -1,0 +1,976 @@
+#!/usr/bin/env python3
+# This file is part of ts_logging_and_reporting.
+#
+# Developed for the Vera C. Rubin Observatory Telescope and Site Systems.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""
+Generate static files for the Nightly Digest backend.
+
+Calls the running backend via HTTP and saves each response as a static file,
+named after the endpoint + query string. Designed to be run periodically
+(e.g., every 5 minutes) to keep static files up to date.
+
+See STATIC_GENERATOR_PLAN.md for full design documentation.
+"""
+
+import argparse
+import json
+import logging
+import os
+import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timedelta, timezone
+
+try:
+    import requests
+except ImportError:
+    print("ERROR: 'requests' package is required. Install with: pip install requests")
+    sys.exit(1)
+
+
+logger = logging.getLogger(__name__)
+
+OBS_STATUS_DIGEST_METRICS = ["fault_loss", "weather", "downtime"]
+
+INSTRUMENT_ENDPOINTS = [
+    "exposures",
+    "exposure-flags",
+    "static-visit-map",
+    "data-log",
+    "exposure-entries",
+    "multi-night-visit-maps",
+]
+
+EXCLUSIVE_END_ENDPOINTS = [
+    "exposures",
+    "almanac",
+    "exposure-flags",
+    "static-visit-map",
+    "data-log",
+    "exposure-entries",
+    "multi-night-visit-maps",
+]
+
+
+def remove_user_id(record: dict) -> dict:
+    """Remove the 'user_id' field from a record, if it exists."""
+    if "user_id" in record:
+        del record["user_id"]
+    return record
+
+
+def remove_message_text(record: dict) -> dict:
+    """Remove the 'message_text' field from a record, if it exists."""
+    if "message_text" in record:
+        del record["message_text"]
+    return record
+
+
+POST_PROCESSING = {"exposure-entries": [("exposure_entries", [remove_user_id, remove_message_text])]}
+
+
+# ---------------------------------------------------------------------------
+# DayObs helpers
+# ---------------------------------------------------------------------------
+
+
+def get_current_dayobs() -> int:
+    """Return today's dayobs integer (YYYYMMDD) based on noon-UTC boundary.
+
+    DayObs runs from noon UTC to noon UTC. Before noon UTC, the current
+    dayobs is yesterday's calendar date; at or after noon it is today's.
+    """
+    now = datetime.now(timezone.utc)
+    if now.hour < 12:
+        d = now.date() - timedelta(days=1)
+    else:
+        d = now.date()
+    return int(d.strftime("%Y%m%d"))
+
+
+def dayobs_to_date(dayobs: int) -> date:
+    return datetime.strptime(str(dayobs), "%Y%m%d").date()
+
+
+def dayobs_add_days(dayobs: int, days: int) -> int:
+    """Add (or subtract) days from a dayobs integer."""
+    d = dayobs_to_date(dayobs) + timedelta(days=days)
+    return int(d.strftime("%Y%m%d"))
+
+
+def generate_dayobs_combinations(today: int, max_days: int, max_combo_size: int | None = None) -> list:
+    """Return all contiguous (start, end) dayobs pairs.
+
+    Generates every sub-range of [today - (max_days - 1), today] with
+    span capped at max_combo_size. When max_combo_size < max_days,
+    rolling windows of up to max_combo_size are generated across the
+    full lookback window. Ordered smallest span first (single-day),
+    newest dates first within each span size.
+    """
+    if max_combo_size is None:
+        max_combo_size = max_days
+    max_span = min(max_days, max_combo_size)
+    combos = []
+    # span = number of days between start and end (0 = single day)
+    for span in range(0, max_span + 1):
+        # Slide the window: newest (closest to today) first
+        for start_offset in range(-span, -max_days, -1):
+            end_offset = start_offset + span
+            start = dayobs_add_days(today, start_offset)
+            end = dayobs_add_days(today, end_offset)
+            combos.append((start, end))
+    return combos
+
+
+# ---------------------------------------------------------------------------
+# URL / filename building
+# ---------------------------------------------------------------------------
+
+
+def _build_query_string(params: dict) -> str:
+    """Build a query string from a params dict, supporting repeated keys.
+
+    Values that are lists produce repeated key=value pairs.
+    Boolean values are lowercased strings (true/false).
+    """
+    parts = []
+    for key, value in params.items():
+        if isinstance(value, list):
+            for v in value:
+                parts.append(f"{key}={v}")
+        elif isinstance(value, bool):
+            parts.append(f"{key}={'true' if value else 'false'}")
+        else:
+            parts.append(f"{key}={value}")
+    return "&".join(parts)
+
+
+def build_filename(endpoint: str, params: dict) -> str:
+    """Build the static filename for an endpoint + params dict.
+
+    The filename is the endpoint name (without leading slash) plus the
+    canonical query string, e.g.:
+        exposures?dayObsStart=20260625&dayObsEnd=20260625&instrument=LSSTCam
+    """
+    if not params:
+        return endpoint + ".json"
+    urlPaths = [endpoint]
+    if "instrument" in params:
+        urlPaths.append(params["instrument"])
+    if "dayObsStart" in params and "dayObsEnd" in params:
+        urlPaths.append(f"{params['dayObsStart']}_{params['dayObsEnd']}")
+    elif ("dayObsStart" in params and "dayObsEnd" not in params) or (
+        "dayObsEnd" in params and "dayObsStart" not in params
+    ):
+        raise ValueError("Both dayObsStart and dayObsEnd must be provided together.")
+    return "/".join(urlPaths) + ".json"
+
+
+def build_url(backend_url: str, endpoint: str, params: dict) -> str:
+    """Build the full backend URL for a request."""
+    base = backend_url.rstrip("/")
+    if not params:
+        return f"{base}/{endpoint}"
+    return f"{base}/{endpoint}?{_build_query_string(params)}"
+
+
+# ---------------------------------------------------------------------------
+# Regeneration logic
+# ---------------------------------------------------------------------------
+
+
+def should_regenerate(
+    file_path: str,
+    start: int,
+    end: int,
+    today: int,
+    yesterday: int,
+    is_new_day: bool,
+    force_refresh: bool,
+    historic_mode: bool,
+) -> bool:
+    """Decide whether to fetch and write this file.
+
+    Rules (in priority order):
+    1. --force-refresh: always regenerate.
+    2. File doesn't exist: always create.
+    3. Historic mode (--dayobs-override w/o --force-refresh): skip.
+    4. Normal mode: overwrite if file spans today, or spans
+       yesterday on the first run of a new day.
+    """
+    if force_refresh:
+        return True
+
+    if not os.path.exists(file_path):
+        return True
+
+    if historic_mode:
+        return False
+
+    # Normal mode: refresh files that reference today's (still-changing) data
+    if start <= today <= end:
+        return True
+
+    # On first run of a new day, refresh yesterday's files (may have late data)
+    if is_new_day and (start <= yesterday <= end):
+        return True
+
+    return False
+
+
+def should_regenerate_block_details(
+    file_path: str,
+    touches: dict,
+    is_new_day: bool,
+    force_refresh: bool,
+    historic_mode: bool,
+) -> bool:
+    """Decide whether to fetch and write a block-details file.
+
+    block-details filenames contain no dates, so regeneration is driven by
+    whether the key set was seen in any combo spanning today or yesterday,
+    rather than by the filename itself.
+
+    Rules mirror should_regenerate:
+    1. --force-refresh: always regenerate.
+    2. File doesn't exist: always create.
+    3. Historic mode: never overwrite.
+    4. Normal mode: regenerate if key set spans today (data still changing),
+       or spans yesterday on the first run of a new day.
+    """
+    if force_refresh:
+        return True
+
+    if not os.path.exists(file_path):
+        return True
+
+    if historic_mode:
+        return False
+
+    if touches["today"]:
+        return True
+
+    if is_new_day and touches["yesterday"]:
+        return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Retention policy logic
+# ---------------------------------------------------------------------------
+
+
+def should_remove(filename, dirname, combos):
+    start, end = tuple(filename.removesuffix(".json").split("_"))
+    inclusive_end = dayobs_add_days(end, -1)
+    is_exclusive_endpoint = dirname in EXCLUSIVE_END_ENDPOINTS
+    combo = (int(start), int(inclusive_end if is_exclusive_endpoint else end))
+    return combo not in combos
+
+
+def clean_stale_files(output_dir, combos, dry_run):
+    """Clean up stale files according to the retention policy."""
+    for dirname in os.listdir(output_dir):
+        if not os.path.isdir(os.path.join(output_dir, dirname)):
+            continue
+        if dirname in INSTRUMENT_ENDPOINTS:
+            for filename in os.listdir(os.path.join(output_dir, dirname, "LSSTCam")):
+                if should_remove(filename, dirname, combos):
+                    if dry_run:
+                        print(f"Would remove {os.path.join(output_dir, dirname, 'LSSTCam', filename)}")
+                    else:
+                        os.remove(os.path.join(output_dir, dirname, "LSSTCam", filename))
+        else:
+            for filename in os.listdir(os.path.join(output_dir, dirname)):
+                if should_remove(filename, dirname, combos):
+                    if dry_run:
+                        print(f"Would remove {os.path.join(output_dir, dirname, filename)}")
+                    else:
+                        os.remove(os.path.join(output_dir, dirname, filename))
+
+
+# ---------------------------------------------------------------------------
+# Fetch and save
+# ---------------------------------------------------------------------------
+
+
+def post_process_data(data, endpoint):
+    if endpoint in POST_PROCESSING:
+        entries = POST_PROCESSING[endpoint]
+        for entry, functions in entries:
+            if entry in data and data[entry]:
+                for record in data[entry]:
+                    for func in functions:
+                        record = func(record)
+    return data
+
+
+def fetch_and_save(url: str, file_path: str, timeout: int):
+    """Fetch url and atomically save the response body to file_path.
+
+    Returns a (start_ts, end_ts, success) tuple. Uses a temp file +
+    os.rename() for atomic writes. Retries up to 2 times with backoff
+    on connection errors.
+    """
+    tmp_path = file_path + ".tmp"
+    max_retries = 2
+    start_ts = time.time()
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+
+            # Post processing
+            endpoint = url.split("api/")[1].split("?")[0]
+            data = post_process_data(response.json(), endpoint)
+        except requests.exceptions.HTTPError as e:
+            end_ts = time.time()
+            logger.warning("HTTP error (%.2fs): %s", end_ts - start_ts, e)
+            return (start_ts, end_ts, False)
+        except requests.exceptions.ConnectionError as e:
+            if attempt < max_retries:
+                wait = 2**attempt
+                logger.warning(
+                    "Connection error (attempt %d/%d), retrying in %ds: %s",
+                    attempt + 1,
+                    max_retries + 1,
+                    wait,
+                    e,
+                )
+                time.sleep(wait)
+                continue
+            end_ts = time.time()
+            logger.warning(
+                "Connection error after %d attempts (%.2fs): %s",
+                max_retries + 1,
+                end_ts - start_ts,
+                e,
+            )
+            return (start_ts, end_ts, False)
+        except requests.exceptions.Timeout:
+            end_ts = time.time()
+            logger.warning(
+                "Request timed out after %ds (%.2fs)",
+                timeout,
+                end_ts - start_ts,
+            )
+            return (start_ts, end_ts, False)
+
+        # Write atomically
+        try:
+            os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data))
+            os.rename(tmp_path, file_path)
+            end_ts = time.time()
+            return (start_ts, end_ts, True)
+        except OSError as e:
+            # Clean up temp file if possible
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            end_ts = time.time()
+            logger.error("File write error (%.2fs): %s", end_ts - start_ts, e)
+            raise  # Abort on write errors — likely a permissions problem
+
+
+# ---------------------------------------------------------------------------
+# Block-details key extraction
+# ---------------------------------------------------------------------------
+
+
+def extract_block_keys_from_data_log(file_path: str) -> set:
+    """Read a saved data-log file and extract unique science_program values."""
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            data = json.load(f)
+        records = data.get("data_log", [])
+        return {r["science_program"] for r in records if r.get("science_program")}
+    except (OSError, json.JSONDecodeError, KeyError):
+        return set()
+
+
+def extract_block_keys_from_exposures(file_path: str) -> set:
+    """Read a saved exposures file and extract science_program values."""
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            data = json.load(f)
+        records = data.get("exposures", [])
+        return {r["science_program"] for r in records if r.get("science_program")}
+    except (OSError, json.JSONDecodeError, KeyError):
+        return set()
+
+
+# ---------------------------------------------------------------------------
+# Progress counter helper
+# ---------------------------------------------------------------------------
+
+
+class Progress:
+    def __init__(self, total: int):
+        self.total = total
+        self.current = 0
+        self.created = 0
+        self.skipped = 0
+        self.errors = 0
+        self._lock = threading.RLock()
+
+    def tick(self, status: str, filename: str, detail: str = ""):
+        with self._lock:
+            self.current += 1
+            suffix = f" ({detail})" if detail else ""
+            logger.info("[%d/%d] %s %s%s", self.current, self.total, status, filename, suffix)
+
+    def record_created(self, filename: str, dry_run: bool, start: float = None, end: float = None):
+        with self._lock:
+            self.created += 1
+        timing = ""
+        if start is not None and end is not None:
+            start_str = datetime.fromtimestamp(start, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
+            end_str = datetime.fromtimestamp(end, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
+            duration = end - start
+            timing = f"{duration:.2f}s | {start_str} -> {end_str}"
+        elif start is not None and end is None:
+            start_str = datetime.fromtimestamp(start, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
+            timing = f" [{start_str}]"
+        self.tick("Would create" if dry_run else "Created", filename, timing)
+
+    def record_skipped(self, filename: str, reason: str = "exists"):
+        with self._lock:
+            self.skipped += 1
+        self.tick("Skipped", filename, reason)
+
+    def record_error(self, filename: str, start: float, end: float):
+        with self._lock:
+            self.errors += 1
+        start_str = datetime.fromtimestamp(start, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
+        end_str = datetime.fromtimestamp(end, tz=timezone.utc).strftime("%H:%M:%S.%f")[:-3]
+        timing = f"{end - start:.2f}s | {start_str} -> {end_str}"
+        self.tick("ERROR", filename, timing)
+
+    def summary(self, batch_start: float = None):
+        logger.info(
+            "\nSummary: %d created, %d skipped, %d errors",
+            self.created,
+            self.skipped,
+            self.errors,
+        )
+        if batch_start is not None:
+            batch_end = time.time()
+            batch_duration = batch_end - batch_start
+            end_utc = datetime.fromtimestamp(batch_end, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            logger.info("Batch ended at  %s UTC", end_utc)
+            logger.info("Total duration: %.1fs", batch_duration)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint definitions
+# ---------------------------------------------------------------------------
+
+
+def build_dayobs_tasks(
+    combos: list,
+    today: int,
+    yesterday: int,
+    is_new_day: bool,
+    force_refresh: bool,
+    historic_mode: bool,
+    output_dir: str,
+    endpoint_filter: set | None = None,
+) -> tuple:
+    """Build the full list of tasks for Groups A-C and count skipped files.
+
+    Returns (tasks, skipped_count) where tasks is a list of dicts
+    with keys: filename, endpoint, params, start, end — only for
+    files needing regeneration.
+
+    If *endpoint_filter* is given, only endpoints whose name is in
+    the set are included.
+    """
+    tasks = []
+    skipped = 0
+
+    def _check(endpoint, params, start, end):
+        nonlocal skipped
+        if endpoint_filter is not None and endpoint not in endpoint_filter:
+            return
+        if endpoint in EXCLUSIVE_END_ENDPOINTS and start == end:
+            return
+        filename = build_filename(endpoint, params)
+        file_path = os.path.join(output_dir, filename)
+        if should_regenerate(
+            file_path,
+            start,
+            end,
+            today,
+            yesterday,
+            is_new_day,
+            force_refresh,
+            historic_mode,
+        ):
+            tasks.append(
+                {
+                    "filename": filename,
+                    "endpoint": endpoint,
+                    "params": params,
+                    "start": start,
+                    "end": end,
+                }
+            )
+        elif os.path.exists(file_path):
+            skipped += 1
+
+    for start, end in combos:
+        base_params = {"dayObsStart": start, "dayObsEnd": end}
+        exclusive_end = dayobs_add_days(end, 1)
+
+        # Group B: dayobs-only endpoints
+        for endpoint in ["expected-exposures", "almanac"]:
+            if endpoint in EXCLUSIVE_END_ENDPOINTS:
+                _check(endpoint, {**base_params, "dayObsEnd": exclusive_end}, start, exclusive_end)
+            else:
+                _check(endpoint, base_params, start, end)
+
+        # Group C: obs-status variant 1 (Digest)
+        _check(
+            "obs-status",
+            {
+                "dayObsStart": start,
+                "dayObsEnd": end,
+                "includeEntries": True,
+                "includeIntervals": True,
+                "nightOnlyMetrics": True,
+                "metric": OBS_STATUS_DIGEST_METRICS,
+            },
+            start,
+            end,
+        )
+
+        # Group A: dayobs + instrument endpoints (LSSTCam only)
+        inst_params = {"dayObsStart": start, "dayObsEnd": end, "instrument": "LSSTCam"}
+
+        for endpoint in [
+            "exposures",
+            "data-log",
+            "exposure-flags",
+            "exposure-entries",
+            "static-visit-map",
+        ]:
+            if endpoint in EXCLUSIVE_END_ENDPOINTS:
+                _check(endpoint, {**inst_params, "dayObsEnd": exclusive_end}, start, exclusive_end)
+            else:
+                _check(endpoint, inst_params, start, end)
+
+        # multi-night-visit-maps has an extra appletMode param
+        _check(
+            "multi-night-visit-maps",
+            {
+                "dayObsStart": start,
+                "dayObsEnd": exclusive_end,
+                "instrument": "LSSTCam",
+                "appletMode": False,
+            },
+            start,
+            exclusive_end,
+        )
+
+    return tasks, skipped
+
+
+def build_block_details_tasks(
+    combos: list,
+    output_dir: str,
+    dry_run: bool = False,
+) -> tuple:
+    """Derive block-details tasks from saved files.
+    Reads data-log and exposure files. One task is created that contains
+    the entire set of BLOCK keys across all combos.
+    Returns (tasks, skipped_count).
+    """
+
+    all_keys = set()
+    for start, end in combos:
+        exclusive_end = dayobs_add_days(end, 1)
+        dl_filename = build_filename(
+            "data-log",
+            {"dayObsStart": start, "dayObsEnd": exclusive_end, "instrument": "LSSTCam"},
+        )
+        dl_path = os.path.join(output_dir, dl_filename)
+        if os.path.exists(dl_path):
+            dl_keys = extract_block_keys_from_data_log(dl_path)
+            all_keys.update(dl_keys)
+        elif not dry_run:
+            logger.warning("block-details: data-log missing for %d-%d %s", start, end, "LSSTCam")
+
+        exp_filename = build_filename(
+            "exposures",
+            {"dayObsStart": start, "dayObsEnd": exclusive_end, "instrument": "LSSTCam"},
+        )
+        exp_path = os.path.join(output_dir, exp_filename)
+        if os.path.exists(exp_path):
+            exp_keys = extract_block_keys_from_exposures(exp_path)
+            all_keys.update(exp_keys)
+        elif not dry_run:
+            logger.warning("block-details: exposures missing for %d-%d %s", start, end, "LSSTCam")
+
+    tasks = []
+    skipped = 0
+
+    filename = build_filename("block-details", {})
+    sorted_keys = sorted(all_keys)
+    filtered_keys = [k for k in sorted_keys if k.startswith("BLOCK-")]
+
+    if filtered_keys:
+        params = {"key": filtered_keys}
+        tasks.append({"filename": filename, "endpoint": "block-details", "params": params})
+
+    return tasks, skipped
+
+
+# ---------------------------------------------------------------------------
+# Task execution
+# ---------------------------------------------------------------------------
+
+
+def _run_task(task, backend_url, output_dir, request_timeout, rate_limit, dry_run, progress):
+    """Execute a single task and record progress. Thread-safe."""
+    url = build_url(backend_url, task["endpoint"], task["params"])
+    file_path = os.path.join(output_dir, task["filename"])
+    if dry_run:
+        progress.record_created(task["filename"], dry_run=True)
+    else:
+        start_ts, end_ts, ok = fetch_and_save(url, file_path, request_timeout)
+        if ok:
+            progress.record_created(task["filename"], dry_run=False, start=start_ts, end=end_ts)
+        else:
+            progress.record_error(task["filename"], start=start_ts, end=end_ts)
+    if rate_limit > 0 and not dry_run:
+        time.sleep(rate_limit)
+
+
+def _run_tasks(tasks, backend_url, output_dir, request_timeout, rate_limit, dry_run, progress, workers):
+    """Run tasks concurrently up to `workers` at a time."""
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                _run_task,
+                task,
+                backend_url,
+                output_dir,
+                request_timeout,
+                rate_limit,
+                dry_run,
+                progress,
+            ): task
+            for task in tasks
+        }
+        for future in as_completed(futures):
+            future.result()  # re-raises OSError from write failures
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate static files by calling the Nightly Digest backend.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--backend-url",
+        default="http://localhost:8080/nightlydigest/api",
+        help="Base URL of the running backend",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="./static_output",
+        help="Directory to write static files into",
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=float,
+        default=0.5,
+        metavar="SECONDS",
+        help="Seconds to sleep between HTTP requests",
+    )
+    parser.add_argument(
+        "--max-days",
+        type=int,
+        default=7,
+        help="How many days back from today to include in the lookback window",
+    )
+    parser.add_argument(
+        "--max-combo-size",
+        type=int,
+        default=7,
+        help=(
+            "Maximum span (in days) for any single date-range combo. "
+            "Capped at --max-days if smaller. Allows generating a wider "
+            "lookback window with rolling combos instead of one giant range."
+        ),
+    )
+    parser.add_argument(
+        "--request-timeout",
+        type=int,
+        default=120,
+        metavar="SECONDS",
+        help="HTTP request timeout in seconds (visit maps can be slow)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be done without making requests or writing files",
+    )
+    parser.add_argument(
+        "--dayobs-override",
+        type=int,
+        metavar="YYYYMMDD",
+        help=(
+            "Override 'today' with a specific dayobs for historic generation. "
+            "Without --force-refresh, only creates missing files and never overwrites."
+        ),
+    )
+    parser.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="Regenerate all files in the window, overwriting any that already exist",
+    )
+    parser.add_argument(
+        "--block-details-only",
+        action="store_true",
+        help="Only refresh block-details files (additive with other --*-only flags)",
+    )
+    parser.add_argument(
+        "--exposure-flags-only",
+        action="store_true",
+        help="Only refresh exposure-flags files (additive with other --*-only flags)",
+    )
+    parser.add_argument(
+        "--exposure-entries-only",
+        action="store_true",
+        help="Only refresh exposure-entries files (additive with other --*-only flags)",
+    )
+    parser.add_argument(
+        "--mutable-only",
+        action="store_true",
+        help="Refresh all mutable endpoints: exposure-flags, exposure-entries, and block-details",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Maximum number of concurrent HTTP requests",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level",
+    )
+    args = parser.parse_args()
+
+    level = getattr(logging, args.log_level)
+    fmt = logging.Formatter("%(message)s")
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(level)
+    stdout_handler.addFilter(lambda r: r.levelno < logging.WARNING)
+    stdout_handler.setFormatter(fmt)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(max(level, logging.WARNING))
+    stderr_handler.setFormatter(fmt)
+
+    logging.basicConfig(level=level, handlers=[stdout_handler, stderr_handler])
+
+    # PID lock to prevent concurrent runs (O_CREAT|O_EXCL is atomic)
+    lock_path = "/tmp/generate_static_files.lock"
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(lock_fd, str(os.getpid()).encode())
+        os.close(lock_fd)
+    except FileExistsError:
+        logger.error("Lock file found: %s. Another instance may be running. Aborting.", lock_path)
+        logger.error("Remove %s if you're sure no other instance is running.", lock_path)
+        sys.exit(1)
+
+    try:
+        # Determine "today"
+        if args.dayobs_override is not None:
+            today = args.dayobs_override
+            historic_mode = True
+            logger.info("Historic mode: using dayobs %d as 'today'", today)
+        else:
+            today = get_current_dayobs()
+            historic_mode = False
+            logger.info("Today's dayobs: %d", today)
+
+        yesterday = dayobs_add_days(today, -1)
+
+        # Detect first run of new day (only meaningful in normal mode)
+        # Note almanac endpoint uses exclusive date range,
+        # so we need to add 1 day to the end date
+        today_sentinel = os.path.join(
+            args.output_dir,
+            build_filename("almanac", {"dayObsStart": today, "dayObsEnd": dayobs_add_days(today, 1)}),
+        )
+        is_new_day = not historic_mode and not os.path.exists(today_sentinel)
+        if is_new_day:
+            logger.info(
+                "First run for dayobs %d — yesterday's files (%d) will be refreshed",
+                today,
+                yesterday,
+            )
+
+        if args.force_refresh:
+            logger.info("Force refresh enabled — all files will be regenerated")
+
+        if args.dry_run:
+            logger.info("Dry run mode — no requests will be made and no files will be written")
+
+        os.makedirs(args.output_dir, exist_ok=True)
+
+        batch_start = time.time()
+        start_utc = datetime.fromtimestamp(batch_start, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        logger.info("Batch started at %s UTC", start_utc)
+
+        # Generate all dayobs combinations
+        combos = generate_dayobs_combinations(today, args.max_days, args.max_combo_size)
+        logger.info("Generated %d dayobs combinations", len(combos))
+        print("---", flush=True)
+        print(combos)
+        print("---", flush=True)
+
+        # Enforce retention policy
+        clean_stale_files(args.output_dir, combos, args.dry_run)
+
+        # Resolve --*-only flags (additive; --mutable-only enables all three)
+        want_flags = args.exposure_flags_only or args.mutable_only
+        want_entries = args.exposure_entries_only or args.mutable_only
+        want_blocks = args.block_details_only or args.mutable_only
+        selective_mode = want_flags or want_entries or want_blocks
+
+        # Build endpoint filter for dayobs tasks (None = all endpoints)
+        endpoint_filter = None
+        run_dayobs = True
+        run_version = True
+        run_blocks = True
+        if selective_mode:
+            run_version = False
+            endpoint_filter = set()
+            if want_flags:
+                endpoint_filter.add("exposure-flags")
+            if want_entries:
+                endpoint_filter.add("exposure-entries")
+            run_dayobs = len(endpoint_filter) > 0
+            run_blocks = want_blocks
+
+        progress = Progress(0)
+
+        if run_version:
+            # --- Pass 1: Group D — version (no dayobs) ---
+            version_filename = build_filename("version", {})
+
+            # Always recreate the version task regardless of existing file
+            version_tasks = [{"filename": version_filename, "endpoint": "version", "params": {}}]
+            progress.total += len(version_tasks)
+
+            logger.info("\nVersion fetch")
+            _run_tasks(
+                version_tasks,
+                args.backend_url,
+                args.output_dir,
+                args.request_timeout,
+                args.rate_limit,
+                args.dry_run,
+                progress,
+                args.workers,
+            )
+
+        if run_dayobs:
+            # --- Pass 2: Groups A, B, C — dayobs endpoints ---
+            dayobs_tasks, skipped_count = build_dayobs_tasks(
+                combos,
+                today,
+                yesterday,
+                is_new_day,
+                args.force_refresh,
+                historic_mode,
+                args.output_dir,
+                endpoint_filter=endpoint_filter,
+            )
+
+            progress.total += len(dayobs_tasks)
+            progress.skipped += skipped_count
+
+            logger.info("\nStarting dayobs %d fetches (%d files)", today, len(dayobs_tasks))
+            _run_tasks(
+                dayobs_tasks,
+                args.backend_url,
+                args.output_dir,
+                args.request_timeout,
+                args.rate_limit,
+                args.dry_run,
+                progress,
+                args.workers,
+            )
+
+        if run_blocks:
+            # --- Pass 3: Group E — block-details (derived) ---
+            block_tasks, block_skipped = build_block_details_tasks(
+                combos,
+                args.output_dir,
+                dry_run=args.dry_run,
+            )
+
+            progress.total += len(block_tasks)
+            progress.skipped += block_skipped
+
+            logger.info("\nStarting block-details fetches (%d files)", len(block_tasks))
+            _run_tasks(
+                block_tasks,
+                args.backend_url,
+                args.output_dir,
+                args.request_timeout,
+                args.rate_limit,
+                args.dry_run,
+                progress,
+                args.workers,
+            )
+
+        progress.summary(batch_start)
+
+    finally:
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    main()
